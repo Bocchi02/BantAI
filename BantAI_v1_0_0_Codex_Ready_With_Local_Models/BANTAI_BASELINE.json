@@ -1,0 +1,44 @@
+{
+  "project": "BantAI",
+  "version": "1.0.0",
+  "architecture": "dual_detector",
+  "email_detector": {
+    "providers": [
+      "gmail",
+      "outlook",
+      "yahoo"
+    ],
+    "model": "BantAI XLM-RoBERTa NLP Classification Model V1",
+    "checkpoint": "checkpoint-15666",
+    "threshold": 0.05,
+    "max_length": 256
+  },
+  "url_detector": {
+    "scope": "CURRENT_ADDRESS_BAR_URL_ONLY",
+    "model": "BantAI Random Forest URL Model V4-B",
+    "threshold": 0.6800401751682739
+  },
+  "popup": {
+    "automatic_email_result_duration_ms": 5000,
+    "manual_popup_auto_close": false
+  },
+  "excluded_features": [
+    "embedded_email_link_scanning",
+    "automatic_navigation",
+    "redirect_analysis",
+    "tls_analysis",
+    "overall_risk_fusion"
+  ],
+  "user_signals": [
+    "SAFE",
+    "SUSPICIOUS",
+    "WAITING",
+    "ANALYZING",
+    "UNAVAILABLE"
+  ],
+  "local_model_storage": {
+    "email_model_directory": "models/email_text_xlmr_v1/checkpoint-15666",
+    "url_model_path": "models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib",
+    "git_tracked": false
+  }
+}

@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+credentials*.json
+secrets*.json
+
+# Frozen model files and ML caches
+# Models may live inside this project locally, but their large binary files
+# must not be committed to Git.
+checkpoint-*/
+models/**/checkpoint-*/*
+!models/README.md
+!models/**/PLACE_*.txt
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.joblib
+*.pkl
+.cache/
+huggingface/
+transformers_cache/
+
+# Private research and validation data
+backend/validation/*.csv
+backend/validation/*.json
+validation/
+results/
+real_world_validation_log*.csv
+external_validation_predictions*.csv
+external_validation_misclassifications*.csv
+*.sqlite
+*.db
+
+# Personal screenshots and captures
+screenshots/private/
+captures/private/
+*.har
+
+# Runtime
+*.log
+logs/
+tmp/
+temp/
+
+# Build artifacts
+dist/
+build/
+*.zip
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Codex local state, when present
+.codex-local/

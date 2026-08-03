@@ -1,0 +1,53 @@
+BantAI v1.0.0 Functional Test Checklist
+
+BACKEND
+-------
+[ ] /health returns version 1.0.0
+[ ] Email model loaded: true
+[ ] URL model loaded: true
+[ ] Email threshold is 0.05
+[ ] URL threshold is 0.6800401751682739
+[ ] embedded_email_link_scanning is false
+[ ] overall_risk_fusion is false
+
+CURRENT URL DETECTOR
+--------------------
+[ ] Open a normal HTTP/HTTPS website
+[ ] Current address-bar URL is displayed
+[ ] Website signal appears
+[ ] Switch to another tab
+[ ] New active tab URL is scanned
+[ ] Change the address-bar URL
+[ ] Updated URL is scanned
+[ ] No page link is opened automatically
+
+EMAIL DETECTOR
+--------------
+[ ] Non-webmail tab shows email detector OFF
+[ ] Gmail enables email detector
+[ ] Outlook enables email detector
+[ ] Yahoo enables email detector
+[ ] Opening Email A analyzes Email A
+[ ] Opening Email B analyzes Email B
+[ ] Sender is correct
+[ ] Subject is correct
+[ ] Email message signal appears
+
+FIVE-SECOND POPUP
+-----------------
+[ ] Open a new supported email
+[ ] URL and email analyses both run
+[ ] Popup opens only after latest results are available
+[ ] Popup displays Current website and Opened email cards
+[ ] Countdown starts at approximately five seconds
+[ ] Popup closes automatically
+[ ] Manually clicking the toolbar icon does not force auto-close
+[ ] No email link or browser page is opened
+
+DIGITAL-LITERACY UI
+-------------------
+[ ] SAFE and SUSPICIOUS labels are large and clear
+[ ] Explanations use plain language
+[ ] Main screen does not require reading probabilities
+[ ] Technical scores remain under More details
+[ ] Warning guidance tells users what not to share

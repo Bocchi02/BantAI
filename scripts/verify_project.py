@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""Verify BantAI source syntax and frozen project invariants without loading ML models."""
+
+from __future__ import annotations
+
+import json
+import py_compile
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+EXPECTED_EMAIL_THRESHOLD = "0.05"
+EXPECTED_URL_THRESHOLD = "0.6800401751682739"
+EXPECTED_MAX_LENGTH = "256"
+EXPECTED_POPUP_DURATION = "5000"
+
+
+def fail(message: str) -> None:
+    raise RuntimeError(message)
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        fail(message)
+
+
+def read(relative: str) -> str:
+    path = ROOT / relative
+    require(path.is_file(), f"Missing required file: {relative}")
+    return path.read_text(encoding="utf-8")
+
+
+def check_python() -> None:
+    paths = [
+        ROOT / "backend" / "server.py",
+        ROOT / "backend" / "bantai_rf_url_model_v4b_runtime.py",
+        ROOT / "backend" / "test_client.py",
+    ]
+
+    for path in paths:
+        py_compile.compile(
+            str(path),
+            doraise=True,
+        )
+
+
+def check_javascript() -> None:
+    node = shutil.which("node")
+
+    if not node:
+        print("WARN: Node.js was not found; JavaScript syntax checks were skipped.")
+        return
+
+    paths = [
+        ROOT / "extension" / "background" / "service-worker.js",
+        ROOT / "extension" / "content" / "gmail-extractor.js",
+        ROOT / "extension" / "content" / "outlook-extractor.js",
+        ROOT / "extension" / "content" / "yahoo-extractor.js",
+        ROOT / "extension" / "popup" / "popup.js",
+    ]
+
+    for path in paths:
+        result = subprocess.run(
+            [node, "--check", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if result.returncode != 0:
+            fail(
+                f"JavaScript syntax failed for {path.relative_to(ROOT)}:\n"
+                f"{result.stderr}"
+            )
+
+
+def check_manifest() -> None:
+    manifest = json.loads(
+        read("extension/manifest.json")
+    )
+
+    require(
+        manifest.get("manifest_version") == 3,
+        "Manifest must remain version 3.",
+    )
+    require(
+        manifest.get("version") == "1.0.0",
+        "Expected extension version 1.0.0.",
+    )
+    require(
+        manifest.get("minimum_chrome_version") == "127",
+        "Automatic popup requires the declared minimum Chrome version 127.",
+    )
+
+    permissions = set(
+        manifest.get("permissions", [])
+    )
+
+    require(
+        {"scripting", "storage", "tabs"}.issubset(permissions),
+        "Required extension permissions are missing.",
+    )
+
+    host_permissions = set(
+        manifest.get("host_permissions", [])
+    )
+
+    required_hosts = {
+        "https://mail.google.com/*",
+        "https://mail.yahoo.com/*",
+        "https://outlook.live.com/*",
+        "http://127.0.0.1:8000/*",
+    }
+
+    require(
+        required_hosts.issubset(host_permissions),
+        "Required narrowly scoped host permissions are missing.",
+    )
+
+
+def check_backend_invariants() -> None:
+    server = read("backend/server.py")
+
+    require(
+        re.search(r"EMAIL_THRESHOLD\s*=\s*0\.05\b", server) is not None,
+        "Frozen email threshold changed.",
+    )
+    require(
+        re.search(r"EMAIL_MAX_LENGTH\s*=\s*256\b", server) is not None,
+        "Frozen email max length changed.",
+    )
+    require(
+        re.search(
+            r"URL_THRESHOLD\s*=\s*0\.6800401751682739\b",
+            server,
+        ) is not None,
+        "Frozen URL threshold changed.",
+    )
+
+    require(
+        '"CURRENT_ADDRESS_BAR_URL_ONLY"' in server,
+        "Current address-bar URL scope marker is missing.",
+    )
+    require(
+        '"embedded_email_link_scanning"' in server
+        and "False" in server,
+        "Embedded email link scanning must remain disabled.",
+    )
+    require(
+        "SUPPORTED_EMAIL_PROVIDERS" in server
+        and '"gmail"' in server
+        and '"outlook"' in server
+        and '"yahoo"' in server,
+        "Supported email provider restriction changed.",
+    )
+    require(
+        "score_email_links" not in server,
+        "Embedded email link scoring was reintroduced.",
+    )
+
+
+def check_extension_invariants() -> None:
+    worker = read("extension/background/service-worker.js")
+    popup_html = read("extension/popup/popup.html")
+
+    require(
+        "AUTO_POPUP_DURATION_MS" in worker
+        and EXPECTED_POPUP_DURATION in worker,
+        "Five-second automatic popup invariant changed.",
+    )
+    require(
+        "tabs.onActivated" in worker,
+        "URL scanning on tab switching is missing.",
+    )
+    require(
+        "/analyze-url" in worker,
+        "Current URL API call is missing.",
+    )
+    require(
+        "payload.links" not in worker,
+        "Embedded email link payload was reintroduced.",
+    )
+    require(
+        "fonts.googleapis.com" in popup_html
+        and "Roboto" in popup_html,
+        "Roboto Google Fonts reference is missing.",
+    )
+
+    for provider in ("gmail", "outlook", "yahoo"):
+        extractor = read(
+            f"extension/content/{provider}-extractor.js"
+        )
+        require(
+            "extractEmailLinks" not in extractor,
+            f"{provider} extractor must not extract embedded email links.",
+        )
+
+
+def check_codex_files() -> None:
+    required = [
+        "AGENTS.md",
+        "extension/AGENTS.md",
+        "backend/AGENTS.md",
+        "CODEX_PROJECT_CONTEXT.md",
+        "CODEX_MIGRATION_GUIDE.md",
+        "BANTAI_BASELINE.json",
+        ".gitignore",
+    ]
+
+    for relative in required:
+        require(
+            (ROOT / relative).is_file(),
+            f"Missing Codex migration file: {relative}",
+        )
+
+
+def check_private_artifacts() -> None:
+    prohibited_patterns = [
+        "real_world_validation_log*.csv",
+        ".env",
+    ]
+
+    for pattern in prohibited_patterns:
+        matches = [
+            path
+            for path in ROOT.rglob(pattern)
+            if path.is_file()
+        ]
+
+        require(
+            not matches,
+            "Private artifact must not be included: "
+            + ", ".join(
+                str(path.relative_to(ROOT))
+                for path in matches
+            ),
+        )
+
+    # Trained model binaries are allowed locally under models/ only.
+    model_binary_patterns = [
+        "*.safetensors",
+        "*.joblib",
+        "*.pkl",
+        "*.pt",
+        "*.pth",
+        "*.bin",
+    ]
+
+    for pattern in model_binary_patterns:
+        for path in ROOT.rglob(pattern):
+            if not path.is_file():
+                continue
+
+            relative = path.relative_to(ROOT)
+
+            require(
+                relative.parts
+                and relative.parts[0] == "models",
+                f"Model binary is outside the local models folder: {relative}",
+            )
+
+
+def main() -> int:
+    checks = [
+        ("Python syntax", check_python),
+        ("JavaScript syntax", check_javascript),
+        ("Manifest", check_manifest),
+        ("Backend invariants", check_backend_invariants),
+        ("Extension invariants", check_extension_invariants),
+        ("Codex files", check_codex_files),
+        ("Private artifacts", check_private_artifacts),
+    ]
+
+    for name, check in checks:
+        check()
+        print(f"PASS: {name}")
+
+    print()
+    print("BantAI Codex migration verification: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception as exc:
+        print()
+        print(f"BantAI Codex migration verification: FAIL\n{exc}")
+        raise SystemExit(1)

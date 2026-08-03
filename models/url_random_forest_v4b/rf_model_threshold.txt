@@ -1,0 +1,8 @@
+Copy the frozen URL model here using this filename:
+
+bantai_rf_url_model_v4b_optimized.joblib
+
+Frozen runtime setting:
+- Threshold: 0.6800401751682739
+
+Do not modify, retrain, or retune this model for BantAI v1.0.0.
