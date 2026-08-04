@@ -18,10 +18,9 @@
     crossorigin
   >
   <link
-    href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap"
     rel="stylesheet"
   >
-
   <link
     rel="stylesheet"
     href="popup.css"
@@ -35,15 +34,9 @@
       aria-live="polite"
     >
       <div class="auto-popup-copy">
-        <span>
-          Latest email check
-        </span>
-
-        <strong id="countdownText">
-          Closing in 5 seconds
-        </strong>
+        <span>Latest check result</span>
+        <strong id="countdownText">Closing in 5 seconds</strong>
       </div>
-
       <div class="countdown-track">
         <div
           id="countdownBar"
@@ -53,137 +46,112 @@
     </section>
 
     <header class="header">
-      <div class="logo-mark">
-        B
-      </div>
-
-      <div class="header-copy">
-        <h1>BantAI</h1>
-        <p>
-          Simple safety checks
-        </p>
+      <div class="brand">
+        <div
+          class="logo-mark"
+          aria-hidden="true"
+        >
+          B
+        </div>
+        <div>
+          <h1>BantAI</h1>
+          <p>Safety at a glance</p>
+        </div>
       </div>
 
       <div
         id="serverStatus"
         class="server-status checking"
+        role="status"
       >
         <span class="server-dot"></span>
-        <span id="serverStatusText">
-          Checking
-        </span>
+        <span id="serverStatusText">Checking</span>
       </div>
     </header>
 
-    <p class="intro">
-      BantAI checks the website you are viewing and supported email messages.
-    </p>
-
     <section
       id="websiteCard"
-      class="detector-card neutral"
+      class="detector-panel neutral"
+      aria-labelledby="websiteTitle"
     >
-      <div class="card-heading">
-        <div
-          id="websiteIcon"
-          class="status-icon"
-          aria-hidden="true"
-        >
-          …
-        </div>
-
+      <div class="panel-heading">
         <div>
-          <div class="detector-name">
-            Current website
-          </div>
-
-          <div
-            id="websiteDomain"
-            class="detector-context"
-          >
-            Waiting for a website
-          </div>
+          <p class="section-kicker">URL DETECTOR</p>
+          <h2 id="websiteTitle">Current website</h2>
         </div>
-
-        <div
-          id="websiteBadge"
-          class="status-badge neutral"
-        >
-          WAITING
-        </div>
+        <span class="scope-label">Address bar only</span>
       </div>
 
-      <p
-        id="websiteMessage"
-        class="detector-message"
-      >
-        BantAI checks only the URL shown in your browser’s address bar.
-      </p>
-
-      <details class="details">
-        <summary>
-          More details
-        </summary>
-
-        <div class="detail-list">
-          <div>
-            <span>Current URL</span>
-            <strong id="websiteUrl">—</strong>
-          </div>
-
-          <div>
-            <span>Suspicious score</span>
-            <strong id="websiteScore">—</strong>
-          </div>
-
-          <div>
-            <span>Decision threshold</span>
-            <strong id="websiteThreshold">—</strong>
+      <div class="result-layout">
+        <div
+          id="websiteProgress"
+          class="risk-ring neutral"
+          role="progressbar"
+          aria-label="Website suspicious risk"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
+          <div class="risk-ring-content">
+            <strong id="websiteProgressValue">--</strong>
+            <span id="websiteProgressLabel">WAITING</span>
           </div>
         </div>
-      </details>
+
+        <div class="result-copy">
+          <span class="context-label">Website</span>
+          <strong
+            id="websiteDomain"
+            class="context-value"
+          >
+            Waiting for a website
+          </strong>
+        </div>
+      </div>
     </section>
 
     <section
       id="emailCard"
-      class="detector-card neutral"
+      class="detector-panel neutral hidden"
+      aria-labelledby="emailTitle"
     >
-      <div class="card-heading">
-        <div
-          id="emailIcon"
-          class="status-icon"
-          aria-hidden="true"
-        >
-          ✉
-        </div>
-
+      <div class="panel-heading">
         <div>
-          <div class="detector-name">
-            Opened email
-          </div>
-
-          <div
-            id="emailContext"
-            class="detector-context"
-          >
-            Gmail, Outlook, or Yahoo only
-          </div>
+          <p class="section-kicker">EMAIL DETECTOR</p>
+          <h2 id="emailTitle">Opened email</h2>
         </div>
-
-        <div
-          id="emailBadge"
-          class="status-badge neutral"
+        <span
+          id="emailContext"
+          class="scope-label"
         >
-          OFF
-        </div>
+          Supported email
+        </span>
       </div>
 
-      <p
-        id="emailMessage"
-        class="detector-message"
-      >
-        Email checking turns on only when you use Gmail, Outlook, or Yahoo.
-      </p>
+      <div class="result-layout">
+        <div
+          id="emailProgress"
+          class="risk-ring neutral"
+          role="progressbar"
+          aria-label="Email suspicious risk"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
+          <div class="risk-ring-content">
+            <strong id="emailProgressValue">--</strong>
+            <span id="emailProgressLabel">WAITING</span>
+          </div>
+        </div>
+
+        <div class="result-copy">
+          <span class="context-label">Email status</span>
+          <strong
+            id="emailResultTitle"
+            class="context-value"
+          >
+            Open an email
+          </strong>
+        </div>
+      </div>
 
       <div
         id="emailMetadata"
@@ -191,65 +159,30 @@
       >
         <div>
           <span>Sender</span>
-          <strong id="emailSender">—</strong>
+          <strong id="emailSender">--</strong>
         </div>
-
         <div>
           <span>Subject</span>
-          <strong id="emailSubject">—</strong>
+          <strong id="emailSubject">--</strong>
         </div>
       </div>
-
-      <details class="details">
-        <summary>
-          More details
-        </summary>
-
-        <div class="detail-list">
-          <div>
-            <span>Suspicious score</span>
-            <strong id="emailScore">—</strong>
-          </div>
-
-          <div>
-            <span>Decision threshold</span>
-            <strong id="emailThreshold">—</strong>
-          </div>
-
-          <div>
-            <span>Text shortened for analysis</span>
-            <strong id="emailTruncated">—</strong>
-          </div>
-        </div>
-      </details>
     </section>
 
     <section
       id="guidanceCard"
       class="guidance-card"
+      aria-live="polite"
     >
-      <strong id="guidanceTitle">
-        Stay careful online
-      </strong>
-
+      <strong id="guidanceTitle">Continue carefully</strong>
       <p id="guidanceMessage">
-        Before clicking, paying, or sharing information, verify unexpected requests through an official channel.
+        Verify unexpected requests before clicking, paying, or sharing information.
       </p>
     </section>
 
     <p class="safe-note">
-      “SAFE” means no strong warning sign was found by that detector. It does not guarantee that a website or email is legitimate.
+      SAFE means no strong warning sign was detected by that module. It is not a guarantee that the website or email is legitimate.
     </p>
 
-    <footer>
-      <span>
-        URL: address bar only
-      </span>
-
-      <span>
-        v1.0.0
-      </span>
-    </footer>
   </main>
 
   <script src="popup.js"></script>

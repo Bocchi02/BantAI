@@ -725,6 +725,14 @@ async function scanCurrentTabUrl(
 
     await checkServer();
 
+    if (reason !== "new_email_opened" && tab) {
+      void openFiveSecondPopup(
+        tab,
+        currentUrl,
+        "url_scanned"
+      );
+    }
+
     return state
       ?.url_detector ||
       null;
@@ -1053,7 +1061,8 @@ async function analyzeOpenedEmail(
 
 async function openFiveSecondPopup(
   tab,
-  fingerprint
+  fingerprint,
+  reason = "new_email"
 ) {
   const tabId =
     tab?.id;
@@ -1094,8 +1103,7 @@ async function openFiveSecondPopup(
           AUTO_POPUP_DURATION_MS,
         consumed:
           false,
-        reason:
-          "new_email"
+        reason
       }
     });
 
@@ -1363,7 +1371,7 @@ chrome.tabs.onUpdated
           tab,
           {
             force:
-              false,
+              true,
             reason:
               "page_loaded"
           }
