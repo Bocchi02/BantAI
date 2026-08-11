@@ -1,25 +1,59 @@
 {
   "project": "BantAI",
-  "version": "1.0.0",
-  "architecture": "dual_detector",
-  "email_detector": {
-    "providers": [
-      "gmail",
-      "outlook",
-      "yahoo"
-    ],
+  "version": "1.1.0",
+  "architecture": "hybrid_ai_decision_support",
+  "frozen_email_detector": {
+    "providers": ["gmail", "outlook", "yahoo"],
     "model": "BantAI XLM-RoBERTa NLP Classification Model V1",
     "checkpoint": "checkpoint-15666",
     "threshold": 0.05,
     "max_length": 256
   },
-  "url_detector": {
+  "frozen_url_detector": {
     "scope": "CURRENT_ADDRESS_BAR_URL_ONLY",
     "model": "BantAI Random Forest URL Model V4-B",
     "threshold": 0.6800401751682739
   },
+  "indicator_engine": {
+    "enabled": true,
+    "type": "EXPLAINABLE_EVIDENCE_EXTRACTION",
+    "probability_output": false,
+    "language_style_alone_is_suspicious": false
+  },
+  "llm": {
+    "provider_abstraction": true,
+    "initial_provider": "gemini",
+    "cloud_review_default": false,
+    "backend_environment_key_only": true,
+    "quota_fallback": "gemini-3.5-flash-lite",
+    "redaction_enabled": true,
+    "cache": "IN_MEMORY_TTL"
+  },
+  "url_cloud_review": {
+    "separate_consent_default": false,
+    "runs_only_after_rf_warning": true,
+    "payload": "SCHEME_AND_HOSTNAME_ORIGIN_ONLY",
+    "page_content_shared": false,
+    "high_confidence_clean_can_clear_hostname_warning": true,
+    "safe_wording_is_a_guarantee": false
+  },
+  "fusion": {
+    "enabled": true,
+    "strategy": "DETERMINISTIC",
+    "email_sources": ["XLM_R", "LOCAL_INDICATORS", "LLM_REVIEW"],
+    "url_signal_can_downgrade_email": false,
+    "llm_alone_can_produce_red": false,
+    "overall_numeric_risk_score": false
+  },
+  "user_facing_outcomes": [
+    "NO_STRONG_WARNING_SIGNS",
+    "NEEDS_CAUTION",
+    "SUSPICIOUS_SIGNS_FOUND"
+  ],
   "popup": {
     "automatic_email_result_duration_ms": 5000,
+    "automatic_requires_complete_local_and_cloud": true,
+    "same_result_reopens_on_focus": false,
     "manual_popup_auto_close": false
   },
   "excluded_features": [
@@ -27,18 +61,11 @@
     "automatic_navigation",
     "redirect_analysis",
     "tls_analysis",
-    "overall_risk_fusion"
+    "overall_numeric_risk_score"
   ],
-  "user_signals": [
-    "SAFE",
-    "SUSPICIOUS",
-    "WAITING",
-    "ANALYZING",
-    "UNAVAILABLE"
-  ],
-  "local_model_storage": {
-    "email_model_directory": "models/email_text_xlmr_v1/checkpoint-15666",
-    "url_model_path": "models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib",
-    "git_tracked": false
+  "v1_0_baseline_preserved": {
+    "architecture": "dual_detector",
+    "model_inputs_and_thresholds_unchanged": true,
+    "provider_extractors_preserved": true
   }
 }

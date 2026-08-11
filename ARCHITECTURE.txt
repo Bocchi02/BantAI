@@ -1,38 +1,96 @@
-BantAI v1.0.0 Dual Detector Architecture
+BantAI v1.1.0 Hybrid AI Decision-Support Architecture
 
-ACTIVE BROWSER TAB
+ACTIVE TAB
     |
-    +-- Address-bar URL
-    |       |
-    |       +-- Frozen RF URL Model V4-B
-    |               |
-    |               +-- SAFE / SUSPICIOUS website signal
+    +-- exact tab.url ----------------> Frozen RF URL V4-B
+    |                                      |
+    |                                      +-- independent SAFE / SUSPICIOUS
+    |                                      +-- optional minimized URL AI context
+    |                                              |
+    |                                              +-- separate consent; RF warnings only
+    |                                              +-- origin only; no path/page content
+    |                                              +-- HIGH-confidence clean -> NO STRONG WARNING SIGNS
+    |                                              +-- lower-confidence disagreement -> NEEDS CAUTION
     |
-    +-- Is the tab Gmail, Outlook, or Yahoo?
+    +-- Gmail / Outlook / Yahoo only
             |
-            +-- No
-            |     |
-            |     +-- Email detector DISABLED
-            |
-            +-- Yes
-                  |
-                  +-- User opens a new email
-                          |
-                          +-- Provider-specific content extractor
-                          |
-                          +-- Frozen XLM-R Email Model V1
-                          |
-                          +-- SAFE / SUSPICIOUS email signal
-                          |
-                          +-- Current URL detector also runs
-                          |
-                          +-- Popup opens for five seconds
+            +-- provider extractor: sender + subject + visible current body
+                    |
+                    +-- Frozen XLM-R Email V1
+                    |
+                    +-- Explainable Philippine Scam Indicator Engine
+                    |
+                    +-- Cloud AI Review enabled by user?
+                    |       |
+                    |       +-- No: OFF; local analysis continues
+                    |       |
+                    |       +-- Yes: redact + minimize + strict LLM schema
+                    |                    |
+                    |                    +-- valid result or UNAVAILABLE
+                    |
+                    +-- Deterministic Email Fusion (Rules A-H)
+                            |
+                            +-- NO STRONG WARNING SIGNS
+                            +-- NEEDS CAUTION
+                            +-- SUSPICIOUS SIGNS FOUND
 
-Strict scope:
-- URL detector scans tab.url only.
-- Email detector does not run on arbitrary websites.
-- Embedded links are not extracted or scored.
-- No automatic navigation.
-- No redirect analysis in this version.
-- No TLS analysis in this version.
-- No overall risk fusion in this version.
+The URL signal is shown independently and never enters email fusion. A SAFE
+webmail URL cannot downgrade an email warning.
+
+DETERMINISTIC RULES A-H
+-----------------------
+A. Clean XLM-R + clean LLM + no strong/critical marker -> NO STRONG WARNING SIGNS.
+B. Local/LLM disagreement -> NEEDS CAUTION.
+C. LLM suspicious without local corroboration -> NEEDS CAUTION.
+D. XLM-R suspicious while LLM is clear -> NEEDS CAUTION unless a local marker
+   supplies the second suspicious source.
+E. A lone strong/critical marker -> NEEDS CAUTION.
+F. Any two independent suspicious sources -> SUSPICIOUS SIGNS FOUND.
+G. Other ambiguous/incomplete combinations -> NEEDS CAUTION.
+H. With cloud OFF/UNAVAILABLE: local clean -> NO STRONG WARNING SIGNS; one local
+   warning source -> NEEDS CAUTION; XLM-R plus strong/critical marker ->
+   SUSPICIOUS SIGNS FOUND.
+
+No rule produces an overall numeric risk score.
+
+COMPLETE-RESULT POPUP FLOW
+--------------------------
+1. A new supported email or eligible address change starts a sequence-bound request.
+2. Local results are stored without opening the automatic popup.
+3. If cloud consent is ON and the review is required, the cloud request runs.
+4. The popup opens for approximately five seconds only after both outputs have
+   complete assessment states.
+5. Cloud OFF, CHECKING, or UNAVAILABLE states never trigger an automatic popup.
+6. A result fingerprint opens automatically at most once; focus, tab clicks,
+   repeated extraction, and page-complete events do not reopen it.
+7. Manually opening the toolbar popup never schedules a five-second close.
+
+Cloud URL requests for the same normalized hostname are coalesced while in
+flight. Provider quota/time-limit responses start a short backend cooldown;
+subsequent URL scans return the cached operational state immediately while the
+frozen local detector continues to apply.
+
+Gemini model failover is backend-only. A quota response from the configured
+primary model causes the same minimized review to be attempted once with the
+configured fallback model. A successful fallback becomes the active model for
+the remainder of that backend process. Other provider errors never switch models.
+
+PRIVACY BOUNDARY
+----------------
+- The extension stores only transient results and the cloud preference Boolean.
+- Raw email bodies are sent only to the local backend and are never logged/stored.
+- The cloud payload retains semantic context after best-effort sensitive-value
+  redaction and beginning/ending truncation.
+- Only normalized hashes and validated results are cached in backend memory.
+- URL cloud review caches only a normalized hostname fingerprint and validated result.
+
+STRICTLY OUT OF SCOPE
+---------------------
+- embedded email link extraction or scoring
+- webpage crawling or HTML submission
+- automatic link opening or navigation
+- redirect following or analysis
+- TLS analysis
+- sender authentication
+- overall numeric risk score
+- model retraining or threshold changes

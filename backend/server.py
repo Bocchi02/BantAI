@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 import joblib
 import pandas as pd
 import torch
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from transformers import (
@@ -18,12 +19,24 @@ from transformers import (
     AutoTokenizer,
 )
 
+
+BACKEND_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(
+    dotenv_path=BACKEND_ENV_PATH,
+    override=False,
+)
+
 from bantai_rf_url_model_v4b_runtime import (
     extract_v4b_features,
 )
+from fusion_engine import fuse_email_signals
+from llm import create_coordinator_from_environment, off_review
+from llm.cache import TTLCache, normalized_email_fingerprint
+from scam_indicator_engine import analyze_scam_indicators
+from url_fusion_engine import fuse_url_signals
 
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # Frozen XLM-RoBERTa Email NLP V1 configuration.
 EMAIL_MODEL_NAME = (
@@ -61,6 +74,11 @@ class Runtime:
 
 
 runtime = Runtime()
+llm_coordinator = create_coordinator_from_environment()
+local_email_analysis_cache: TTLCache[dict] = TTLCache(
+    ttl_seconds=300,
+    max_entries=128,
+)
 
 
 class UrlAnalysisRequest(BaseModel):
@@ -68,18 +86,22 @@ class UrlAnalysisRequest(BaseModel):
         min_length=1,
         max_length=8192,
     )
+    cloud_ai_review: bool = False
 
 
 class UrlAnalysisResponse(BaseModel):
     analysis_id: str
     detector: str
     signal: str
+    final_result: str
     current_url: str
     hostname: str
     suspicious_probability: float
     safe_probability: float
     threshold: float
+    model_message: str
     message: str
+    llm_review: dict
     scanned_source: str
     automatic_navigation_performed: bool
 
@@ -110,6 +132,24 @@ class EmailAnalysisResponse(BaseModel):
     inference_ms: float
     device: str
     message: str
+
+
+class HybridEmailAnalysisRequest(EmailAnalysisRequest):
+    current_url: str = Field(
+        min_length=1,
+        max_length=8192,
+    )
+    cloud_ai_review: bool = False
+
+
+class HybridEmailAnalysisResponse(BaseModel):
+    analysis_id: str
+    version: str
+    email_model: EmailAnalysisResponse
+    url_model: UrlAnalysisResponse
+    local_indicators: dict
+    llm_review: dict
+    fusion: dict
 
 
 def resolve_required_path(
@@ -158,7 +198,7 @@ def load_email_model() -> None:
     )
 
     print(
-        "[BantAI v1.0.0] Loading email "
+        "[BantAI v1.1.0] Loading email "
         f"model from: {model_dir}"
     )
 
@@ -192,7 +232,7 @@ def load_email_model() -> None:
     runtime.email_model_dir = model_dir
 
     print(
-        "[BantAI v1.0.0] Email model "
+        "[BantAI v1.1.0] Email model "
         f"loaded on: {device}"
     )
 
@@ -204,7 +244,7 @@ def load_url_model() -> None:
     )
 
     print(
-        "[BantAI v1.0.0] Loading URL "
+        "[BantAI v1.1.0] Loading URL "
         f"model from: {model_path}"
     )
 
@@ -275,7 +315,7 @@ def load_url_model() -> None:
     )
 
     print(
-        "[BantAI v1.0.0] URL model "
+        "[BantAI v1.1.0] URL model "
         f"loaded with "
         f"{len(runtime.url_feature_names)} "
         "features."
@@ -357,13 +397,11 @@ async def lifespan(
 
 
 app = FastAPI(
-    title="BantAI Dual Detector API",
+    title="BantAI Hybrid AI Decision-Support API",
     version=VERSION,
     description=(
-        "Independent decision-support "
-        "detectors for the current address-bar "
-        "URL and opened Gmail, Outlook, or "
-        "Yahoo email content."
+        "Independent frozen detectors, explainable local scam indicators, "
+        "optional contextual cloud review, and deterministic email fusion."
     ),
     lifespan=lifespan,
 )
@@ -371,6 +409,7 @@ app = FastAPI(
 
 @app.get("/health")
 def health() -> dict:
+    llm_status = llm_coordinator.configuration()
     return {
         "status": "ok",
         "version": VERSION,
@@ -409,11 +448,23 @@ def health() -> dict:
             "scope":
                 "CURRENT_ADDRESS_BAR_URL_ONLY",
         },
+        "indicator_engine": {
+            "enabled": True,
+        },
+        "llm": llm_status,
+        "fusion": {
+            "enabled": True,
+            "strategy": "DETERMINISTIC",
+        },
         "automatic_link_navigation":
             False,
         "embedded_email_link_scanning":
             False,
-        "overall_risk_fusion":
+        "redirect_analysis":
+            False,
+        "tls_analysis":
+            False,
+        "overall_numeric_risk_score":
             False,
     }
 
@@ -480,7 +531,7 @@ def analyze_url(
     )
 
     if signal == "SUSPICIOUS":
-        message = (
+        model_message = (
             "Warning signs were found in this "
             "web address. Avoid entering "
             "passwords, OTPs, or payment "
@@ -488,12 +539,39 @@ def analyze_url(
             "verified."
         )
     else:
-        message = (
+        model_message = (
             "No strong warning signs were "
             "found in this web address. "
             "Continue carefully because SAFE "
             "is not a guarantee."
         )
+
+    if request.cloud_ai_review and signal == "SUSPICIOUS":
+        llm_review = llm_coordinator.review_url(
+            current_url=current_url,
+            hostname=hostname,
+            url_model={
+                "signal": signal,
+                "suspicious_probability": suspicious_probability,
+                "threshold": URL_THRESHOLD,
+            },
+        )
+    else:
+        llm_review = off_review(llm_coordinator.provider_name)
+        llm_review.update(llm_coordinator.configuration())
+        llm_review["enabled"] = False
+        llm_review["status"] = "OFF"
+        llm_review["reasoning_summary"] = (
+            "Cloud URL Review is off. Enable its separate setting to review "
+            "locally suspicious website origins."
+            if signal == "SUSPICIOUS"
+            else "Cloud URL Review was not needed because the local URL model did not warn."
+        )
+
+    url_fusion = fuse_url_signals(
+        url_signal=signal,
+        llm_review=llm_review,
+    )
 
     return UrlAnalysisResponse(
         analysis_id=
@@ -504,6 +582,8 @@ def analyze_url(
             "CURRENT_URL",
         signal=
             signal,
+        final_result=
+            url_fusion["final_result"],
         current_url=
             current_url,
         hostname=
@@ -515,8 +595,12 @@ def analyze_url(
             suspicious_probability,
         threshold=
             URL_THRESHOLD,
+        model_message=
+            model_message,
         message=
-            message,
+            url_fusion["message"],
+        llm_review=
+            llm_review,
         scanned_source=
             "BROWSER_ADDRESS_BAR",
         automatic_navigation_performed=
@@ -713,4 +797,87 @@ def analyze_email(
             ),
         message=
             message,
+    )
+
+
+@app.post(
+    "/analyze-hybrid-email",
+    response_model=HybridEmailAnalysisResponse,
+)
+def analyze_hybrid_email(
+    request: HybridEmailAnalysisRequest,
+) -> HybridEmailAnalysisResponse:
+    """Analyze independent components, then fuse email evidence deterministically."""
+    provider = (request.provider or "").strip().lower()
+    fingerprint = normalized_email_fingerprint(
+        provider=provider,
+        sender=request.sender,
+        subject=request.subject,
+        body=request.body,
+    )
+    cached_local = local_email_analysis_cache.get(fingerprint)
+
+    if cached_local is None:
+        email_model = analyze_email(
+            EmailAnalysisRequest(
+                provider=provider,
+                sender=request.sender,
+                subject=request.subject,
+                body=request.body,
+            )
+        )
+        local_indicators = analyze_scam_indicators(
+            sender=request.sender,
+            subject=request.subject,
+            body=request.body,
+        )
+        local_email_analysis_cache.set(
+            fingerprint,
+            {
+                "email_model": email_model.model_dump(),
+                "local_indicators": local_indicators,
+            },
+        )
+    else:
+        email_model = EmailAnalysisResponse.model_validate(
+            cached_local["email_model"]
+        )
+        local_indicators = cached_local["local_indicators"]
+
+    # The RF receives the exact current address-bar URL supplied as tab.url.
+    url_model = analyze_url(
+        UrlAnalysisRequest(url=request.current_url)
+    )
+
+    if request.cloud_ai_review:
+        llm_review = llm_coordinator.review_email(
+            provider=provider,
+            sender=request.sender,
+            subject=request.subject,
+            body=request.body,
+            current_url=request.current_url,
+            email_model=email_model.model_dump(),
+            url_model=url_model.model_dump(),
+            local_indicators=local_indicators,
+        )
+    else:
+        llm_review = off_review(llm_coordinator.provider_name)
+        llm_review.update(llm_coordinator.configuration())
+        llm_review["enabled"] = False
+        llm_review["status"] = "OFF"
+
+    fusion = fuse_email_signals(
+        email_signal=email_model.signal,
+        local_indicators=local_indicators,
+        llm_review=llm_review,
+    )
+
+    return HybridEmailAnalysisResponse(
+        analysis_id=str(uuid.uuid4()),
+        version=VERSION,
+        email_model=email_model,
+        url_model=url_model,
+        local_indicators=local_indicators,
+        llm_review=llm_review,
+        fusion=fusion,
     )

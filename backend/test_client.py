@@ -58,6 +58,22 @@ def main() -> None:
         ),
     )
 
+    show(
+        "Hybrid email analysis (cloud review off)",
+        requests.post(
+            f"{BASE}/analyze-hybrid-email",
+            json={
+                "provider": "gmail",
+                "sender": "Example Sender",
+                "subject": "Class schedule update",
+                "body": "The class schedule has been updated.",
+                "current_url": "https://mail.google.com/",
+                "cloud_ai_review": False,
+            },
+            timeout=60,
+        ),
+    )
+
 
 if __name__ == "__main__":
     main()

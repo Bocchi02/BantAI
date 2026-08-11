@@ -36,11 +36,8 @@ def read(relative: str) -> str:
 
 
 def check_python() -> None:
-    paths = [
-        ROOT / "backend" / "server.py",
-        ROOT / "backend" / "bantai_rf_url_model_v4b_runtime.py",
-        ROOT / "backend" / "test_client.py",
-    ]
+    paths = sorted((ROOT / "backend").rglob("*.py"))
+    paths.extend(sorted((ROOT / "tests").rglob("*.py")))
 
     for path in paths:
         py_compile.compile(
@@ -89,8 +86,8 @@ def check_manifest() -> None:
         "Manifest must remain version 3.",
     )
     require(
-        manifest.get("version") == "1.0.0",
-        "Expected extension version 1.0.0.",
+        manifest.get("version") == "1.1.0",
+        "Expected extension version 1.1.0.",
     )
     require(
         manifest.get("minimum_chrome_version") == "127",
@@ -125,6 +122,7 @@ def check_manifest() -> None:
 
 def check_backend_invariants() -> None:
     server = read("backend/server.py")
+    requirements = read("backend/requirements.txt")
 
     require(
         re.search(r"EMAIL_THRESHOLD\s*=\s*0\.05\b", server) is not None,
@@ -162,6 +160,41 @@ def check_backend_invariants() -> None:
         "score_email_links" not in server,
         "Embedded email link scoring was reintroduced.",
     )
+    require(
+        'VERSION = "1.1.0"' in server,
+        "Expected backend version 1.1.0.",
+    )
+    require(
+        '"/analyze-hybrid-email"' in server,
+        "Hybrid email endpoint is missing.",
+    )
+    require(
+        '"overall_numeric_risk_score"' in server
+        and "False" in server,
+        "Overall numeric risk scores must remain disabled.",
+    )
+    require(
+        "load_dotenv" in server
+        and 'parent / ".env"' in server
+        and "override=False" in server,
+        "The backend must auto-load backend/.env without overriding OS variables.",
+    )
+    require(
+        "python-dotenv" in requirements,
+        "python-dotenv is required for backend/.env loading.",
+    )
+
+    for relative in (
+        "backend/scam_indicator_engine.py",
+        "backend/fusion_engine.py",
+        "backend/llm/base.py",
+        "backend/llm/gemini_provider.py",
+        "backend/llm/schemas.py",
+        "backend/llm/prompt_builder.py",
+        "backend/llm/redaction.py",
+        "backend/llm/cache.py",
+    ):
+        require((ROOT / relative).is_file(), f"Missing v1.1 module: {relative}")
 
 
 def check_extension_invariants() -> None:
@@ -178,8 +211,9 @@ def check_extension_invariants() -> None:
         "URL scanning on tab switching is missing.",
     )
     require(
-        "/analyze-url" in worker,
-        "Current URL API call is missing.",
+        "/analyze-url" in worker
+        and "/analyze-hybrid-email" in worker,
+        "Current URL or hybrid email API call is missing.",
     )
     require(
         "payload.links" not in worker,
@@ -189,6 +223,16 @@ def check_extension_invariants() -> None:
         "fonts.googleapis.com" in popup_html
         and "Roboto" in popup_html,
         "Roboto Google Fonts reference is missing.",
+    )
+    require(
+        "bantai_cloud_ai_review_enabled" in worker
+        and "bantai_cloud_ai_review_enabled" in read("extension/popup/popup.js"),
+        "Cloud AI Review preference is missing.",
+    )
+    require(
+        "GEMINI_API_KEY" not in worker
+        and "GEMINI_API_KEY" not in read("extension/popup/popup.js"),
+        "Gemini API keys must never appear in extension source.",
     )
 
     for provider in ("gmail", "outlook", "yahoo"):
@@ -209,6 +253,9 @@ def check_codex_files() -> None:
         "CODEX_PROJECT_CONTEXT.md",
         "CODEX_MIGRATION_GUIDE.md",
         "BANTAI_BASELINE.json",
+        "README.txt",
+        "ARCHITECTURE.txt",
+        "TEST_CHECKLIST.txt",
         ".gitignore",
     ]
 
@@ -222,7 +269,6 @@ def check_codex_files() -> None:
 def check_private_artifacts() -> None:
     prohibited_patterns = [
         "real_world_validation_log*.csv",
-        ".env",
     ]
 
     for pattern in prohibited_patterns:
@@ -239,6 +285,31 @@ def check_private_artifacts() -> None:
                 str(path.relative_to(ROOT))
                 for path in matches
             ),
+        )
+
+    local_env = ROOT / "backend" / ".env"
+    if local_env.is_file():
+        git = shutil.which("git")
+        require(git is not None, "Git is required to verify backend/.env privacy.")
+        ignored = subprocess.run(
+            [git, "check-ignore", "--quiet", str(local_env)],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=30,
+        )
+        require(
+            ignored.returncode == 0,
+            "backend/.env exists but is not ignored by Git.",
+        )
+        tracked = subprocess.run(
+            [git, "ls-files", "--error-unmatch", "backend/.env"],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=30,
+        )
+        require(
+            tracked.returncode != 0,
+            "backend/.env must never be tracked by Git.",
         )
 
     # Trained model binaries are allowed locally under models/ only.

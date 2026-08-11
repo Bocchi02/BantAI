@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "BantAI Dual Detector",
-  "version": "1.0.0",
-  "description": "Simple SAFE or SUSPICIOUS checks for the current website and opened Gmail, Outlook, or Yahoo emails.",
+  "name": "BantAI Hybrid AI Decision-Support",
+  "version": "1.1.0",
+  "description": "Independent website and email checks with explainable indicators, optional cloud context, and deterministic guidance.",
   "minimum_chrome_version": "127",
   "permissions": [
     "scripting",

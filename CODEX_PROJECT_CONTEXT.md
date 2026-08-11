@@ -1,103 +1,62 @@
 # BantAI Project Context for Codex
 
-## Product goal
-
-BantAI helps users identify warning signs while browsing websites and reading
-emails. The interface is intentionally simple for users with limited digital
-literacy.
-
-BantAI presents independent signals rather than definitive legal or security
-judgments.
-
 ## Current version
 
-`1.0.0 — Dual Detector`
+`1.1.0 — Hybrid AI Decision-Support`
 
-## Main flow
+BantAI helps users notice warning signs while browsing and reading supported
+webmail. It provides cautious decision support, not a guarantee or definitive
+phishing judgment.
 
-### Any supported HTTP/HTTPS browser tab
+## Current website flow
 
-1. The service worker reads the active tab's current address-bar URL.
-2. The URL is sent to the local FastAPI `/analyze-url` endpoint.
-3. Frozen Random Forest V4-B produces a suspicious probability.
-4. The popup presents SAFE or SUSPICIOUS.
+For any HTTP/HTTPS tab, the service worker sends the exact `tab.url` to the
+local `/analyze-url` endpoint. Frozen RF V4-B returns an independent SAFE or
+SUSPICIOUS module signal. It runs on URL changes, page completion, tab switches,
+window focus, and new supported emails. Separately opted-in Cloud URL Review runs
+only after an RF warning and sends only the minimized scheme/hostname origin.
 
-### Gmail, Outlook, or Yahoo Mail
+## Opened email flow
 
-1. A provider-specific content script detects the newly opened email.
-2. It extracts the visible sender, subject, and message text.
-3. The service worker runs:
-   - the current address-bar URL detector; and
-   - the opened-email detector.
-4. The local backend analyzes the email through `/analyze-email`.
-5. When the latest analyses finish, the popup opens automatically.
-6. The automatic popup displays for approximately five seconds.
+On Gmail, Outlook, or Yahoo Mail:
 
-## Model configuration
+1. The unchanged provider extractor sends visible sender, subject, and current
+   message body to the local backend.
+2. Frozen XLM-R V1 and the local Philippine Scam Indicator Engine run.
+3. The exact address-bar URL is independently checked by RF V4-B.
+4. Local Rules A-H produce initial guidance without opening the automatic popup.
+5. If consent is ON, a limited redacted payload is reviewed by the configured
+   LLM. A current, validated result opens the five-second popup once.
+6. Cloud OFF, CHECKING, and UNAVAILABLE states do not trigger automatic opening.
+7. Request sequence, email fingerprint, and current tab URL checks reject stale
+   results.
 
-### Email detector
+The website result is displayed independently and is never an input to email
+fusion. Therefore a SAFE `mail.google.com`, Outlook, or Yahoo address does not
+cancel suspicious email evidence.
 
-- Model: XLM-RoBERTa Email NLP V1
-- Checkpoint: `checkpoint-15666`
-- Threshold: `0.05`
-- Maximum input length: `256`
-- Output mapping:
-  - below threshold → SAFE
-  - at or above threshold → SUSPICIOUS
+## Frozen configuration
 
-### URL detector
+- XLM-R Email NLP V1, `checkpoint-15666`, threshold `0.05`, max length `256`
+- Random Forest URL V4-B, threshold `0.6800401751682739`, input `tab.url` only
 
-- Model: Random Forest URL V4-B
-- Threshold: `0.6800401751682739`
-- Input: current address-bar URL only
-- Output mapping:
-  - below threshold → SAFE
-  - at or above threshold → SUSPICIOUS
+The v1.0 dual-detector baseline is preserved conceptually: both frozen detectors,
+their inputs, thresholds, and outputs remain intact. v1.1 adds evidence extraction,
+optional cloud context, and deterministic email guidance around those modules.
 
-## Known research limitation
+## Cloud configuration
 
-The email model's frozen external validation on the 2,000-email PhishNChips
-benchmark showed very low phishing recall. It must not be treated as a
-standalone guarantee of email safety. Preserve the explanatory warning shown to
-users.
+The backend automatically loads the ignored local `backend/.env` file, while
+preserving any values already set in the operating-system environment. It reads
+`BANTAI_LLM_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`,
+`GEMINI_FALLBACK_MODEL`, timeout, retry,
+character-limit, and cache-TTL variables. The extension stores separate Boolean
+preferences for email and URL cloud review. Both default OFF.
 
-## Out of scope for v1.0.0
+## Known limitations
 
-- embedded-email-link scoring
-- redirect analysis
-- TLS analysis
-- sender-domain authentication
-- risk fusion
-- model retraining
-- threshold retuning
-- cloud deployment
-- mobile application development
-
-## Local development and model storage
-
-The large model files are stored inside the local project folder but remain
-ignored by Git:
-
-```text
-models/email_text_xlmr_v1/checkpoint-15666/
-models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib
-```
-
-After the models are copied, start the backend from the project root:
-
-```powershell
-.\START_BANTAI.ps1
-```
-
-The backend startup script resolves the model paths relative to this project.
-
-## Definition of a safe change
-
-A safe change:
-
-- preserves the frozen thresholds;
-- preserves current detector scopes;
-- does not increase browser permissions unnecessarily;
-- does not expose email content;
-- passes static verification;
-- does not claim browser testing unless actually performed.
+- The frozen XLM-R model has known low phishing recall on prior external research.
+- Rules and LLM context can still produce false positives or false negatives.
+- Redaction is best-effort and cannot guarantee removal of every identifier.
+- No sender authentication, embedded-link scanning, redirects, TLS analysis,
+  crawling, or overall numeric risk score is included.

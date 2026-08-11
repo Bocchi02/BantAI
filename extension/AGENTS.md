@@ -1,45 +1,34 @@
 # Extension-Specific Codex Instructions
 
-These instructions apply to all files under `extension/`.
+These instructions apply under `extension/`.
 
-## Browser platform
+## Browser platform and scope
 
-- Chromium Manifest V3
-- Minimum Chrome/Chromium version: 127
-- Use service workers rather than persistent background pages.
-- Keep scripts compatible with standard browser JavaScript; do not introduce a
-  build step unless explicitly requested.
-
-## Current URL detector
-
+- Chromium Manifest V3; minimum Chrome/Chromium version 127.
+- Use a service worker and standard browser JavaScript without a build step.
 - Read the URL only from Chrome Tabs API data such as `tab.url`.
-- Scan when the active tab changes and when its address-bar URL changes.
-- Never inspect page anchors to choose a URL for this detector.
-- Never replace the address-bar URL with an embedded or redirected URL.
+- Never choose URLs from anchors, email content, redirects, HTML, or the DOM.
+- Run email extraction only on Gmail, Outlook, and Yahoo Mail.
+- Preserve the working provider-specific sender, subject, and visible-body
+  extraction. Never extract or score embedded email links.
 
-## Email detector
+## Popup and settings
 
-- Provider scripts are limited to:
-  - Gmail
-  - Outlook
-  - Yahoo Mail
-- Preserve provider-specific sender, subject, and message-body extraction.
-- Do not run email extraction on other websites.
-- Do not extract or score embedded email links.
-
-## Popup behavior
-
-- Roboto is the intended font family.
-- Keep the layout easy to understand for people with limited digital literacy.
-- Put technical scores inside `More details`.
-- Keep the main SAFE/SUSPICIOUS signal large and readable.
-- Automatic email-result popup duration is approximately 5 seconds.
-- Manual toolbar popup opening must not force auto-close.
+- Use Roboto, large plain language, and a simple layout.
+- Primary email outcomes are NO STRONG WARNING SIGNS, NEEDS CAUTION, and
+  SUSPICIOUS SIGNS FOUND; SAFE may remain only as a technical detector badge.
+- Keep scores and thresholds under `More details`.
+- Automatic email-result popups last approximately five seconds.
+- Manual toolbar popups must not be forced to auto-close.
+- Open an automatic popup only after local and enabled cloud assessment outputs
+  are complete; never reopen it for focus changes or the same result fingerprint.
+- Cloud AI Review defaults OFF. Store only its Boolean preference in
+  `chrome.storage.local`; never store an API key or raw email body.
+- Cloud URL Review uses a separate Boolean preference that defaults OFF. Run it
+  only after a frozen RF warning and never send page content or browsing paths.
 
 ## Security
 
-- No inline JavaScript.
-- Preserve Manifest V3 CSP requirements.
-- Do not add `eval`, remote JavaScript, or unnecessary permissions.
-- Keep host permissions as narrow as practical.
-- Do not persist email bodies in extension storage.
+- No inline JavaScript, `eval`, remote JavaScript, or unnecessary permissions.
+- Preserve Manifest V3 CSP and narrow host permissions.
+- Prevent stale results from an older email or tab URL overwriting a newer one.

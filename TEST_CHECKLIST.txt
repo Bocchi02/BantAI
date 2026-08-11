@@ -1,53 +1,62 @@
-BantAI v1.0.0 Functional Test Checklist
+BantAI v1.1.0 Test Checklist
 
-BACKEND
--------
-[ ] /health returns version 1.0.0
-[ ] Email model loaded: true
-[ ] URL model loaded: true
-[ ] Email threshold is 0.05
-[ ] URL threshold is 0.6800401751682739
-[ ] embedded_email_link_scanning is false
-[ ] overall_risk_fusion is false
+AUTOMATED / STATIC
+------------------
+[ ] python scripts\verify_project.py passes
+[ ] python -m unittest discover -s tests -v passes
+[ ] Python syntax checks pass
+[ ] JavaScript syntax checks pass for worker, popup, Gmail, Outlook, and Yahoo
+[ ] Email threshold remains 0.05
+[ ] Email max length remains 256
+[ ] URL threshold remains 0.6800401751682739
+[ ] URL scope remains CURRENT_ADDRESS_BAR_URL_ONLY
+[ ] Email providers remain Gmail, Outlook, and Yahoo only
+[ ] No embedded-link scanning, navigation, redirect, TLS, or numeric overall score
+[ ] Protective OTP advice differs from an OTP request
+[ ] Tagalog/Taglish style alone produces no marker
+[ ] Redaction removes sensitive values but preserves intent
+[ ] Prompt-injection content remains untrusted evidence
+[ ] Malformed LLM output becomes UNAVAILABLE
+[ ] Cloud failure continues local analysis
+[ ] LLM alone cannot produce a red result
+[ ] Each two-source suspicious combination produces SUSPICIOUS SIGNS FOUND
+[ ] Disagreement produces NEEDS CAUTION
+[ ] Consistently clean evidence produces NO STRONG WARNING SIGNS
+[ ] SAFE webmail URL cannot lower email guidance
+[ ] Duplicate cloud review uses the TTL cache
+[ ] Raw bodies are not logged and no API key exists in extension source
 
-CURRENT URL DETECTOR
+MANUAL CHROME / EDGE
 --------------------
-[ ] Open a normal HTTP/HTTPS website
-[ ] Current address-bar URL is displayed
-[ ] Website signal appears
-[ ] Switch to another tab
-[ ] New active tab URL is scanned
-[ ] Change the address-bar URL
-[ ] Updated URL is scanned
-[ ] No page link is opened automatically
+[ ] /health reports version 1.1.0 and every component/disabled scope
+[ ] Ordinary browsing scans only the address bar; Cloud URL Review runs only after
+    an RF warning and separate opt-in consent
+[ ] Gmail, Outlook, and Yahoo extraction still shows correct sender/subject/body result
+[ ] Opening a new supported email runs current URL and hybrid email checks
+[ ] Automatic popup waits for complete local and cloud assessment outputs
+[ ] Cloud OFF, CHECKING, and UNAVAILABLE states do not trigger an automatic popup
+[ ] Clicking/focusing the same tab does not reopen or restart the five-second popup
+[ ] A completed eligible result popup closes after approximately five seconds
+[ ] Manually clicking the toolbar icon does not auto-close
+[ ] Cloud AI Review defaults OFF after a clean extension install
+[ ] Cloud URL Review separately defaults OFF after a clean extension install
+[ ] URL cloud payload contains origin only, without path, query, fragment, or page content
+[ ] HIGH-confidence clean URL AI with no strong/critical indicator produces
+    NO STRONG WARNING SIGNS; lower-confidence disagreement produces NEEDS CAUTION
+[ ] OFF text says the email uses local detectors only
+[ ] ON consent persists and shows the limited-cleaned-email explanation
+[ ] No API key appears in extension storage or developer tools source
+[ ] AI Review moves through CHECKING to a structured outcome or UNAVAILABLE
+[ ] A slow/failing cloud request does not delay local guidance indefinitely
+[ ] Opening Email B before Email A's cloud response prevents stale overwrite
+[ ] Reopening the same email during cache TTL does not incur another LLM call
+[ ] The popup separates website, email model, AI review, indicators, and guidance
+[ ] Probabilities and thresholds appear only under More details
+[ ] No email link or webpage is opened automatically
 
-EMAIL DETECTOR
---------------
-[ ] Non-webmail tab shows email detector OFF
-[ ] Gmail enables email detector
-[ ] Outlook enables email detector
-[ ] Yahoo enables email detector
-[ ] Opening Email A analyzes Email A
-[ ] Opening Email B analyzes Email B
-[ ] Sender is correct
-[ ] Subject is correct
-[ ] Email message signal appears
+Do not mark browser items complete unless they were actually tested in a supported
+Chromium browser. Do not make a real Gemini call as part of automated testing.
 
-FIVE-SECOND POPUP
------------------
-[ ] Open a new supported email
-[ ] URL and email analyses both run
-[ ] Popup opens only after latest results are available
-[ ] Popup displays Current website and Opened email cards
-[ ] Countdown starts at approximately five seconds
-[ ] Popup closes automatically
-[ ] Manually clicking the toolbar icon does not force auto-close
-[ ] No email link or browser page is opened
-
-DIGITAL-LITERACY UI
--------------------
-[ ] SAFE and SUSPICIOUS labels are large and clear
-[ ] Explanations use plain language
-[ ] Main screen does not require reading probabilities
-[ ] Technical scores remain under More details
-[ ] Warning guidance tells users what not to share
+[ ] A synthetic unit test makes the primary provider return 429 and confirms the
+    same review uses `gemini-3.5-flash-lite`, then subsequent reviews skip the
+    exhausted primary. No real Gemini request is made by this test.

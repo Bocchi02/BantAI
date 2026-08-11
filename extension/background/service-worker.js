@@ -1,16 +1,20 @@
 const VERSION =
-  "1.0.0";
+  "1.1.0";
 
 const API_BASE =
   "http://127.0.0.1:8000";
 
 const STORAGE_KEYS = {
   tabStates:
-    "bantai_v100_tab_states",
+    "bantai_v110_tab_states",
   server:
-    "bantai_v100_server",
+    "bantai_v110_server",
   autoPopup:
-    "bantai_v100_auto_popup"
+    "bantai_v110_auto_popup",
+  cloudReviewEnabled:
+    "bantai_cloud_ai_review_enabled",
+  cloudUrlReviewEnabled:
+    "bantai_cloud_url_review_enabled"
 };
 
 const AUTO_POPUP_DURATION_MS =
@@ -78,6 +82,16 @@ const tabUpdateQueues =
 
 const popupFingerprints =
   new Map();
+
+const automaticPopupStates =
+  new Map();
+
+const COMPLETE_CLOUD_STATUSES =
+  new Set([
+    "NO_STRONG_WARNING_SIGNS",
+    "NEEDS_CAUTION",
+    "SUSPICIOUS_SIGNS_FOUND"
+  ]);
 
 
 function nowIso() {
@@ -210,6 +224,62 @@ function buildEmailFingerprint(
   ].join(
     ":"
   );
+}
+
+
+function cloudReviewIsComplete(
+  review
+) {
+  return COMPLETE_CLOUD_STATUSES
+    .has(
+      String(
+        review?.status ||
+        review?.assessment ||
+        ""
+      ).toUpperCase()
+    );
+}
+
+
+function shouldAutomaticallyOpenForUrl(
+  reason
+) {
+  return (
+    reason === "address_bar_changed" ||
+    reason === "page_loaded"
+  );
+}
+
+
+async function getCloudReviewEnabled() {
+  const stored =
+    await chrome.storage
+      .local
+      .get(
+        STORAGE_KEYS
+          .cloudReviewEnabled
+      );
+
+  return stored[
+    STORAGE_KEYS
+      .cloudReviewEnabled
+  ] === true;
+}
+
+
+async function getCloudUrlReviewEnabled() {
+  const stored =
+    await chrome.storage
+      .local
+      .get(
+        STORAGE_KEYS
+          .cloudUrlReviewEnabled
+      );
+
+  return stored[
+    STORAGE_KEYS
+      .cloudUrlReviewEnabled
+  ] === true;
 }
 
 
@@ -403,13 +473,16 @@ async function updateBadge(
 
   const signal =
     urlDetector?.result
-      ?.signal ||
+      ?.final_result ||
+    urlDetector?.signal ||
     "";
 
   try {
     if (
       signal ===
-      "SUSPICIOUS"
+        "SUSPICIOUS" ||
+      signal ===
+        "SUSPICIOUS_SIGNS_FOUND"
     ) {
       await chrome.action
         .setBadgeBackgroundColor({
@@ -430,7 +503,9 @@ async function updateBadge(
 
     if (
       signal ===
-      "SAFE"
+        "SAFE" ||
+      signal ===
+        "NO_STRONG_WARNING_SIGNS"
     ) {
       await chrome.action
         .setBadgeBackgroundColor({
@@ -449,6 +524,27 @@ async function updateBadge(
       return;
     }
 
+    if (
+      signal ===
+      "NEEDS_CAUTION"
+    ) {
+      await chrome.action
+        .setBadgeBackgroundColor({
+          tabId,
+          color:
+            "#C79A16"
+        });
+
+      await chrome.action
+        .setBadgeText({
+          tabId,
+          text:
+            "?"
+        });
+
+      return;
+    }
+
     await chrome.action
       .setBadgeText({
         tabId,
@@ -457,7 +553,7 @@ async function updateBadge(
       });
   } catch (error) {
     console.debug(
-      "[BantAI v1.0.0] Badge update failed:",
+      "[BantAI v1.1.0] Badge update failed:",
       error
     );
   }
@@ -499,6 +595,63 @@ function defaultEmailState(
     message:
       "Open an email to check its message."
   };
+}
+
+
+async function fetchUrlAnalysis(
+  currentUrl,
+  cloudAiReview
+) {
+  const controller =
+    new AbortController();
+
+  const timeoutId =
+    setTimeout(
+      () => {
+        controller.abort();
+      },
+      cloudAiReview
+        ? 15000
+        : 30000
+    );
+
+  try {
+    const response =
+      await fetch(
+        `${API_BASE}/analyze-url`,
+        {
+          method:
+            "POST",
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+          body:
+            JSON.stringify({
+              url:
+                currentUrl,
+              cloud_ai_review:
+                cloudAiReview
+            }),
+          signal:
+            controller.signal
+        }
+      );
+
+    if (!response.ok) {
+      const detail =
+        await response.text();
+      throw new Error(
+        `URL detector HTTP ${response.status}: ${detail}`
+      );
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(
+      timeoutId
+    );
+  }
 }
 
 
@@ -592,13 +745,21 @@ async function scanCurrentTabUrl(
     !force &&
     existing
       ?.url_detector
-      ?.state ===
-        "complete" &&
-    existing
-      ?.url_detector
-      ?.result
-      ?.current_url ===
-        currentUrl
+      ?.state &&
+    [
+      "analyzing",
+      "complete"
+    ].includes(
+      existing.url_detector.state
+    ) &&
+    (
+      existing
+        ?.url_detector
+        ?.result
+        ?.current_url ||
+      existing
+        ?.current_url
+    ) === currentUrl
   ) {
     return existing
       .url_detector;
@@ -652,38 +813,15 @@ async function scanCurrentTabUrl(
     })
   );
 
+  const cloudUrlReviewEnabled =
+    await getCloudUrlReviewEnabled();
+
   try {
-    const response =
-      await fetch(
-        `${API_BASE}/analyze-url`,
-        {
-          method:
-            "POST",
-          headers: {
-            "Content-Type":
-              "application/json"
-          },
-          body:
-            JSON.stringify({
-              url:
-                currentUrl
-            })
-        }
-      );
-
-    if (!response.ok) {
-      const text =
-        await response.text();
-
-      throw new Error(
-        `URL detector HTTP ${
-          response.status
-        }: ${text}`
-      );
-    }
-
     const result =
-      await response.json();
+      await fetchUrlAnalysis(
+        currentUrl,
+        false
+      );
 
     if (
       urlSequences.get(
@@ -693,7 +831,16 @@ async function scanCurrentTabUrl(
       return null;
     }
 
-    const state =
+    const shouldRunCloudReview =
+      cloudUrlReviewEnabled &&
+      (
+        result.signal ===
+          "SUSPICIOUS" ||
+        result.final_result ===
+          "SUSPICIOUS_SIGNS_FOUND"
+      );
+
+    let state =
       await patchTabState(
         tabId,
         (current) => ({
@@ -709,8 +856,19 @@ async function scanCurrentTabUrl(
             state:
               "complete",
             signal:
+              result.final_result ||
               result.signal,
             result,
+            cloud_review:
+              shouldRunCloudReview
+                ? {
+                    enabled: true,
+                    status: "CHECKING",
+                    provider: "gemini",
+                    reasoning_summary:
+                      "Only the website origin is being reviewed. Page content is not shared."
+                  }
+                : result.llm_review,
             reason,
             completed_at:
               nowIso()
@@ -725,12 +883,94 @@ async function scanCurrentTabUrl(
 
     await checkServer();
 
-    if (reason !== "new_email_opened" && tab) {
-      void openFiveSecondPopup(
-        tab,
-        currentUrl,
-        "url_scanned"
+    if (!shouldRunCloudReview) {
+      return state
+        ?.url_detector ||
+        null;
+    }
+
+    try {
+      const cloudResult =
+        await fetchUrlAnalysis(
+          currentUrl,
+          true
+        );
+
+      if (
+        urlSequences.get(
+          tabId
+        ) !== sequence
+      ) {
+        return null;
+      }
+
+      state =
+        await patchTabState(
+          tabId,
+          (current) => ({
+            ...current,
+            url_detector: {
+              state: "complete",
+              signal:
+                cloudResult.final_result ||
+                cloudResult.signal,
+              result:
+                cloudResult,
+              cloud_review:
+                cloudResult.llm_review,
+              reason,
+              completed_at:
+                nowIso()
+            }
+          })
+        );
+
+      await updateBadge(
+        tabId,
+        state?.url_detector
       );
+
+      if (
+        tab &&
+        shouldAutomaticallyOpenForUrl(
+          reason
+        ) &&
+        cloudReviewIsComplete(
+          cloudResult.llm_review
+        )
+      ) {
+        await openFiveSecondPopup(
+          tab,
+          currentUrl,
+          "url_review_complete"
+        );
+      }
+    } catch {
+      if (
+        urlSequences.get(
+          tabId
+        ) !== sequence
+      ) {
+        return null;
+      }
+
+      state =
+        await patchTabState(
+          tabId,
+          (current) => ({
+            ...current,
+            url_detector: {
+              ...current.url_detector,
+              cloud_review: {
+                enabled: true,
+                status: "UNAVAILABLE",
+                provider: "gemini",
+                reasoning_summary:
+                  "Cloud URL Review could not be completed. The local URL warning still applies."
+              }
+            }
+          })
+        );
     }
 
     return state
@@ -789,6 +1029,115 @@ async function scanCurrentTabUrl(
 }
 
 
+async function fetchHybridEmail(
+  payload,
+  currentUrl,
+  cloudAiReview
+) {
+  const controller =
+    new AbortController();
+
+  const timeoutId =
+    setTimeout(
+      () => {
+        controller.abort();
+      },
+      cloudAiReview
+        ? 15000
+        : 30000
+    );
+
+  try {
+    const response =
+      await fetch(
+        `${API_BASE}/analyze-hybrid-email`,
+        {
+          method:
+            "POST",
+          headers: {
+            "Content-Type":
+              "application/json"
+          },
+          body:
+            JSON.stringify({
+              provider:
+                payload.provider,
+              sender:
+                payload.sender ||
+                null,
+              subject:
+                payload.subject ||
+                "",
+              body:
+                payload.body ||
+                "",
+              current_url:
+                currentUrl,
+              cloud_ai_review:
+                cloudAiReview
+            }),
+          signal:
+            controller.signal
+        }
+      );
+
+    if (!response.ok) {
+      throw new Error(
+        `Hybrid detector HTTP ${
+          response.status
+        }`
+      );
+    }
+
+    return response.json();
+  } finally {
+    clearTimeout(
+      timeoutId
+    );
+  }
+}
+
+
+async function emailRequestIsCurrent(
+  tabId,
+  sequence,
+  fingerprint,
+  currentUrl
+) {
+  if (
+    emailSequences.get(
+      tabId
+    ) !== sequence
+  ) {
+    return false;
+  }
+
+  const states =
+    await getTabStates();
+
+  if (
+    states[String(tabId)]
+      ?.email_detector
+      ?.fingerprint !==
+        fingerprint
+  ) {
+    return false;
+  }
+
+  try {
+    const currentTab =
+      await chrome.tabs.get(
+        tabId
+      );
+
+    return currentTab.url ===
+      currentUrl;
+  } catch {
+    return false;
+  }
+}
+
+
 async function analyzeOpenedEmail(
   payload,
   tab
@@ -815,7 +1164,7 @@ async function analyzeOpenedEmail(
       payload?.provider
   ) {
     console.warn(
-      "[BantAI v1.0.0] Ignoring email extraction outside a matching supported provider."
+      "[BantAI v1.1.0] Ignoring email extraction outside a matching supported provider."
     );
 
     return null;
@@ -833,10 +1182,7 @@ async function analyzeOpenedEmail(
 
   if (
     priorPopup?.fingerprint ===
-      fingerprint &&
-    Date.now() -
-      priorPopup.timestamp <
-      3000
+      fingerprint
   ) {
     return null;
   }
@@ -879,6 +1225,18 @@ async function analyzeOpenedEmail(
         provider.id,
       provider_label:
         provider.label,
+      url_detector: {
+        state:
+          "analyzing",
+        signal:
+          "ANALYZING",
+        message:
+          "Checking the current website address...",
+        reason:
+          "new_email_opened",
+        requested_at:
+          nowIso()
+      },
       email_detector: {
         state:
           "analyzing",
@@ -899,125 +1257,70 @@ async function analyzeOpenedEmail(
           "Checking the opened email message...",
         requested_at:
           nowIso()
-      }
+      },
+      local_indicators: {
+        markers: [],
+        critical_count: 0,
+        strong_count: 0,
+        contextual_count: 0
+      },
+      llm_review: {
+        enabled: false,
+        status: "OFF",
+        message:
+          "Cloud AI Review is off while local checks run."
+      },
+      fusion: null,
+      local_fusion: null
     })
   );
 
-  const urlPromise =
-    scanCurrentTabUrl(
-      tab,
-      {
-        force:
-          true,
-        reason:
-          "new_email_opened"
-      }
+  const currentUrl =
+    String(
+      tab.url ||
+      ""
     );
 
-  const emailPromise =
-    fetch(
-      `${API_BASE}/analyze-email`,
-      {
-        method:
-          "POST",
-        headers: {
-          "Content-Type":
-            "application/json"
+  const cloudReviewEnabled =
+    await getCloudReviewEnabled();
+
+  let localResult;
+
+  try {
+    localResult =
+      await fetchHybridEmail(
+        payload,
+        currentUrl,
+        false
+      );
+  } catch (error) {
+    if (
+      !await emailRequestIsCurrent(
+        tabId,
+        sequence,
+        fingerprint,
+        currentUrl
+      )
+    ) {
+      return null;
+    }
+
+    await patchTabState(
+      tabId,
+      (current) => ({
+        ...current,
+        url_detector: {
+          state: "error",
+          signal: "UNAVAILABLE",
+          message:
+            "The website check could not be completed. Make sure the BantAI server is running.",
+          reason:
+            "new_email_opened"
         },
-        body:
-          JSON.stringify({
-            provider:
-              payload.provider,
-            sender:
-              payload.sender ||
-              null,
-            subject:
-              payload.subject ||
-              "",
-            body:
-              payload.body ||
-              ""
-          })
-      }
-    ).then(
-      async (response) => {
-        if (!response.ok) {
-          const text =
-            await response.text();
-
-          throw new Error(
-            `Email detector HTTP ${
-              response.status
-            }: ${text}`
-          );
-        }
-
-        return response.json();
-      }
-    );
-
-  const [
-    urlOutcome,
-    emailOutcome
-  ] =
-    await Promise.allSettled([
-      urlPromise,
-      emailPromise
-    ]);
-
-  if (
-    emailSequences.get(
-      tabId
-    ) !== sequence
-  ) {
-    return null;
-  }
-
-  if (
-    emailOutcome.status ===
-      "fulfilled"
-  ) {
-    const result =
-      emailOutcome.value;
-
-    await patchTabState(
-      tabId,
-      (current) => ({
-        ...current,
         email_detector: {
-          state:
-            "complete",
-          signal:
-            result.signal,
-          provider:
-            provider.id,
-          provider_label:
-            provider.label,
-          sender:
-            payload?.sender ||
-            null,
-          subject:
-            payload?.subject ||
-            "",
-          fingerprint,
-          result,
-          completed_at:
-            nowIso()
-        }
-      })
-    );
-  } else {
-    await patchTabState(
-      tabId,
-      (current) => ({
-        ...current,
-        email_detector: {
-          state:
-            "error",
-          signal:
-            "UNAVAILABLE",
-          provider:
-            provider.id,
+          state: "error",
+          signal: "UNAVAILABLE",
+          provider: provider.id,
           provider_label:
             provider.label,
           sender:
@@ -1028,32 +1331,245 @@ async function analyzeOpenedEmail(
             "",
           fingerprint,
           message:
-            "The email check could not be completed. Make sure the BantAI server is running.",
-          error:
-            String(
-              emailOutcome
-                .reason?.message ||
-              emailOutcome.reason
-            )
+            "The email check could not be completed. Make sure the BantAI server is running."
+        },
+        llm_review: {
+          enabled:
+            cloudReviewEnabled,
+          status:
+            "UNAVAILABLE",
+          reasoning_summary:
+            "Cloud AI Review could not run because the local BantAI server is unavailable."
         }
       })
     );
+
+    await setServerState(
+      "unavailable",
+      String(
+        error?.message ||
+        error
+      )
+    );
+
+    await updateBadge(
+      tabId,
+      {
+        signal:
+          "UNAVAILABLE"
+      }
+    );
+
+    return null;
   }
 
   if (
-    urlOutcome.status ===
-      "rejected"
+    !await emailRequestIsCurrent(
+      tabId,
+      sequence,
+      fingerprint,
+      currentUrl
+    )
   ) {
-    console.warn(
-      "[BantAI v1.0.0] Current URL analysis failed while opening email:",
-      urlOutcome.reason
-    );
+    return null;
   }
 
-  await openFiveSecondPopup(
-    tab,
-    fingerprint
+  const localState =
+    await patchTabState(
+      tabId,
+      (current) => ({
+        ...current,
+        current_url:
+          localResult.url_model
+            ?.current_url ||
+          currentUrl,
+        hostname:
+          localResult.url_model
+            ?.hostname ||
+          hostnameForUrl(
+            currentUrl
+          ),
+        url_detector: {
+          state: "complete",
+          signal:
+            localResult.url_model
+              ?.signal ||
+            "UNAVAILABLE",
+          result:
+            localResult.url_model,
+          reason:
+            "new_email_opened",
+          completed_at:
+            nowIso()
+        },
+        email_detector: {
+          state: "complete",
+          signal:
+            localResult.email_model
+              ?.signal ||
+            "UNAVAILABLE",
+          provider: provider.id,
+          provider_label:
+            provider.label,
+          sender:
+            payload?.sender ||
+            null,
+          subject:
+            payload?.subject ||
+            "",
+          fingerprint,
+          result:
+            localResult.email_model,
+          completed_at:
+            nowIso()
+        },
+        local_indicators:
+          localResult.local_indicators,
+        llm_review:
+          cloudReviewEnabled
+            ? {
+                enabled: true,
+                status: "CHECKING",
+                provider:
+                  localResult.llm_review
+                    ?.provider ||
+                  "gemini",
+                reasoning_summary:
+                  "A limited, cleaned version of this email is being reviewed."
+              }
+            : localResult.llm_review,
+        fusion:
+          localResult.fusion,
+        local_fusion:
+          localResult.fusion,
+        hybrid_analysis_id:
+          localResult.analysis_id
+      })
+    );
+
+  await updateBadge(
+    tabId,
+    localState?.url_detector
   );
+
+  await checkServer();
+
+  if (!cloudReviewEnabled) {
+    return true;
+  }
+
+  try {
+    const cloudResult =
+      await fetchHybridEmail(
+        payload,
+        currentUrl,
+        true
+      );
+
+    if (
+      !await emailRequestIsCurrent(
+        tabId,
+        sequence,
+        fingerprint,
+        currentUrl
+      )
+    ) {
+      return null;
+    }
+
+    const updatedState =
+      await patchTabState(
+        tabId,
+        (current) => ({
+          ...current,
+          url_detector: {
+            state: "complete",
+            signal:
+              cloudResult.url_model
+                ?.signal ||
+              current.url_detector
+                ?.signal ||
+              "UNAVAILABLE",
+            result:
+              cloudResult.url_model ||
+              current.url_detector
+                ?.result,
+            reason:
+              "new_email_opened",
+            completed_at:
+              nowIso()
+          },
+          email_detector: {
+            ...current.email_detector,
+            state: "complete",
+            signal:
+              cloudResult.email_model
+                ?.signal ||
+              current.email_detector
+                ?.signal,
+            result:
+              cloudResult.email_model ||
+              current.email_detector
+                ?.result,
+            fingerprint
+          },
+          local_indicators:
+            cloudResult.local_indicators ||
+            current.local_indicators,
+          llm_review:
+            cloudResult.llm_review,
+          fusion:
+            cloudResult.fusion,
+          hybrid_analysis_id:
+            cloudResult.analysis_id
+        })
+      );
+
+    await updateBadge(
+      tabId,
+      updatedState?.url_detector
+    );
+
+    if (
+      cloudReviewIsComplete(
+        cloudResult.llm_review
+      )
+    ) {
+      await openFiveSecondPopup(
+        tab,
+        fingerprint,
+        "email_review_complete"
+      );
+    }
+  } catch {
+    if (
+      !await emailRequestIsCurrent(
+        tabId,
+        sequence,
+        fingerprint,
+        currentUrl
+      )
+    ) {
+      return null;
+    }
+
+    await patchTabState(
+      tabId,
+      (current) => ({
+        ...current,
+        llm_review: {
+          enabled: true,
+          status: "UNAVAILABLE",
+          provider: "gemini",
+          reasoning_summary:
+            "Cloud AI Review could not be completed. Local BantAI checks are still available."
+        },
+        fusion:
+          current.local_fusion ||
+          current.fusion
+      })
+    );
+  }
 
   return true;
 }
@@ -1075,37 +1591,121 @@ async function openFiveSecondPopup(
       tabId
     )
   ) {
-    return;
+    return false;
+  }
+
+  const createdAt =
+    Date.now();
+
+  const fingerprintHash =
+    compactHash(
+      fingerprint
+    );
+
+  const existingPopup =
+    automaticPopupStates.get(
+      tabId
+    );
+
+  if (
+    existingPopup?.fingerprintHash ===
+      fingerprintHash ||
+    existingPopup?.deadline >
+      createdAt
+  ) {
+    return false;
+  }
+
+  automaticPopupStates.set(
+    tabId,
+    {
+      fingerprintHash,
+      deadline:
+        createdAt +
+        AUTO_POPUP_DURATION_MS
+    }
+  );
+
+  let storedPopup =
+    null;
+
+  try {
+    storedPopup =
+      (
+        await chrome.storage
+          .session
+          .get(
+            STORAGE_KEYS.autoPopup
+          )
+      )[STORAGE_KEYS.autoPopup];
+  } catch {
+    // The in-memory guard still prevents duplicate opening in this worker.
+  }
+
+  if (
+    storedPopup?.deadline >
+      createdAt
+  ) {
+    automaticPopupStates.set(
+      tabId,
+      {
+        fingerprintHash:
+          storedPopup.fingerprint_hash ||
+          "",
+        deadline:
+          storedPopup.deadline
+      }
+    );
+    return false;
+  }
+
+  if (
+    storedPopup?.tab_id ===
+      tabId &&
+    storedPopup?.fingerprint_hash ===
+      fingerprintHash
+  ) {
+    return false;
   }
 
   const token =
     `${tabId}:${
-      Date.now()
+      createdAt
     }:${
       compactHash(
         fingerprint
       )
     }`;
 
-  await chrome.storage
-    .session
-    .set({
-      [STORAGE_KEYS.autoPopup]: {
-        token,
-        tab_id:
-          tabId,
-        created_at:
-          Date.now(),
-        deadline:
-          Date.now() +
-          AUTO_POPUP_DURATION_MS,
-        duration_ms:
-          AUTO_POPUP_DURATION_MS,
-        consumed:
-          false,
-        reason
-      }
-    });
+  try {
+    await chrome.storage
+      .session
+      .set({
+        [STORAGE_KEYS.autoPopup]: {
+          token,
+          fingerprint_hash:
+            fingerprintHash,
+          tab_id:
+            tabId,
+          created_at:
+            createdAt,
+          deadline:
+            createdAt +
+            AUTO_POPUP_DURATION_MS,
+          duration_ms:
+            AUTO_POPUP_DURATION_MS,
+          consumed:
+            false,
+          reason
+        }
+      });
+  } catch (error) {
+    console.warn(
+      "[BantAI v1.1.0] Automatic popup state could not be stored:",
+      error
+    );
+    return false;
+  }
 
   try {
     if (
@@ -1131,6 +1731,8 @@ async function openFiveSecondPopup(
       await chrome.action
         .openPopup();
     }
+
+    return true;
   } catch (error) {
     try {
       await chrome.action
@@ -1151,9 +1753,11 @@ async function openFiveSecondPopup(
     }
 
     console.warn(
-      "[BantAI v1.0.0] Automatic popup could not be opened:",
+      "[BantAI v1.1.0] Automatic popup could not be opened:",
       error
     );
+
+    return false;
   }
 }
 
@@ -1201,7 +1805,7 @@ async function injectProviderScript(
       )
     ) {
       console.debug(
-        `[BantAI v1.0.0] ${
+        `[BantAI v1.1.0] ${
           provider.label
         } injection:`,
         message
@@ -1310,7 +1914,7 @@ chrome.tabs.onActivated
               tab,
               {
                 force:
-                  true,
+                  false,
                 reason:
                   "tab_switched"
               }
@@ -1371,7 +1975,7 @@ chrome.tabs.onUpdated
           tab,
           {
             force:
-              true,
+              false,
             reason:
               "page_loaded"
           }
@@ -1398,6 +2002,10 @@ chrome.tabs.onRemoved
         tabId
       );
 
+      automaticPopupStates.delete(
+        tabId
+      );
+
       void removeTabState(
         tabId
       );
@@ -1420,7 +2028,7 @@ chrome.windows.onFocusChanged
 
       void scanActiveTab(
         "window_focused",
-        true
+        false
       );
     }
   );
@@ -1510,6 +2118,22 @@ chrome.runtime.onMessage
 
       if (
         message?.type ===
+          "BANTAI_GET_CAPABILITIES"
+      ) {
+        sendResponse({
+          version:
+            VERSION,
+          cloud_url_review:
+            true,
+          origin_only_url_payload:
+            true
+        });
+
+        return false;
+      }
+
+      if (
+        message?.type ===
           "BANTAI_REFRESH_ACTIVE_TAB"
       ) {
         void scanActiveTab(
@@ -1542,6 +2166,80 @@ chrome.runtime.onMessage
         return false;
       }
 
+      if (
+        message?.type ===
+          "BANTAI_CLOUD_URL_REVIEW_SETTING_CHANGED"
+      ) {
+        void scanActiveTab(
+          "cloud_url_review_setting_changed",
+          true
+        );
+
+        sendResponse({
+          received:
+            true
+        });
+
+        return false;
+      }
+
+      if (
+        message?.type ===
+          "BANTAI_CLOUD_REVIEW_SETTING_CHANGED"
+      ) {
+        const enabled =
+          message?.enabled ===
+          true;
+
+        void chrome.tabs.query({
+          active: true,
+          lastFocusedWindow: true
+        }).then(
+          (tabs) => {
+            const tabId =
+              tabs[0]?.id;
+
+            if (
+              Number.isInteger(
+                tabId
+              )
+            ) {
+              return patchTabState(
+                tabId,
+                (current) => ({
+                  ...current,
+                  llm_review: {
+                    enabled,
+                    status: "OFF",
+                    provider:
+                      current.llm_review
+                        ?.provider ||
+                      "gemini",
+                    reasoning_summary:
+                      enabled
+                        ? "Open or reopen an email to use Cloud AI Review."
+                        : "Cloud AI Review is off. Local BantAI checks still run."
+                  },
+                  fusion:
+                    current.local_fusion ||
+                    current.fusion
+                })
+              );
+            }
+
+            return null;
+          }
+        ).catch(
+          () => {}
+        );
+
+        sendResponse({
+          received: true
+        });
+
+        return false;
+      }
+
       sendResponse({
         received:
           false
@@ -1553,7 +2251,7 @@ chrome.runtime.onMessage
 
 
 console.log(
-  `[BantAI v${VERSION}] Dual Detector service worker started.`
+  `[BantAI v${VERSION}] Hybrid AI Decision-Support service worker started.`
 );
 
 void checkServer();

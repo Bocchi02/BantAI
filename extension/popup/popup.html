@@ -2,189 +2,140 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1"
-  >
-  <title>BantAI Safety Check</title>
-
-  <link
-    rel="preconnect"
-    href="https://fonts.googleapis.com"
-  >
-  <link
-    rel="preconnect"
-    href="https://fonts.gstatic.com"
-    crossorigin
-  >
-  <link
-    href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap"
-    rel="stylesheet"
-  >
-  <link
-    rel="stylesheet"
-    href="popup.css"
-  >
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BantAI Hybrid AI Decision-Support</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <main class="app">
-    <section
-      id="autoPopupBanner"
-      class="auto-popup-banner hidden"
-      aria-live="polite"
-    >
-      <div class="auto-popup-copy">
-        <span>Latest check result</span>
-        <strong id="countdownText">Closing in 5 seconds</strong>
-      </div>
-      <div class="countdown-track">
-        <div
-          id="countdownBar"
-          class="countdown-bar"
-        ></div>
-      </div>
+    <section id="autoPopupBanner" class="auto-popup-banner hidden" aria-live="polite">
+      <span id="countdownText">Closing in 5 seconds</span>
+      <span id="countdownBar"></span>
     </section>
 
     <header class="header">
-      <div class="brand">
-        <div
-          class="logo-mark"
-          aria-hidden="true"
-        >
-          B
-        </div>
-        <div>
-          <h1>BantAI</h1>
-          <p>Safety at a glance</p>
-        </div>
+      <div class="brand-mark" aria-hidden="true">B</div>
+      <div class="brand-copy">
+        <h1>BantAI v1.1</h1>
+        <p>Hybrid AI Decision-Support</p>
       </div>
-
-      <div
-        id="serverStatus"
-        class="server-status checking"
-        role="status"
-      >
+      <div id="serverStatus" class="server-status checking" role="status">
         <span class="server-dot"></span>
         <span id="serverStatusText">Checking</span>
       </div>
     </header>
 
-    <section
-      id="websiteCard"
-      class="detector-panel neutral"
-      aria-labelledby="websiteTitle"
-    >
-      <div class="panel-heading">
+    <section id="websiteCard" class="card neutral" aria-labelledby="websiteTitle">
+      <div class="card-heading">
         <div>
-          <p class="section-kicker">URL DETECTOR</p>
-          <h2 id="websiteTitle">Current website</h2>
+          <p class="kicker">CURRENT WEBSITE</p>
+          <h2 id="websiteTitle">Address-bar check</h2>
         </div>
-        <span class="scope-label">Address bar only</span>
+        <span class="scope-pill">tab.url only</span>
       </div>
-
-      <div class="result-layout">
-        <div
-          id="websiteProgress"
-          class="risk-ring neutral"
-          role="progressbar"
-          aria-label="Website suspicious risk"
-          aria-valuemin="0"
-          aria-valuemax="100"
-        >
-          <div class="risk-ring-content">
-            <strong id="websiteProgressValue">--</strong>
-            <span id="websiteProgressLabel">WAITING</span>
-          </div>
+      <p id="websiteDomain" class="primary-value">Waiting for a website</p>
+      <span id="websiteStatus" class="result-badge neutral">WAITING</span>
+      <p id="websiteMessage" class="explanation">BantAI checks only the URL shown in the address bar.</p>
+      <div class="module-row">
+        <div>
+          <span class="module-label">Cloud URL review</span>
+          <strong id="websiteAiReviewStatus" class="mini-badge neutral">OFF</strong>
         </div>
-
-        <div class="result-copy">
-          <span class="context-label">Website</span>
-          <strong
-            id="websiteDomain"
-            class="context-value"
-          >
-            Waiting for a website
-          </strong>
-        </div>
+        <p id="websiteAiReviewMessage">Cloud URL Review is off. Only the local URL model is used.</p>
       </div>
     </section>
 
-    <section
-      id="emailCard"
-      class="detector-panel neutral hidden"
-      aria-labelledby="emailTitle"
-    >
-      <div class="panel-heading">
+    <section id="emailCard" class="card neutral hidden" aria-labelledby="emailTitle">
+      <div class="card-heading">
         <div>
-          <p class="section-kicker">EMAIL DETECTOR</p>
-          <h2 id="emailTitle">Opened email</h2>
+          <p class="kicker">OPENED EMAIL</p>
+          <h2 id="emailTitle">Email guidance</h2>
         </div>
-        <span
-          id="emailContext"
-          class="scope-label"
-        >
-          Supported email
-        </span>
+        <span id="emailProvider" class="scope-pill">Supported email</span>
       </div>
-
-      <div class="result-layout">
-        <div
-          id="emailProgress"
-          class="risk-ring neutral"
-          role="progressbar"
-          aria-label="Email suspicious risk"
-          aria-valuemin="0"
-          aria-valuemax="100"
-        >
-          <div class="risk-ring-content">
-            <strong id="emailProgressValue">--</strong>
-            <span id="emailProgressLabel">WAITING</span>
-          </div>
-        </div>
-
-        <div class="result-copy">
-          <span class="context-label">Email status</span>
-          <strong
-            id="emailResultTitle"
-            class="context-value"
-          >
-            Open an email
-          </strong>
-        </div>
+      <div id="emailFinalStatus" class="final-result neutral">WAITING</div>
+      <div id="emailMetadata" class="metadata hidden">
+        <div><span>Sender</span><strong id="emailSender">Not shown</strong></div>
+        <div><span>Subject</span><strong id="emailSubject">No subject</strong></div>
       </div>
-
-      <div
-        id="emailMetadata"
-        class="email-metadata hidden"
-      >
+      <div class="module-row">
         <div>
-          <span>Sender</span>
-          <strong id="emailSender">--</strong>
+          <span class="module-label">XLM-R email detector</span>
+          <strong id="emailModelStatus" class="mini-badge neutral">WAITING</strong>
         </div>
-        <div>
-          <span>Subject</span>
-          <strong id="emailSubject">--</strong>
-        </div>
+        <p id="emailModelMessage">Open an email to run the local detector.</p>
       </div>
     </section>
 
-    <section
-      id="guidanceCard"
-      class="guidance-card"
-      aria-live="polite"
-    >
+    <section id="aiReviewCard" class="card compact hidden" aria-labelledby="aiReviewTitle">
+      <div class="card-heading">
+        <div>
+          <p class="kicker">AI REVIEW</p>
+          <h2 id="aiReviewTitle">Additional context</h2>
+        </div>
+        <span id="aiReviewStatus" class="result-badge neutral">OFF</span>
+      </div>
+      <p id="aiReviewMessage" class="explanation">Cloud AI Review is off. Local BantAI checks still run.</p>
+    </section>
+
+    <section id="indicatorsCard" class="card compact hidden" aria-labelledby="indicatorsTitle">
+      <p class="kicker">WHY BANTAI IS WARNING YOU</p>
+      <h2 id="indicatorsTitle">Detected warning signs</h2>
+      <ul id="indicatorList" class="indicator-list"></ul>
+    </section>
+
+    <section id="guidanceCard" class="guidance neutral" aria-live="polite">
       <strong id="guidanceTitle">Continue carefully</strong>
-      <p id="guidanceMessage">
-        Verify unexpected requests before clicking, paying, or sharing information.
-      </p>
+      <p id="guidanceMessage">Verify unexpected requests before clicking, paying, or sharing information.</p>
     </section>
 
-    <p class="safe-note">
-      SAFE means no strong warning sign was detected by that module. It is not a guarantee that the website or email is legitimate.
-    </p>
+    <details id="moreDetails" class="details">
+      <summary>More details</summary>
+      <dl>
+        <div><dt>Website probability</dt><dd id="websiteScore">--</dd></div>
+        <div><dt>Website threshold</dt><dd id="websiteThreshold">--</dd></div>
+        <div><dt>RF model signal</dt><dd id="websiteModelSignal">--</dd></div>
+        <div><dt>Email probability</dt><dd id="emailScore">--</dd></div>
+        <div><dt>Email threshold</dt><dd id="emailThreshold">--</dd></div>
+        <div><dt>Email text truncated</dt><dd id="emailTruncated">--</dd></div>
+      </dl>
+    </details>
 
+    <section class="settings" aria-labelledby="settingsTitle">
+      <div class="setting-row">
+        <div>
+          <p class="kicker">SETTINGS</p>
+          <h2 id="settingsTitle">Cloud AI Review</h2>
+        </div>
+        <label class="switch">
+          <input id="cloudReviewToggle" type="checkbox" role="switch" aria-describedby="cloudPrivacyText">
+          <span class="switch-track" aria-hidden="true"></span>
+          <strong id="cloudSettingStatus">OFF</strong>
+        </label>
+      </div>
+      <p id="cloudPrivacyText" class="setting-help">Your email is checked only by BantAI's local detectors.</p>
+    </section>
+
+    <section class="settings" aria-labelledby="urlSettingsTitle">
+      <div class="setting-row">
+        <div>
+          <p class="kicker">SETTINGS</p>
+          <h2 id="urlSettingsTitle">Cloud URL Review</h2>
+        </div>
+        <label class="switch">
+          <input id="cloudUrlReviewToggle" type="checkbox" role="switch" aria-describedby="cloudUrlPrivacyText">
+          <span class="switch-track" aria-hidden="true"></span>
+          <strong id="cloudUrlSettingStatus">OFF</strong>
+        </label>
+      </div>
+      <p id="cloudUrlPrivacyText" class="setting-help">Website addresses are checked only by BantAI's local URL model.</p>
+    </section>
+
+    <p class="safe-note">A SAFE detector badge means no strong warning sign was detected by that module. This is not a guarantee that the email or website is legitimate.</p>
   </main>
-
   <script src="popup.js"></script>
 </body>
 </html>

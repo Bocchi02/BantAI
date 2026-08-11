@@ -10,3 +10,5 @@ numpy
 scikit-learn
 tldextract
 pydantic
+python-dotenv>=1.0,<2.0
+google-genai>=1.0,<2.0
