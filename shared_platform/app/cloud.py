@@ -51,7 +51,10 @@ def review(payload: dict[str, Any]) -> dict[str, Any]:
         if not provider.available:
             return unavailable()
         result = provider.review(payload)
-        return {"status": result.assessment, **result.model_dump()}
+        # Successful reviews use the strict provider-neutral schema directly.
+        # `status` is reserved for the UNAVAILABLE transport envelope; adding
+        # it to a successful review would be rejected as an unexpected field.
+        return result.model_dump()
     except LLMProviderError as exc:
         return unavailable(getattr(exc, "reason_code", "PROVIDER_UNAVAILABLE"))
     except Exception:

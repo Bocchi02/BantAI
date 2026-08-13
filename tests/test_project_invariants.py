@@ -203,6 +203,29 @@ class ProjectInvariantTests(unittest.TestCase):
         ]
         self.assertIn("STORAGE_KEYS.autoPopup", auto_close)
 
+    def test_detection_is_hidden_and_blocked_until_pairing_is_authenticated(self) -> None:
+        server = read("backend/server.py")
+        companion = read("backend/companion.py")
+        worker = read("extension/background/service-worker.js")
+        popup = read("extension/popup/popup.js")
+        popup_html = read("extension/popup/popup.html")
+        web_app = read("web/app/BantAIApp.tsx")
+
+        self.assertIn("def require_detection_access", server)
+        self.assertEqual(server.count("Depends(require_detection_access)"), 3)
+        self.assertIn("def access_status", companion)
+        self.assertIn('"detection_enabled": authenticated', companion)
+        self.assertIn("async function checkDetectionAccess", worker)
+        self.assertIn("async function clearDetectionState", worker)
+        self.assertIn('"BANTAI_PAIRING_CHANGED"', worker)
+        self.assertIn("new PairingRequiredError", worker)
+        self.assertIn('id="detectionContent" class="detection-content hidden"', popup_html)
+        self.assertIn("function setDetectionVisibility", popup)
+        initialize = popup[popup.index("async function initialize()") :]
+        self.assertLess(initialize.index("loadPairingState()"), initialize.index("loadStoredState()"))
+        self.assertIn("Detection details remain hidden until pairing is verified.", web_app)
+        self.assertIn("status && !status.extension.connected", web_app)
+
     def test_automatic_email_popup_waits_for_complete_cloud_result(self) -> None:
         worker = read("extension/background/service-worker.js")
         function = worker[worker.index("async function analyzeOpenedEmail") : worker.index("async function openFiveSecondPopup")]

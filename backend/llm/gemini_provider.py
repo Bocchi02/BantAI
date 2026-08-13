@@ -75,10 +75,13 @@ class GeminiProvider(LLMProvider):
         configured_timeout = timeout_seconds
         if configured_timeout is None:
             try:
-                configured_timeout = float(os.getenv("BANTAI_LLM_TIMEOUT_SECONDS", "8"))
+                configured_timeout = float(os.getenv("BANTAI_LLM_TIMEOUT_SECONDS", "12"))
             except ValueError:
-                configured_timeout = 8.0
-        self.timeout_seconds = min(30.0, max(2.0, float(configured_timeout)))
+                configured_timeout = 12.0
+        # Gemini rejects manually configured deadlines below ten seconds.
+        # Keep the provider timeout below the Companion/extension request
+        # windows while guaranteeing a request the API will accept.
+        self.timeout_seconds = min(30.0, max(10.0, float(configured_timeout)))
         configured_retries = max_retries
         if configured_retries is None:
             try:

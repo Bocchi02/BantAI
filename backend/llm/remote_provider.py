@@ -53,4 +53,8 @@ class RemotePlatformProvider(LLMProvider):
                 "The shared BantAI cloud gateway is unavailable.",
                 reason_code=str(result.get("failure_reason") or "PROVIDER_UNAVAILABLE"),
             )
+        # Accept the redundant success envelope used by earlier gateway builds
+        # while retaining strict validation for every actual review field.
+        if result.get("status") == result.get("assessment"):
+            result = {key: value for key, value in result.items() if key != "status"}
         return validate_llm_response(result)

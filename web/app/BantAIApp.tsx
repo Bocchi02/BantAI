@@ -153,12 +153,23 @@ function EmptyState({ icon, title, text }: { icon: string; title: string; text: 
   );
 }
 
-function LoadingPage() {
+function LoadingPage({ error, onRetry }: { error?: string; onRetry?: () => void }) {
   return (
-    <main className="loading-page" aria-busy="true">
+    <main className={cx("loading-page", error && "loading-error")} aria-busy={!error}>
       <Logo />
-      <div className="loading-line"><span /></div>
-      <p>Preparing your privacy-first dashboard…</p>
+      {error ? (
+        <div className="loading-recovery" role="alert">
+          <span className="loading-recovery-icon" aria-hidden="true">!</span>
+          <h1>Dashboard service unavailable</h1>
+          <p>{error}</p>
+          <button className="button primary" onClick={onRetry}>Try again</button>
+        </div>
+      ) : (
+        <>
+          <div className="loading-line"><span /></div>
+          <p>Preparing your privacy-first dashboard…</p>
+        </>
+      )}
     </main>
   );
 }
@@ -381,7 +392,7 @@ function AppShell({ user, page, navigate, children }: { user: User; page: PageNa
       <section className="main-column">
         <header className="topbar">
           <button className="menu-button" onClick={() => setMenuOpen(true)} aria-label="Open navigation">☰</button>
-          <div className="companion-status"><span /><strong>Companion ready</strong><small>Local protection active</small></div>
+          <div className="companion-status"><span /><strong>Account signed in</strong><small>Check device status below</small></div>
           <button className="help-button" title="BantAI help" aria-label="BantAI help">?</button>
         </header>
         <main className="content">{children}</main>
@@ -451,7 +462,7 @@ function ActivityTable({ items, compact = false }: { items: Activity[]; compact?
   );
 }
 
-function DashboardPage({ onViewActivity }: { onViewActivity: () => void }) {
+function DashboardPage({ onViewActivity, onPairDevice }: { onViewActivity: () => void; onPairDevice: () => void }) {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState("");
@@ -463,7 +474,7 @@ function DashboardPage({ onViewActivity }: { onViewActivity: () => void }) {
     <>
       <PageHeader eyebrow="PERSONAL OVERVIEW" title="Good to see you." description="A clear view of your recent BantAI checks—without storing sensitive content." actions={<RangePicker value={days} onChange={setDays} />} />
       {error && <Notice type="error">{error} <button className="text-button" onClick={load}>Try again</button></Notice>}
-      <ConnectionPanel />
+      <ConnectionPanel onPairDevice={onPairDevice} />
       {!data ? <DashboardSkeleton /> : <>
         <div className="latest-grid"><LatestCard type="URL" item={data.last_url} /><LatestCard type="EMAIL" item={data.last_email} /></div>
         <OutcomeChart distribution={data.distribution} />
@@ -509,7 +520,7 @@ function ConnectionItem({
   );
 }
 
-function ConnectionPanel() {
+function ConnectionPanel({ onPairDevice }: { onPairDevice: () => void }) {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -545,7 +556,6 @@ function ConnectionPanel() {
     };
   }, [load]);
 
-  const extensionState = status?.extension.connected ? "connected" : "waiting";
   const localState = status?.local_models.connected ? "connected" : "waiting";
   const cloudState = status?.cloud_ai.connected
     ? "connected"
@@ -556,7 +566,7 @@ function ConnectionPanel() {
   return (
     <section className="connections-section" aria-labelledby="connections-title" aria-live="polite">
       <div className="connections-header">
-        <div><p className="eyebrow">LIVE PROTECTION STATUS</p><h2 id="connections-title">Protection connections</h2><p>Confirms that the extension can reach the local detectors and Cloud AI gateway.</p></div>
+        <div><p className="eyebrow">LIVE PROTECTION STATUS</p><h2 id="connections-title">Protection connections</h2><p>Detection status is shown only after this computer is paired with your account.</p></div>
         <div className="connection-actions">
           {status && <time title={niceDate(status.checked_at)}>Checked {relativeTime(status.checked_at)}</time>}
           <button className="button ghost" onClick={() => void load()} disabled={refreshing}>{refreshing ? "Checking..." : "Refresh status"}</button>
@@ -564,6 +574,16 @@ function ConnectionPanel() {
       </div>
       {error ? (
         <div className="card connection-error" role="status"><span aria-hidden="true">!</span><div><strong>Companion unavailable</strong><p>{error}</p></div></div>
+      ) : status && !status.extension.connected ? (
+        <div className="card connection-locked" role="status">
+          <span className="connection-lock-icon" aria-hidden="true">◇</span>
+          <div>
+            <p className="eyebrow">ACCOUNT CONNECTION REQUIRED</p>
+            <h3>Detection is off</h3>
+            <p>Pair this computer with your BantAI account to enable website and email checks. Detection details remain hidden until pairing is verified.</p>
+          </div>
+          <button className="button primary" onClick={onPairDevice}>Pair this device</button>
+        </div>
       ) : status ? (
         <div className="connection-grid">
           <ConnectionItem
@@ -585,14 +605,14 @@ function ConnectionPanel() {
           <ConnectionItem
             icon="◇"
             title="Browser extension"
-            label={status.extension.connected ? "Paired" : "Not paired"}
-            state={extensionState}
+            label="Paired"
+            state="connected"
             detail={status.extension.device_label || "This computer"}
             message={status.extension.message}
           />
         </div>
       ) : (
-        <div className="connections-loading" aria-busy="true"><span className="card" /><span className="card" /><span className="card" /></div>
+        <div className="connections-loading" aria-busy="true"><span className="card" /></div>
       )}
     </section>
   );
@@ -827,7 +847,7 @@ function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserC
   useEffect(() => { const handler = () => { const next = (window.location.pathname.split("/")[1] || "dashboard") as PageName; if (allowed.includes(next)) setPage(next); }; window.addEventListener("popstate", handler); return () => window.removeEventListener("popstate", handler); }, [allowed]);
   return (
     <AppShell user={user} page={page} navigate={navigate}>
-      {page === "dashboard" && <DashboardPage onViewActivity={() => navigate("activity")} />}
+      {page === "dashboard" && <DashboardPage onViewActivity={() => navigate("activity")} onPairDevice={() => navigate("devices")} />}
       {page === "activity" && <ActivityPage />}
       {page === "devices" && <DevicesPage />}
       {page === "profile" && <ProfilePage user={user} onUserChanged={onUserChanged} onSignOut={logout} />}
@@ -840,13 +860,28 @@ function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserC
 export function BantAIApp() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    api<{ user: User }>("/auth/me")
-      .then((result) => setUser(result.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+  const [startupError, setStartupError] = useState("");
+  const loadSession = useCallback(async () => {
+    setLoading(true);
+    setStartupError("");
+    try {
+      const result = await api<{ user: User }>("/auth/me");
+      setUser(result.user);
+    } catch (reason) {
+      setUser(null);
+      if (!(reason instanceof ApiError) || reason.status !== 401) {
+        setStartupError(reason instanceof Error ? reason.message : "BantAI cannot reach the shared service.");
+      }
+    } finally {
+      setLoading(false);
+    }
   }, []);
+  useEffect(() => {
+    const initial = window.setTimeout(() => void loadSession(), 0);
+    return () => window.clearTimeout(initial);
+  }, [loadSession]);
   if (loading) return <LoadingPage />;
+  if (startupError) return <LoadingPage error={startupError} onRetry={() => void loadSession()} />;
   if (!user) return <AuthScreen onAuthenticated={setUser} />;
   return <Application user={user} onUserChanged={setUser} onSignedOut={() => setUser(null)} />;
 }

@@ -218,6 +218,38 @@ class CompanionManager:
                 "outbox_protection": "WINDOWS_DPAPI" if platform.system() == "Windows" else "FILESYSTEM_ONLY",
             }
 
+    def access_status(self) -> dict[str, Any]:
+        """Return whether this device may run detection for an active account."""
+
+        local = self.status()
+        if not local["paired"]:
+            return {
+                **local,
+                "authenticated": False,
+                "detection_enabled": False,
+                "platform_reachable": False,
+                "access_message": "Pair this device with a BantAI account to enable detection.",
+            }
+
+        platform_status = self.platform_status()
+        authenticated = bool(
+            not platform_status["reachable"]
+            or platform_status["device_authenticated"]
+        )
+        if platform_status["reachable"] and authenticated:
+            message = "This device is paired with an active BantAI account."
+        elif platform_status["reachable"]:
+            message = "This device connection is expired or revoked. Disconnect it, then pair it again."
+        else:
+            message = "This device remains paired. Local detection is available while the shared service reconnects."
+        return {
+            **local,
+            "authenticated": authenticated,
+            "detection_enabled": authenticated,
+            "platform_reachable": platform_status["reachable"],
+            "access_message": message,
+        }
+
     def unpair(self) -> dict[str, Any]:
         """Forget the current account and discard its unsent minimized events."""
 

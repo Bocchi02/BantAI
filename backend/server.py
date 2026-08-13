@@ -13,7 +13,7 @@ import joblib
 import pandas as pd
 import torch
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from transformers import (
@@ -174,6 +174,17 @@ class CompanionActivityRequest(BaseModel):
     outcome: str
     cloud_status: str
     occurred_at: str = Field(min_length=20, max_length=40)
+
+
+def require_detection_access() -> None:
+    """Disable all model inference until this device is paired and authenticated."""
+
+    access = companion_manager.access_status()
+    if not access["detection_enabled"]:
+        raise HTTPException(
+            status_code=403,
+            detail=access["access_message"],
+        )
 
 
 def resolve_required_path(
@@ -511,20 +522,28 @@ def health() -> dict:
 
 @app.get("/companion/status")
 def companion_status() -> dict:
-    """Return pairing state without exposing the stored device credential."""
+    """Return authenticated pairing state without exposing the credential."""
 
-    return companion_manager.status()
+    return companion_manager.access_status()
 
 
 @app.get("/connection-status")
 def connection_status() -> dict:
     """Return privacy-safe readiness for the signed-in web dashboard."""
 
-    companion = companion_manager.status()
-    platform = companion_manager.platform_status()
+    companion = companion_manager.access_status()
     url_ready = runtime.url_model is not None
     email_ready = runtime.email_model is not None
-    paired = bool(companion["paired"] and platform["device_authenticated"])
+    paired = bool(companion["detection_enabled"])
+    platform = (
+        companion_manager.platform_status()
+        if paired
+        else {
+            "reachable": False,
+            "cloud_ai_configured": False,
+            "cloud_ai_available": False,
+        }
+    )
     cloud_connected = bool(
         paired
         and platform["reachable"]
@@ -543,13 +562,17 @@ def connection_status() -> dict:
             ),
         },
         "local_models": {
-            "connected": url_ready and email_ready,
-            "url_model_ready": url_ready,
-            "email_model_ready": email_ready,
+            "connected": paired and url_ready and email_ready,
+            "url_model_ready": paired and url_ready,
+            "email_model_ready": paired and email_ready,
             "message": (
-                "The local URL and email models are loaded and ready."
-                if url_ready and email_ready
-                else "BantAI is still loading one or more local models."
+                "Pair this computer to view detection connection details."
+                if not paired
+                else (
+                    "The local URL and email models are loaded and ready."
+                    if url_ready and email_ready
+                    else "BantAI is still loading one or more local models."
+                )
             ),
         },
         "cloud_ai": {
@@ -557,11 +580,11 @@ def connection_status() -> dict:
             "platform_reachable": platform["reachable"],
             "configured": platform["cloud_ai_configured"],
             "message": (
-                "Cloud AI Review is configured and reachable through the paired extension."
-                if cloud_connected
+                "Pair this computer to view detection connection details."
+                if not paired
                 else (
-                    "Pair the extension before Cloud AI Review can be used."
-                    if not paired
+                    "Cloud AI Review is configured and reachable through the paired extension."
+                    if cloud_connected
                     else (
                         "The shared BantAI service is currently unreachable."
                         if not platform["reachable"]
@@ -644,6 +667,9 @@ def submit_companion_activity(request: CompanionActivityRequest) -> dict:
     "/analyze-url",
     response_model=
         UrlAnalysisResponse,
+    dependencies=[
+        Depends(require_detection_access)
+    ],
 )
 def analyze_url(
     request:
@@ -783,6 +809,9 @@ def analyze_url(
     "/analyze-email",
     response_model=
         EmailAnalysisResponse,
+    dependencies=[
+        Depends(require_detection_access)
+    ],
 )
 def analyze_email(
     request:
@@ -974,6 +1003,9 @@ def analyze_email(
 @app.post(
     "/analyze-hybrid-email",
     response_model=HybridEmailAnalysisResponse,
+    dependencies=[
+        Depends(require_detection_access)
+    ],
 )
 def analyze_hybrid_email(
     request: HybridEmailAnalysisRequest,

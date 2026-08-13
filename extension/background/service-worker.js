@@ -10,7 +10,9 @@ const STORAGE_KEYS = {
   server:
     "bantai_v110_server",
   autoPopup:
-    "bantai_v110_auto_popup"
+    "bantai_v110_auto_popup",
+  access:
+    "bantai_v110_access"
 };
 
 const AUTO_POPUP_DURATION_MS =
@@ -81,6 +83,34 @@ const popupFingerprints =
 
 const automaticPopupStates =
   new Map();
+
+const DETECTION_ACCESS_CACHE_MS =
+  10000;
+
+const detectionAccessCache = {
+  enabled: false,
+  checkedAt: 0,
+  inFlight: null
+};
+
+
+class PairingRequiredError extends Error {
+  constructor(
+    message = "Pair this device with a BantAI account to enable detection."
+  ) {
+    super(message);
+    this.name =
+      "PairingRequiredError";
+  }
+}
+
+
+function isPairingRequiredError(
+  error
+) {
+  return error instanceof
+    PairingRequiredError;
+}
 
 const COMPLETE_CLOUD_STATUSES =
   new Set([
@@ -383,6 +413,189 @@ async function setServerState(
 }
 
 
+async function clearDetectionState(
+  message = "Pair this device with a BantAI account to enable detection."
+) {
+  urlSequences.clear();
+  emailSequences.clear();
+  popupFingerprints.clear();
+  automaticPopupStates.clear();
+
+  await chrome.storage
+    .session
+    .set({
+      [STORAGE_KEYS.tabStates]:
+        {},
+      [STORAGE_KEYS.access]: {
+        enabled: false,
+        message,
+        checked_at:
+          nowIso()
+      }
+    });
+
+  await chrome.storage
+    .session
+    .remove(
+      STORAGE_KEYS.autoPopup
+    );
+
+  const tabs =
+    await chrome.tabs.query({});
+
+  await Promise.all(
+    tabs.map(
+      (tab) =>
+        updateBadge(
+          tab.id,
+          null
+        )
+    )
+  );
+}
+
+
+async function checkDetectionAccess(
+  force = false
+) {
+  const checkedAt =
+    detectionAccessCache
+      .checkedAt;
+
+  if (
+    !force &&
+    Date.now() - checkedAt <
+      DETECTION_ACCESS_CACHE_MS
+  ) {
+    return detectionAccessCache
+      .enabled;
+  }
+
+  if (
+    detectionAccessCache
+      .inFlight
+  ) {
+    return detectionAccessCache
+      .inFlight;
+  }
+
+  const request =
+    (async () => {
+      const controller =
+        new AbortController();
+      const timeoutId =
+        setTimeout(
+          () => controller.abort(),
+          7000
+        );
+
+      try {
+        const response =
+          await fetch(
+            `${API_BASE}/companion/status`,
+            {
+              cache:
+                "no-store",
+              signal:
+                controller.signal
+            }
+          );
+
+        if (!response.ok) {
+          throw new Error(
+            `Companion status HTTP ${response.status}`
+          );
+        }
+
+        const status =
+          await response.json();
+        const enabled =
+          status
+            ?.detection_enabled ===
+          true;
+        const message =
+          status?.access_message ||
+          "Pair this device with a BantAI account to enable detection.";
+
+        detectionAccessCache
+          .enabled = enabled;
+        detectionAccessCache
+          .checkedAt = Date.now();
+
+        await chrome.storage
+          .session
+          .set({
+            [STORAGE_KEYS.access]: {
+              enabled,
+              message,
+              checked_at:
+                nowIso()
+            }
+          });
+
+        if (!enabled) {
+          await clearDetectionState(
+            message
+          );
+        }
+
+        return enabled;
+      } catch {
+        const message =
+          "BantAI cannot verify a paired account. Start the Companion and check the shared service.";
+
+        detectionAccessCache
+          .enabled = false;
+        detectionAccessCache
+          .checkedAt = Date.now();
+
+        await clearDetectionState(
+          message
+        );
+
+        return false;
+      } finally {
+        clearTimeout(
+          timeoutId
+        );
+      }
+    })();
+
+  detectionAccessCache
+    .inFlight = request;
+
+  try {
+    return await request;
+  } finally {
+    if (
+      detectionAccessCache
+        .inFlight === request
+    ) {
+      detectionAccessCache
+        .inFlight = null;
+    }
+  }
+}
+
+
+async function disableDetectionForPairing(
+  error
+) {
+  const message =
+    error?.message ||
+    "Pair this device with a BantAI account to enable detection.";
+
+  detectionAccessCache
+    .enabled = false;
+  detectionAccessCache
+    .checkedAt = Date.now();
+
+  await clearDetectionState(
+    message
+  );
+}
+
+
 async function checkServer() {
   try {
     const response =
@@ -656,6 +869,14 @@ async function fetchUrlAnalysis(
     if (!response.ok) {
       const detail =
         await response.text();
+
+      if (
+        response.status === 401 ||
+        response.status === 403
+      ) {
+        throw new PairingRequiredError();
+      }
+
       throw new Error(
         `URL detector HTTP ${response.status}: ${detail}`
       );
@@ -684,6 +905,12 @@ async function scanCurrentTabUrl(
     !Number.isInteger(
       tabId
     )
+  ) {
+    return null;
+  }
+
+  if (
+    !await checkDetectionAccess()
   ) {
     return null;
   }
@@ -999,7 +1226,15 @@ async function scanCurrentTabUrl(
           "url_review_complete"
         );
       }
-    } catch {
+    } catch (error) {
+      if (
+        isPairingRequiredError(
+          error
+        )
+      ) {
+        throw error;
+      }
+
       if (
         urlSequences.get(
           tabId
@@ -1068,6 +1303,18 @@ async function scanCurrentTabUrl(
       ?.url_detector ||
       null;
   } catch (error) {
+    if (
+      isPairingRequiredError(
+        error
+      )
+    ) {
+      await disableDetectionForPairing(
+        error
+      );
+
+      return null;
+    }
+
     if (
       urlSequences.get(
         tabId
@@ -1173,6 +1420,13 @@ async function fetchHybridEmail(
       );
 
     if (!response.ok) {
+      if (
+        response.status === 401 ||
+        response.status === 403
+      ) {
+        throw new PairingRequiredError();
+      }
+
       throw new Error(
         `Hybrid detector HTTP ${
           response.status
@@ -1240,6 +1494,12 @@ async function analyzeOpenedEmail(
     !Number.isInteger(
       tabId
     )
+  ) {
+    return null;
+  }
+
+  if (
+    !await checkDetectionAccess()
   ) {
     return null;
   }
@@ -1382,6 +1642,18 @@ async function analyzeOpenedEmail(
         false
       );
   } catch (error) {
+    if (
+      isPairingRequiredError(
+        error
+      )
+    ) {
+      await disableDetectionForPairing(
+        error
+      );
+
+      return null;
+    }
+
     if (
       !await emailRequestIsCurrent(
         tabId,
@@ -1622,7 +1894,19 @@ async function analyzeOpenedEmail(
         "email_review_complete"
       );
     }
-  } catch {
+  } catch (error) {
+    if (
+      isPairingRequiredError(
+        error
+      )
+    ) {
+      await disableDetectionForPairing(
+        error
+      );
+
+      return null;
+    }
+
     if (
       !await emailRequestIsCurrent(
         tabId,
@@ -1905,6 +2189,12 @@ async function injectProviderScript(
   tabId,
   url
 ) {
+  if (
+    !await checkDetectionAccess()
+  ) {
+    return;
+  }
+
   const provider =
     providerForUrl(
       url
@@ -1989,6 +2279,14 @@ async function scanActiveTab(
 
 
 async function initializeExistingTabs() {
+  if (
+    !await checkDetectionAccess(
+      true
+    )
+  ) {
+    return;
+  }
+
   const tabs =
     await chrome.tabs.query({});
 
@@ -2229,23 +2527,59 @@ chrome.runtime.onMessage
             ?.status ===
               "NO_OPEN_EMAIL_FOUND"
         ) {
-          void patchTabState(
-            tabId,
-            (current) => ({
-              ...current,
-              email_detector: {
-                state:
-                  "waiting",
-                provider:
-                  "gmail",
-                provider_label:
-                  "Gmail",
-                message:
-                  "Open an email to check its message."
+          void checkDetectionAccess()
+            .then(
+              (enabled) => {
+                if (!enabled) {
+                  return;
+                }
+
+                return patchTabState(
+                  tabId,
+                  (current) => ({
+                    ...current,
+                    email_detector: {
+                      state:
+                        "waiting",
+                      provider:
+                        "gmail",
+                      provider_label:
+                        "Gmail",
+                      message:
+                        "Open an email to check its message."
+                    }
+                  })
+                );
               }
-            })
-          );
+            );
         }
+
+        sendResponse({
+          received:
+            true
+        });
+
+        return false;
+      }
+
+      if (
+        message?.type ===
+          "BANTAI_PAIRING_CHANGED"
+      ) {
+        void checkDetectionAccess(
+          true
+        ).then(
+          (enabled) => {
+            if (enabled) {
+              return scanActiveTab(
+                "account_connected",
+                true
+              );
+            }
+
+            return null;
+          }
+        );
 
         sendResponse({
           received:
@@ -2262,6 +2596,9 @@ chrome.runtime.onMessage
         sendResponse({
           version:
             VERSION,
+          detection_enabled:
+            detectionAccessCache
+              .enabled,
           cloud_url_review:
             true,
           origin_only_url_payload:

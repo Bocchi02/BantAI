@@ -14,6 +14,58 @@ from companion import CompanionManager
 
 
 class CompanionManagerTests(unittest.TestCase):
+    def test_detection_access_requires_an_authenticated_paired_device(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch("companion.platform.system", return_value="Linux"):
+                manager = CompanionManager()
+                manager.platform_url = "https://bantai.example.test"
+                manager.state_path = Path(temporary_directory) / "companion.dat"
+                manager._save(
+                    {
+                        "device_id": "device-1",
+                        "device_token": "synthetic-device-token",
+                        "device_label": "Test computer",
+                        "user_email": "user@example.test",
+                        "outbox": [],
+                    }
+                )
+
+                with patch.object(
+                    manager,
+                    "platform_status",
+                    return_value={
+                        "reachable": True,
+                        "device_authenticated": True,
+                        "cloud_ai_configured": True,
+                        "cloud_ai_available": True,
+                    },
+                ):
+                    authenticated = manager.access_status()
+
+                with patch.object(
+                    manager,
+                    "platform_status",
+                    return_value={
+                        "reachable": False,
+                        "device_authenticated": False,
+                        "cloud_ai_configured": False,
+                        "cloud_ai_available": False,
+                    },
+                ):
+                    temporarily_offline = manager.access_status()
+
+                manager.unpair()
+                with patch.object(manager, "platform_status") as platform_status:
+                    unpaired = manager.access_status()
+
+        self.assertTrue(authenticated["detection_enabled"])
+        self.assertTrue(authenticated["authenticated"])
+        self.assertTrue(temporarily_offline["detection_enabled"])
+        self.assertIn("Local detection is available", temporarily_offline["access_message"])
+        self.assertFalse(unpaired["detection_enabled"])
+        self.assertFalse(unpaired["authenticated"])
+        platform_status.assert_not_called()
+
     def test_platform_status_validates_the_paired_device_credential(self) -> None:
         class Response:
             def __enter__(self):
@@ -61,10 +113,13 @@ class CompanionManagerTests(unittest.TestCase):
             def read() -> bytes:
                 return b'{"status":"ok","cloud_ai":{"configured":true,"available":true}}'
 
-        manager = CompanionManager()
-        manager.platform_url = "https://bantai.example.test"
-        with patch("companion.urllib.request.urlopen", return_value=Response()) as urlopen:
-            status = manager.platform_status()
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch("companion.platform.system", return_value="Linux"):
+                manager = CompanionManager()
+                manager.platform_url = "https://bantai.example.test"
+                manager.state_path = Path(temporary_directory) / "companion.dat"
+                with patch("companion.urllib.request.urlopen", return_value=Response()) as urlopen:
+                    status = manager.platform_status()
 
         self.assertEqual(
             {

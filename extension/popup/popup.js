@@ -1,7 +1,8 @@
 const STORAGE_KEYS = {
   tabStates: "bantai_v110_tab_states",
   server: "bantai_v110_server",
-  autoPopup: "bantai_v110_auto_popup"
+  autoPopup: "bantai_v110_auto_popup",
+  access: "bantai_v110_access"
 };
 
 const SUPPORTED_EMAIL_PROVIDERS = new Set(["gmail", "outlook", "yahoo"]);
@@ -51,6 +52,7 @@ const INDICATOR_LABELS = {
 let activeTabId = null;
 let countdownTimer = null;
 let latestState = {};
+let detectionEnabled = false;
 
 const byId = (id) => document.getElementById(id);
 
@@ -58,6 +60,8 @@ const elements = {
   autoPopupBanner: byId("autoPopupBanner"),
   countdownText: byId("countdownText"),
   countdownBar: byId("countdownBar"),
+  detectionContent: byId("detectionContent"),
+  safeNote: byId("safeNote"),
   serverStatus: byId("serverStatus"),
   serverStatusText: byId("serverStatusText"),
   websiteCard: byId("websiteCard"),
@@ -88,6 +92,25 @@ const elements = {
   pairingButton: byId("pairingButton"),
   unpairButton: byId("unpairButton")
 };
+
+function setDetectionVisibility(enabled) {
+  detectionEnabled = enabled === true;
+  elements.detectionContent.classList.toggle("hidden", !detectionEnabled);
+  elements.safeNote.classList.toggle("hidden", !detectionEnabled);
+  elements.serverStatus.classList.toggle("hidden", !detectionEnabled);
+  elements.pairingCard.classList.toggle("access-required", !detectionEnabled);
+  elements.detectionContent.setAttribute("aria-hidden", String(!detectionEnabled));
+
+  if (!detectionEnabled) {
+    elements.autoPopupBanner.classList.add("hidden");
+    const details = byId("moreDetails");
+    if (details) details.open = false;
+    if (countdownTimer !== null) {
+      window.clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+  }
+}
 
 function percentage(value) {
   const number = Number(value);
@@ -232,6 +255,7 @@ async function loadActiveTab() {
 }
 
 async function loadStoredState() {
+  if (!detectionEnabled) return;
   const stored = await chrome.storage.session.get([STORAGE_KEYS.tabStates, STORAGE_KEYS.server]);
   renderServer(stored[STORAGE_KEYS.server]);
   const states = stored[STORAGE_KEYS.tabStates] || {};
@@ -243,27 +267,37 @@ async function loadPairingState() {
     const response = await fetch("http://127.0.0.1:8000/companion/status", {cache: "no-store"});
     if (!response.ok) throw new Error("Companion unavailable");
     const state = await response.json();
-    if (state.paired) {
+    const enabled = state.detection_enabled === true;
+    setDetectionVisibility(enabled);
+    if (enabled) {
       elements.pairingState.textContent = "Connected";
-      elements.pairingMessage.textContent = `Activity is connected to ${state.user_email || "your BantAI account"}.`;
+      elements.pairingMessage.textContent = `Detection and activity are connected to ${state.user_email || "your BantAI account"}.`;
+      elements.pairingForm.classList.add("hidden");
+      elements.unpairButton.classList.remove("hidden");
+    } else if (state.paired) {
+      elements.pairingState.textContent = "Verification needed";
+      elements.pairingMessage.textContent = state.access_message || "This device connection is expired or unavailable. Disconnect it, then pair it again.";
       elements.pairingForm.classList.add("hidden");
       elements.unpairButton.classList.remove("hidden");
     } else if (!state.platform_configured) {
       elements.pairingState.textContent = "Setup needed";
-      elements.pairingMessage.textContent = "Restart BantAI Companion so it can connect to the local web service.";
+      elements.pairingMessage.textContent = "Detection is off. Restart BantAI Companion so it can connect to the local web service.";
       elements.pairingForm.classList.add("hidden");
       elements.unpairButton.classList.add("hidden");
     } else {
       elements.pairingState.textContent = "Not connected";
-      elements.pairingMessage.textContent = "Generate a pairing code from the BantAI web dashboard, then enter it here.";
+      elements.pairingMessage.textContent = "Detection is off. Generate a pairing code from the BantAI web dashboard, then enter it here.";
       elements.pairingForm.classList.remove("hidden");
       elements.unpairButton.classList.add("hidden");
     }
+    return enabled;
   } catch {
+    setDetectionVisibility(false);
     elements.pairingState.textContent = "Unavailable";
-    elements.pairingMessage.textContent = "Start BantAI Companion before connecting your web account.";
+    elements.pairingMessage.textContent = "Detection is off. Start BantAI Companion before connecting your web account.";
     elements.pairingForm.classList.add("hidden");
     elements.unpairButton.classList.add("hidden");
+    return false;
   }
 }
 
@@ -291,7 +325,11 @@ elements.pairingForm.addEventListener("submit", async (event) => {
       throw new Error(message);
     }
     elements.pairingCode.value = "";
-    await loadPairingState();
+    const enabled = await loadPairingState();
+    await chrome.runtime.sendMessage({type: "BANTAI_PAIRING_CHANGED"});
+    if (enabled) {
+      await loadStoredState();
+    }
   } catch (error) {
     elements.pairingState.textContent = "Try again";
     elements.pairingMessage.textContent = error instanceof Error
@@ -309,6 +347,7 @@ elements.unpairButton.addEventListener("click", async () => {
     const response = await fetch("http://127.0.0.1:8000/companion/unpair", {method: "POST"});
     if (!response.ok) throw new Error("Disconnect failed");
     await loadPairingState();
+    await chrome.runtime.sendMessage({type: "BANTAI_PAIRING_CHANGED"});
   } catch {
     elements.pairingState.textContent = "Try again";
     elements.pairingMessage.textContent = "BantAI could not remove the local device credential.";
@@ -343,8 +382,11 @@ async function configureAutoClose() {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "session") {
-    if (changes[STORAGE_KEYS.server]) renderServer(changes[STORAGE_KEYS.server].newValue);
-    if (changes[STORAGE_KEYS.tabStates] && activeTabId !== null) {
+    if (changes[STORAGE_KEYS.access]) {
+      setDetectionVisibility(changes[STORAGE_KEYS.access].newValue?.enabled === true);
+    }
+    if (detectionEnabled && changes[STORAGE_KEYS.server]) renderServer(changes[STORAGE_KEYS.server].newValue);
+    if (detectionEnabled && changes[STORAGE_KEYS.tabStates] && activeTabId !== null) {
       const states = changes[STORAGE_KEYS.tabStates].newValue || {};
       renderState(states[String(activeTabId)] || {});
     }
@@ -353,12 +395,14 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 async function initialize() {
   await loadActiveTab();
-  await loadStoredState();
-  await loadPairingState();
-  await configureAutoClose();
-  void chrome.runtime.sendMessage({type: "BANTAI_CHECK_SERVER"});
-  /* Manual opening requests a fresh tab.url scan but does not start auto-close. */
-  void chrome.runtime.sendMessage({type: "BANTAI_REFRESH_ACTIVE_TAB"});
+  const enabled = await loadPairingState();
+  if (enabled) {
+    await loadStoredState();
+    await configureAutoClose();
+    void chrome.runtime.sendMessage({type: "BANTAI_CHECK_SERVER"});
+    /* Manual opening requests a fresh tab.url scan but does not start auto-close. */
+    void chrome.runtime.sendMessage({type: "BANTAI_REFRESH_ACTIVE_TAB"});
+  }
 }
 
 void initialize();

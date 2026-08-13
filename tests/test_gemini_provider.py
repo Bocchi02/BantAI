@@ -72,6 +72,18 @@ class GeminiProviderTests(unittest.TestCase):
             provider = GeminiProvider(api_key="synthetic", model="gemini-3.6-flash")
         self.assertEqual(provider.max_retries, 0)
 
+    def test_provider_uses_an_api_accepted_timeout(self) -> None:
+        with patch.dict("os.environ", {"BANTAI_LLM_TIMEOUT_SECONDS": ""}):
+            default_provider = GeminiProvider(api_key="synthetic", model="gemini-3.6-flash")
+        short_provider = GeminiProvider(
+            api_key="synthetic",
+            model="gemini-3.6-flash",
+            timeout_seconds=2,
+        )
+
+        self.assertEqual(default_provider.timeout_seconds, 12.0)
+        self.assertEqual(short_provider.timeout_seconds, 10.0)
+
     def test_quota_error_is_classified_without_exposing_provider_details(self) -> None:
         reason, retry_after = GeminiProvider._unavailable_details(
             SyntheticQuotaError("RESOURCE_EXHAUSTED; retry in 23.5s")

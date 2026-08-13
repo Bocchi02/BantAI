@@ -17,6 +17,7 @@ body {
 
 .app { padding: 16px; }
 .hidden { display: none !important; }
+.detection-content { display: contents; }
 .auto-popup-banner { display: none !important; }
 
 .header {
@@ -80,10 +81,23 @@ body {
 .pairing-form input { min-width: 0; flex: 1; border: 1px solid #cfd9e2; border-radius: 8px; padding: 8px 9px; color: #162033; font: inherit; font-size: 12px; text-transform: uppercase; }
 .pairing-form button { border: 0; border-radius: 8px; padding: 0 12px; color: #fff; background: #17324d; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
 .pairing-form button:disabled { cursor: wait; opacity: .6; }
+.pairing-form input:focus-visible,
+.pairing-form button:focus-visible { outline: 3px solid rgba(36, 105, 166, .35); outline-offset: 2px; }
 .unpair-button { margin-top: 10px; border: 1px solid #cfd9e2; border-radius: 8px; padding: 7px 10px; color: #17324d; background: #fff; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
 .unpair-button:hover { background: #f4f7fa; }
 .unpair-button:focus-visible { outline: 3px solid rgba(36, 105, 166, .35); outline-offset: 2px; }
 .unpair-button:disabled { cursor: wait; opacity: .6; }
+
+.pairing-card.access-required {
+  margin-top: 4px;
+  padding: 18px;
+  border-color: #bfd9d7;
+  background: linear-gradient(145deg, #ffffff 0%, #f1faf8 100%);
+  box-shadow: 0 8px 22px rgba(22, 50, 77, .08);
+}
+.pairing-card.access-required .kicker { color: #087f73; }
+.pairing-card.access-required h2 { color: #17324d; font-size: 17px; }
+.pairing-card.access-required .scope-pill { color: #79570b; background: #fff1bd; }
 
 .card:first-of-type { margin-top: 0; }
 .card.safe { border-color: #8fd3ad; }

@@ -1,6 +1,8 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_BANTAI_API_URL || "http://localhost:8080/api/v1";
 
+const API_TIMEOUT_MS = 10000;
+
 function cookie(name: string) {
   if (typeof document === "undefined") return "";
   const row = document.cookie
@@ -23,15 +25,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const csrf = cookie("bantai_csrf");
     if (csrf) headers.set("X-CSRF-Token", csrf);
   }
+  const controller = init.signal ? null : new AbortController();
+  const timeout = controller
+    ? window.setTimeout(() => controller.abort(), API_TIMEOUT_MS)
+    : null;
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       ...init,
       headers,
       credentials: "include",
+      signal: init.signal || controller?.signal,
     });
-  } catch {
+  } catch (reason) {
+    if (reason instanceof DOMException && reason.name === "AbortError") {
+      throw new ApiError("The shared service took too long to respond. Check Docker, then try again.", 0);
+    }
     throw new ApiError("BantAI cannot reach the shared service. Make sure Docker is running, then try again.", 0);
+  } finally {
+    if (timeout !== null) window.clearTimeout(timeout);
   }
   if (!response.ok) {
     let detail = "BantAI could not complete that request.";

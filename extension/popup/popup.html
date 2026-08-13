@@ -28,6 +28,7 @@
       </div>
     </header>
 
+    <div id="detectionContent" class="detection-content hidden">
     <section id="websiteCard" class="card neutral" aria-labelledby="websiteTitle">
       <div class="card-heading">
         <div>
@@ -75,6 +76,7 @@
         <div><dt>Email text truncated</dt><dd id="emailTruncated">--</dd></div>
       </dl>
     </details>
+    </div>
 
     <section id="pairingCard" class="pairing-card" aria-labelledby="pairingTitle">
       <div class="card-heading">
@@ -95,7 +97,7 @@
       <button id="unpairButton" class="unpair-button hidden" type="button">Disconnect this computer</button>
     </section>
 
-    <p class="safe-note">A SAFE detector badge means no strong warning sign was detected by that module. This is not a guarantee that the email or website is legitimate.</p>
+    <p id="safeNote" class="safe-note hidden">A SAFE detector badge means no strong warning sign was detected by that module. This is not a guarantee that the email or website is legitimate.</p>
   </main>
   <script src="popup.js"></script>
 </body>
