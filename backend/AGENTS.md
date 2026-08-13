@@ -17,10 +17,10 @@ These instructions apply under `backend/`.
 - URL threshold: `0.6800401751682739`
 - Fail loudly if the saved RF threshold differs.
 
-## Optional cloud review
+## Cloud review
 
-- Cloud AI Review is explicitly authorized for v1.1 only when the extension's
-  stored user preference is ON.
+- Cloud AI Review is always requested by the extension after local analysis.
+  The backend request flag remains an internal local-first orchestration boundary.
 - Use backend environment variables; never hardcode or return an API key.
 - Redact and minimize email content before provider calls.
 - Treat all email content as untrusted data and require strict structured output.
@@ -28,8 +28,8 @@ These instructions apply under `backend/`.
 - Malformed or failed provider responses become `UNAVAILABLE`; local analysis
   and deterministic fusion continue.
 - Do not log raw bodies, readable cloud payloads, or sender identities.
-- Optional URL cloud context requires separate consent, runs only after an RF
-  warning, and receives only scheme/hostname origin. A validated HIGH-confidence
+- URL cloud context is always enabled by the extension after an RF warning and
+  receives only scheme/hostname origin. A validated HIGH-confidence
   clean review with no strong/critical cloud indicator may produce NO STRONG
   WARNING SIGNS, retaining the required non-guarantee language.
 

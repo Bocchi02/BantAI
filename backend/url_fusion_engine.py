@@ -10,6 +10,18 @@ NEEDS_CAUTION = "NEEDS_CAUTION"
 SUSPICIOUS_SIGNS_FOUND = "SUSPICIOUS_SIGNS_FOUND"
 
 
+URL_INDICATOR_PHRASES = {
+    "TYPO": "resembles another domain through possible spelling changes",
+    "HOMOGLYPH": "uses look-alike characters",
+    "PUNYCODE": "uses an encoded hostname that may resemble another domain",
+    "IMPERSON": "appears to imitate a trusted brand or service",
+    "BRAND": "appears to imitate a trusted brand or service",
+    "SUFFIX": "uses a potentially deceptive domain suffix",
+    "SUBDOMAIN": "uses a potentially misleading subdomain",
+    "TLD": "uses an unusual domain ending",
+}
+
+
 def _llm_assessment(llm_review: dict[str, Any] | None) -> str | None:
     review = llm_review or {}
     if review.get("status") in {"OFF", "CHECKING", "UNAVAILABLE", None}:
@@ -39,6 +51,36 @@ def _high_confidence_clean_review(llm_review: dict[str, Any] | None) -> bool:
     )
 
 
+def _url_indicator_phrases(llm_review: dict[str, Any] | None) -> list[str]:
+    phrases: list[str] = []
+    for indicator in (llm_review or {}).get("indicators") or []:
+        if not isinstance(indicator, dict):
+            continue
+        category = str(indicator.get("category", "")).upper()
+        phrase = next(
+            (
+                value for keyword, value in URL_INDICATOR_PHRASES.items()
+                if keyword in category
+            ),
+            None,
+        )
+        if phrase and phrase not in phrases:
+            phrases.append(phrase)
+        if len(phrases) == 2:
+            break
+    return phrases
+
+
+def _specific_url_warning(llm_review: dict[str, Any] | None) -> str:
+    phrases = _url_indicator_phrases(llm_review)
+    if not phrases:
+        return "The address structure contains patterns associated with deceptive domains."
+    warning = f"The hostname {phrases[0]}"
+    if len(phrases) == 2:
+        warning += f" and {phrases[1]}"
+    return f"{warning}."
+
+
 def fuse_url_signals(
     *,
     url_signal: str,
@@ -53,8 +95,9 @@ def fuse_url_signals(
             "final_result": NO_STRONG_WARNING_SIGNS,
             "applied_rule": "URL_LOCAL_CLEAR",
             "message": (
-                "No strong warning signs were found in this web address. This does "
-                "not guarantee that the website or its content is legitimate."
+                "The address structure did not show strong patterns associated with "
+                "deceptive domains. This is not a guarantee that the website or its "
+                "content is legitimate."
             ),
         }
 
@@ -63,8 +106,9 @@ def fuse_url_signals(
             "final_result": NO_STRONG_WARNING_SIGNS,
             "applied_rule": "URL_HIGH_CONFIDENCE_CLOUD_CLEAR",
             "message": (
-                "No strong warning signs were found in this web address. This does "
-                "not guarantee that the website or its content is legitimate."
+                "The hostname did not show typosquatting, deceptive suffixes, or "
+                "domain-level impersonation. Page content was not checked, so this "
+                "is not a guarantee that the website is legitimate."
             ),
         }
 
@@ -76,8 +120,9 @@ def fuse_url_signals(
             "final_result": NEEDS_CAUTION,
             "applied_rule": "URL_MODEL_AI_DISAGREEMENT",
             "message": (
-                "Some warning signs remain in this web address. Verify the address "
-                "before entering or sharing sensitive information."
+                "The address has unusual structural patterns, but the hostname does "
+                "not clearly show typosquatting or domain impersonation. Verify the "
+                "address before entering or sharing sensitive information."
             ),
         }
 
@@ -89,7 +134,7 @@ def fuse_url_signals(
             else "URL_LOCAL_WARNING"
         ),
         "message": (
-            "Warning signs were found in this web address. Avoid entering passwords, "
-            "OTPs, or payment details until the website is independently verified."
+            f"{_specific_url_warning(llm_review)} Avoid entering passwords, OTPs, "
+            "or payment details until the website is independently verified."
         ),
     }

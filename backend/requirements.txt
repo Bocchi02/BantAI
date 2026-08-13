@@ -12,3 +12,4 @@ tldextract
 pydantic
 python-dotenv>=1.0,<2.0
 google-genai>=1.0,<2.0
+keyring>=25.0,<26.0

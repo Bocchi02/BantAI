@@ -92,22 +92,31 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertNotIn("GEMINI_API_KEY", extension_source)
         self.assertNotRegex(extension_source, r"AIza[0-9A-Za-z_-]{20,}")
 
-    def test_cloud_review_defaults_off(self) -> None:
+    def test_cloud_reviews_are_always_on_without_toggles(self) -> None:
         worker = read("extension/background/service-worker.js")
         popup = read("extension/popup/popup.js")
-        self.assertIn("] === true", worker)
-        self.assertIn("] === true", popup)
-        self.assertNotIn("cloudReviewEnabled = true", popup)
-        self.assertNotIn("cloudUrlReviewEnabled = true", popup)
+        popup_html = read("extension/popup/popup.html")
+        for removed in (
+            "bantai_cloud_ai_review_enabled",
+            "bantai_cloud_url_review_enabled",
+            "cloudReviewToggle",
+            "cloudUrlReviewToggle",
+        ):
+            self.assertNotIn(removed, worker)
+            self.assertNotIn(removed, popup)
+            self.assertNotIn(removed, popup_html)
+        self.assertIn("fetchHybridEmail(\n        payload,\n        currentUrl,\n        true", worker)
 
-    def test_url_cloud_review_is_opt_in_origin_only_and_local_first(self) -> None:
+    def test_url_cloud_review_is_always_on_origin_only_and_local_first(self) -> None:
         worker = read("extension/background/service-worker.js")
         server = read("backend/server.py")
         redaction = read("backend/llm/redaction.py")
         popup = read("extension/popup/popup.js")
-        self.assertIn("bantai_cloud_url_review_enabled", worker)
+        popup_html = read("extension/popup/popup.html")
+        self.assertNotIn("bantai_cloud_url_review_enabled", worker)
+        self.assertNotIn("bantai_cloud_url_review_enabled", popup)
+        self.assertNotIn("cloudUrlReviewToggle", popup_html)
         self.assertIn("BANTAI_GET_CAPABILITIES", worker)
-        self.assertIn("RELOAD REQUIRED", popup)
         self.assertIn("result.signal", worker)
         self.assertIn('"SUSPICIOUS"', worker)
         self.assertIn("result.final_result", worker)
@@ -117,11 +126,7 @@ class ProjectInvariantTests(unittest.TestCase):
         )
         self.assertIn("cloud_ai_review: bool = False", server)
         self.assertIn("minimize_url_to_origin", redaction)
-        self.assertIn("Page content and browsing paths are not shared", popup)
-        self.assertIn("NOT NEEDED", popup)
-        self.assertIn("QUOTA REACHED", popup)
-        self.assertIn("conciseCloudReviewMessage", popup)
-        self.assertNotIn("[review.provider_note, review.reasoning_summary]", popup)
+        self.assertIn("Only the website origin is being reviewed", worker)
 
     def test_url_ai_cannot_replace_raw_rf_signal(self) -> None:
         server = read("backend/server.py")
@@ -129,6 +134,55 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn("signal=\n            signal", server)
         self.assertIn("result.signal", popup)
         self.assertIn("fuse_url_signals", server)
+
+    def test_url_cloud_result_is_fused_without_a_standalone_review_row(self) -> None:
+        popup = read("extension/popup/popup.js")
+        popup_html = read("extension/popup/popup.html")
+        for removed in (
+            "websiteAiReviewStatus",
+            "websiteAiReviewMessage",
+            "Cloud URL review",
+            "conciseCloudUrlReviewMessage",
+        ):
+            self.assertNotIn(removed, popup)
+            self.assertNotIn(removed, popup_html)
+        self.assertIn("result.final_result", popup)
+        self.assertIn("result.message", popup)
+        self.assertIn('id="websiteModelSignal"', popup_html)
+
+    def test_email_cloud_result_is_fused_without_a_standalone_ai_card(self) -> None:
+        popup = read("extension/popup/popup.js")
+        popup_html = read("extension/popup/popup.html")
+        for removed in (
+            "aiReviewCard",
+            "aiReviewStatus",
+            "aiReviewMessage",
+            "AI REVIEW",
+            "Additional context",
+        ):
+            self.assertNotIn(removed, popup)
+            self.assertNotIn(removed, popup_html)
+        self.assertIn("state?.fusion?.message", popup)
+        self.assertIn('id="emailDecisionMessage"', popup_html)
+        self.assertIn('id="emailModelSignal"', popup_html)
+
+    def test_popup_shows_each_fused_decision_only_once(self) -> None:
+        popup = read("extension/popup/popup.js")
+        popup_html = read("extension/popup/popup.html")
+        popup_css = read("extension/popup/popup.css")
+        for removed in (
+            "guidanceCard",
+            "guidanceTitle",
+            "guidanceMessage",
+            "renderGuidance",
+        ):
+            self.assertNotIn(removed, popup)
+            self.assertNotIn(removed, popup_html)
+        self.assertNotIn(".guidance", popup_css)
+        self.assertEqual(popup_html.count('id="websiteStatus"'), 1)
+        self.assertEqual(popup_html.count('id="websiteMessage"'), 1)
+        self.assertEqual(popup_html.count('id="emailFinalStatus"'), 1)
+        self.assertEqual(popup_html.count('id="emailDecisionMessage"'), 1)
 
     def test_backend_env_is_auto_loaded_without_overriding_os_values(self) -> None:
         server = read("backend/server.py")
@@ -145,7 +199,7 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertEqual(popup.count("window.close()"), 1)
         auto_close = popup[
             popup.index("async function configureAutoClose()") :
-            popup.index('elements.cloudReviewToggle.addEventListener("change"')
+            popup.index("chrome.storage.onChanged.addListener")
         ]
         self.assertIn("STORAGE_KEYS.autoPopup", auto_close)
 

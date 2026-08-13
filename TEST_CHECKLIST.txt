@@ -29,28 +29,33 @@ AUTOMATED / STATIC
 MANUAL CHROME / EDGE
 --------------------
 [ ] /health reports version 1.1.0 and every component/disabled scope
-[ ] Ordinary browsing scans only the address bar; Cloud URL Review runs only after
-    an RF warning and separate opt-in consent
+[ ] Ordinary browsing scans only the address bar; Cloud URL Review runs automatically
+    only after an RF warning
 [ ] Gmail, Outlook, and Yahoo extraction still shows correct sender/subject/body result
 [ ] Opening a new supported email runs current URL and hybrid email checks
 [ ] Automatic popup waits for complete local and cloud assessment outputs
-[ ] Cloud OFF, CHECKING, and UNAVAILABLE states do not trigger an automatic popup
+[ ] Cloud CHECKING and UNAVAILABLE states do not trigger an automatic popup
 [ ] Clicking/focusing the same tab does not reopen or restart the five-second popup
 [ ] A completed eligible result popup closes after approximately five seconds
 [ ] Manually clicking the toolbar icon does not auto-close
-[ ] Cloud AI Review defaults OFF after a clean extension install
-[ ] Cloud URL Review separately defaults OFF after a clean extension install
+[ ] Cloud AI Review has no toggle or stored preference and is always enabled
+[ ] Cloud URL Review has no toggle or stored preference and is always enabled
 [ ] URL cloud payload contains origin only, without path, query, fragment, or page content
 [ ] HIGH-confidence clean URL AI with no strong/critical indicator produces
     NO STRONG WARNING SIGNS; lower-confidence disagreement produces NEEDS CAUTION
 [ ] OFF text says the email uses local detectors only
-[ ] ON consent persists and shows the limited-cleaned-email explanation
+[ ] Email cloud review still uses the limited, redacted payload
 [ ] No API key appears in extension storage or developer tools source
 [ ] AI Review moves through CHECKING to a structured outcome or UNAVAILABLE
 [ ] A slow/failing cloud request does not delay local guidance indefinitely
 [ ] Opening Email B before Email A's cloud response prevents stale overwrite
 [ ] Reopening the same email during cache TTL does not incur another LLM call
-[ ] The popup separates website, email model, AI review, indicators, and guidance
+[ ] The popup shows one final email decision without a standalone AI Review card
+[ ] The popup shows one final URL decision without a standalone Cloud URL Review row
+[ ] Each URL or email verdict and explanation appears only once in the popup
+[ ] Each explanation names specific observed behavior and remains one or two sentences
+[ ] Raw email-model probability, threshold, and signal remain under More details
+[ ] Raw RF probability, threshold, and signal remain under More details
 [ ] Probabilities and thresholds appear only under More details
 [ ] No email link or webpage is opened automatically
 

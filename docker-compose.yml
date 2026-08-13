@@ -1,0 +1,36 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: bantai
+      MYSQL_USER: bantai
+      MYSQL_PASSWORD: bantai-development
+      MYSQL_ROOT_PASSWORD: bantai-root-development
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    # MySQL is intentionally reachable only by the platform container.
+    # The web interface and Windows companion communicate with the API on 8080.
+    volumes:
+      - bantai_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ubantai", "-pbantai-development"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  platform:
+    build:
+      context: .
+      dockerfile: shared_platform/Dockerfile
+    env_file:
+      - path: ./shared_platform/.env
+        required: false
+    environment:
+      BANTAI_DATABASE_URL: mysql+pymysql://bantai:bantai-development@mysql:3306/bantai
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  bantai_mysql:

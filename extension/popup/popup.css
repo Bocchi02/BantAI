@@ -64,7 +64,8 @@ body {
 
 .card,
 .settings,
-.details {
+.details,
+.pairing-card {
   margin-top: 12px;
   padding: 15px;
   border: 1px solid #d9e0e8;
@@ -72,6 +73,17 @@ body {
   background: #fff;
   box-shadow: 0 4px 14px rgba(22, 32, 51, 0.045);
 }
+
+.pairing-form { margin-top: 12px; }
+.pairing-form label { display: block; margin-bottom: 5px; color: #667487; font-size: 10px; font-weight: 700; }
+.pairing-form div { display: flex; gap: 7px; }
+.pairing-form input { min-width: 0; flex: 1; border: 1px solid #cfd9e2; border-radius: 8px; padding: 8px 9px; color: #162033; font: inherit; font-size: 12px; text-transform: uppercase; }
+.pairing-form button { border: 0; border-radius: 8px; padding: 0 12px; color: #fff; background: #17324d; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.pairing-form button:disabled { cursor: wait; opacity: .6; }
+.unpair-button { margin-top: 10px; border: 1px solid #cfd9e2; border-radius: 8px; padding: 7px 10px; color: #17324d; background: #fff; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.unpair-button:hover { background: #f4f7fa; }
+.unpair-button:focus-visible { outline: 3px solid rgba(36, 105, 166, .35); outline-offset: 2px; }
+.unpair-button:disabled { cursor: wait; opacity: .6; }
 
 .card:first-of-type { margin-top: 0; }
 .card.safe { border-color: #8fd3ad; }
@@ -121,8 +133,7 @@ h2 { margin: 0; font-size: 15px; line-height: 1.25; }
   white-space: nowrap;
 }
 
-.result-badge,
-.mini-badge {
+.result-badge {
   display: inline-block;
   padding: 5px 9px;
   border-radius: 8px;
@@ -132,16 +143,11 @@ h2 { margin: 0; font-size: 15px; line-height: 1.25; }
   font-weight: 700;
 }
 
-.result-badge.safe,
-.mini-badge.safe { color: #0e6038; background: #dff5e8; }
-.result-badge.caution,
-.mini-badge.caution { color: #71550b; background: #fff1bd; }
-.result-badge.suspicious,
-.mini-badge.suspicious { color: #932d35; background: #ffe2e4; }
-.result-badge.analyzing,
-.mini-badge.analyzing { color: #155a91; background: #e1f0ff; }
-.result-badge.unavailable,
-.mini-badge.unavailable { color: #5c6673; background: #e7eaee; }
+.result-badge.safe { color: #0e6038; background: #dff5e8; }
+.result-badge.caution { color: #71550b; background: #fff1bd; }
+.result-badge.suspicious { color: #932d35; background: #ffe2e4; }
+.result-badge.analyzing { color: #155a91; background: #e1f0ff; }
+.result-badge.unavailable { color: #5c6673; background: #e7eaee; }
 
 .final-result {
   margin-top: 13px;
@@ -162,7 +168,6 @@ h2 { margin: 0; font-size: 15px; line-height: 1.25; }
 .final-result.unavailable { color: #596472; background: #e7eaee; }
 
 .explanation,
-.module-row p,
 .setting-help {
   margin: 9px 0 0;
   color: #536174;
@@ -178,30 +183,11 @@ h2 { margin: 0; font-size: 15px; line-height: 1.25; }
 }
 
 .metadata div { min-width: 0; padding: 9px; border-radius: 9px; background: #f5f7fa; }
-.metadata span,
-.module-label { display: block; color: #677488; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.metadata span { display: block; color: #677488; font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .metadata strong { display: block; overflow: hidden; margin-top: 3px; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-
-.module-row { margin-top: 11px; padding-top: 11px; border-top: 1px solid #e4e9ef; }
-.module-row > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.module-row p { margin-top: 6px; }
 
 .indicator-list { margin: 10px 0 0; padding-left: 20px; color: #3e4b5c; }
 .indicator-list li { margin-top: 6px; font-size: 12px; line-height: 1.35; }
-
-.guidance {
-  margin-top: 12px;
-  padding: 14px 15px;
-  border-left: 5px solid #7a8796;
-  border-radius: 11px;
-  background: #edf1f5;
-}
-
-.guidance.safe { border-color: #198754; background: #eaf7ef; color: #105b37; }
-.guidance.caution { border-color: #c79a16; background: #fff6d8; color: #654e0d; }
-.guidance.suspicious { border-color: #c83d48; background: #fff0f1; color: #872a31; }
-.guidance strong { display: block; font-size: 14px; }
-.guidance p { margin: 5px 0 0; font-size: 12px; line-height: 1.45; }
 
 .details { padding: 0; }
 .details summary { padding: 13px 15px; cursor: pointer; color: #334155; font-size: 12px; font-weight: 700; }

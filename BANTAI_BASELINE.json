@@ -23,14 +23,16 @@
   "llm": {
     "provider_abstraction": true,
     "initial_provider": "gemini",
-    "cloud_review_default": false,
+    "cloud_review_default": true,
+    "user_toggle": false,
     "backend_environment_key_only": true,
     "quota_fallback": "gemini-3.5-flash-lite",
     "redaction_enabled": true,
     "cache": "IN_MEMORY_TTL"
   },
   "url_cloud_review": {
-    "separate_consent_default": false,
+    "always_enabled": true,
+    "user_toggle": false,
     "runs_only_after_rf_warning": true,
     "payload": "SCHEME_AND_HOSTNAME_ORIGIN_ONLY",
     "page_content_shared": false,
@@ -54,6 +56,9 @@
     "automatic_email_result_duration_ms": 5000,
     "automatic_requires_complete_local_and_cloud": true,
     "same_result_reopens_on_focus": false,
+    "standalone_email_ai_review_card": false,
+    "standalone_url_cloud_review_row": false,
+    "duplicate_final_guidance_card": false,
     "manual_popup_auto_close": false
   },
   "excluded_features": [

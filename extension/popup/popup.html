@@ -39,13 +39,6 @@
       <p id="websiteDomain" class="primary-value">Waiting for a website</p>
       <span id="websiteStatus" class="result-badge neutral">WAITING</span>
       <p id="websiteMessage" class="explanation">BantAI checks only the URL shown in the address bar.</p>
-      <div class="module-row">
-        <div>
-          <span class="module-label">Cloud URL review</span>
-          <strong id="websiteAiReviewStatus" class="mini-badge neutral">OFF</strong>
-        </div>
-        <p id="websiteAiReviewMessage">Cloud URL Review is off. Only the local URL model is used.</p>
-      </div>
     </section>
 
     <section id="emailCard" class="card neutral hidden" aria-labelledby="emailTitle">
@@ -61,35 +54,13 @@
         <div><span>Sender</span><strong id="emailSender">Not shown</strong></div>
         <div><span>Subject</span><strong id="emailSubject">No subject</strong></div>
       </div>
-      <div class="module-row">
-        <div>
-          <span class="module-label">XLM-R email detector</span>
-          <strong id="emailModelStatus" class="mini-badge neutral">WAITING</strong>
-        </div>
-        <p id="emailModelMessage">Open an email to run the local detector.</p>
-      </div>
-    </section>
-
-    <section id="aiReviewCard" class="card compact hidden" aria-labelledby="aiReviewTitle">
-      <div class="card-heading">
-        <div>
-          <p class="kicker">AI REVIEW</p>
-          <h2 id="aiReviewTitle">Additional context</h2>
-        </div>
-        <span id="aiReviewStatus" class="result-badge neutral">OFF</span>
-      </div>
-      <p id="aiReviewMessage" class="explanation">Cloud AI Review is off. Local BantAI checks still run.</p>
+      <p id="emailDecisionMessage" class="explanation">Open an email to begin analysis.</p>
     </section>
 
     <section id="indicatorsCard" class="card compact hidden" aria-labelledby="indicatorsTitle">
       <p class="kicker">WHY BANTAI IS WARNING YOU</p>
       <h2 id="indicatorsTitle">Detected warning signs</h2>
       <ul id="indicatorList" class="indicator-list"></ul>
-    </section>
-
-    <section id="guidanceCard" class="guidance neutral" aria-live="polite">
-      <strong id="guidanceTitle">Continue carefully</strong>
-      <p id="guidanceMessage">Verify unexpected requests before clicking, paying, or sharing information.</p>
     </section>
 
     <details id="moreDetails" class="details">
@@ -100,38 +71,28 @@
         <div><dt>RF model signal</dt><dd id="websiteModelSignal">--</dd></div>
         <div><dt>Email probability</dt><dd id="emailScore">--</dd></div>
         <div><dt>Email threshold</dt><dd id="emailThreshold">--</dd></div>
+        <div><dt>Email model signal</dt><dd id="emailModelSignal">--</dd></div>
         <div><dt>Email text truncated</dt><dd id="emailTruncated">--</dd></div>
       </dl>
     </details>
 
-    <section class="settings" aria-labelledby="settingsTitle">
-      <div class="setting-row">
+    <section id="pairingCard" class="pairing-card" aria-labelledby="pairingTitle">
+      <div class="card-heading">
         <div>
-          <p class="kicker">SETTINGS</p>
-          <h2 id="settingsTitle">Cloud AI Review</h2>
+          <p class="kicker">WEB DASHBOARD</p>
+          <h2 id="pairingTitle">Connect your account</h2>
         </div>
-        <label class="switch">
-          <input id="cloudReviewToggle" type="checkbox" role="switch" aria-describedby="cloudPrivacyText">
-          <span class="switch-track" aria-hidden="true"></span>
-          <strong id="cloudSettingStatus">OFF</strong>
-        </label>
+        <span id="pairingState" class="scope-pill">Checking</span>
       </div>
-      <p id="cloudPrivacyText" class="setting-help">Your email is checked only by BantAI's local detectors.</p>
-    </section>
-
-    <section class="settings" aria-labelledby="urlSettingsTitle">
-      <div class="setting-row">
+      <p id="pairingMessage" class="explanation">Checking whether this computer is connected…</p>
+      <form id="pairingForm" class="pairing-form hidden">
+        <label for="pairingCode">One-time pairing code</label>
         <div>
-          <p class="kicker">SETTINGS</p>
-          <h2 id="urlSettingsTitle">Cloud URL Review</h2>
+          <input id="pairingCode" name="pairingCode" maxlength="8" minlength="8" autocomplete="one-time-code" placeholder="ABCD1234" required>
+          <button id="pairingButton" type="submit">Connect</button>
         </div>
-        <label class="switch">
-          <input id="cloudUrlReviewToggle" type="checkbox" role="switch" aria-describedby="cloudUrlPrivacyText">
-          <span class="switch-track" aria-hidden="true"></span>
-          <strong id="cloudUrlSettingStatus">OFF</strong>
-        </label>
-      </div>
-      <p id="cloudUrlPrivacyText" class="setting-help">Website addresses are checked only by BantAI's local URL model.</p>
+      </form>
+      <button id="unpairButton" class="unpair-button hidden" type="button">Disconnect this computer</button>
     </section>
 
     <p class="safe-note">A SAFE detector badge means no strong warning sign was detected by that module. This is not a guarantee that the email or website is legitimate.</p>

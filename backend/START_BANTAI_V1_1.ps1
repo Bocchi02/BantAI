@@ -1,6 +1,7 @@
 param(
     [string]$TextModelDir = "",
     [string]$RfModelPath = "",
+    [string]$PlatformApi = "http://127.0.0.1:8080",
     [int]$Port = 8000
 )
 
@@ -32,6 +33,10 @@ if (-not (Test-Path -LiteralPath $RfModelPath -PathType Leaf)) {
 $env:BANTAI_MODEL_DIR = (Resolve-Path -LiteralPath $TextModelDir).Path
 $env:BANTAI_RF_MODEL_PATH = (Resolve-Path -LiteralPath $RfModelPath).Path
 
+if (-not [string]::IsNullOrWhiteSpace($PlatformApi)) {
+    $env:BANTAI_PLATFORM_API = $PlatformApi.TrimEnd("/")
+}
+
 Set-Location $BackendDir
 
 Write-Host ""
@@ -39,7 +44,8 @@ Write-Host "BantAI v1.1 Hybrid AI Decision-Support Server" -ForegroundColor Gree
 Write-Host "=============================================="
 Write-Host "Email model: $env:BANTAI_MODEL_DIR"
 Write-Host "URL model:   $env:BANTAI_RF_MODEL_PATH"
-Write-Host "Cloud review preference defaults to OFF in the extension."
+Write-Host "Platform:    $env:BANTAI_PLATFORM_API"
+Write-Host "Cloud reviews are always enabled in the extension."
 Write-Host "Port:        $Port"
 Write-Host ""
 

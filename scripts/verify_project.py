@@ -225,9 +225,11 @@ def check_extension_invariants() -> None:
         "Roboto Google Fonts reference is missing.",
     )
     require(
-        "bantai_cloud_ai_review_enabled" in worker
-        and "bantai_cloud_ai_review_enabled" in read("extension/popup/popup.js"),
-        "Cloud AI Review preference is missing.",
+        "bantai_cloud_ai_review_enabled" not in worker
+        and "bantai_cloud_ai_review_enabled" not in read("extension/popup/popup.js")
+        and "cloudReviewToggle" not in popup_html
+        and "cloudUrlReviewToggle" not in popup_html,
+        "Cloud review must be always enabled without stored toggles.",
     )
     require(
         "GEMINI_API_KEY" not in worker

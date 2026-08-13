@@ -13,8 +13,8 @@ phishing judgment.
 For any HTTP/HTTPS tab, the service worker sends the exact `tab.url` to the
 local `/analyze-url` endpoint. Frozen RF V4-B returns an independent SAFE or
 SUSPICIOUS module signal. It runs on URL changes, page completion, tab switches,
-window focus, and new supported emails. Separately opted-in Cloud URL Review runs
-only after an RF warning and sends only the minimized scheme/hostname origin.
+window focus, and new supported emails. Cloud URL Review runs automatically only
+after an RF warning and sends only the minimized scheme/hostname origin.
 
 ## Opened email flow
 
@@ -25,9 +25,9 @@ On Gmail, Outlook, or Yahoo Mail:
 2. Frozen XLM-R V1 and the local Philippine Scam Indicator Engine run.
 3. The exact address-bar URL is independently checked by RF V4-B.
 4. Local Rules A-H produce initial guidance without opening the automatic popup.
-5. If consent is ON, a limited redacted payload is reviewed by the configured
-   LLM. A current, validated result opens the five-second popup once.
-6. Cloud OFF, CHECKING, and UNAVAILABLE states do not trigger automatic opening.
+5. A limited redacted payload is automatically reviewed by the configured LLM.
+   A current, validated result opens the five-second popup once.
+6. Cloud CHECKING and UNAVAILABLE states do not trigger automatic opening.
 7. Request sequence, email fingerprint, and current tab URL checks reject stale
    results.
 
@@ -42,16 +42,15 @@ cancel suspicious email evidence.
 
 The v1.0 dual-detector baseline is preserved conceptually: both frozen detectors,
 their inputs, thresholds, and outputs remain intact. v1.1 adds evidence extraction,
-optional cloud context, and deterministic email guidance around those modules.
+privacy-minimized cloud context, and deterministic email guidance around those modules.
 
 ## Cloud configuration
 
 The backend automatically loads the ignored local `backend/.env` file, while
 preserving any values already set in the operating-system environment. It reads
 `BANTAI_LLM_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`,
-`GEMINI_FALLBACK_MODEL`, timeout, retry,
-character-limit, and cache-TTL variables. The extension stores separate Boolean
-preferences for email and URL cloud review. Both default OFF.
+`GEMINI_FALLBACK_MODEL`, timeout, retry, character-limit, and cache-TTL variables.
+Cloud email and URL reviews are always enabled and have no stored preferences.
 
 ## Known limitations
 

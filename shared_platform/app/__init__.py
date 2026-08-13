@@ -1,0 +1,2 @@
+"""BantAI shared web platform."""
+

@@ -1,9 +1,7 @@
 const STORAGE_KEYS = {
   tabStates: "bantai_v110_tab_states",
   server: "bantai_v110_server",
-  autoPopup: "bantai_v110_auto_popup",
-  cloudReviewEnabled: "bantai_cloud_ai_review_enabled",
-  cloudUrlReviewEnabled: "bantai_cloud_url_review_enabled"
+  autoPopup: "bantai_v110_auto_popup"
 };
 
 const SUPPORTED_EMAIL_PROVIDERS = new Set(["gmail", "outlook", "yahoo"]);
@@ -52,9 +50,6 @@ const INDICATOR_LABELS = {
 
 let activeTabId = null;
 let countdownTimer = null;
-let cloudReviewEnabled = false;
-let cloudUrlReviewEnabled = false;
-let backgroundSupportsCloudUrlReview = null;
 let latestState = {};
 
 const byId = (id) => document.getElementById(id);
@@ -69,36 +64,29 @@ const elements = {
   websiteDomain: byId("websiteDomain"),
   websiteStatus: byId("websiteStatus"),
   websiteMessage: byId("websiteMessage"),
-  websiteAiReviewStatus: byId("websiteAiReviewStatus"),
-  websiteAiReviewMessage: byId("websiteAiReviewMessage"),
   emailCard: byId("emailCard"),
   emailProvider: byId("emailProvider"),
   emailFinalStatus: byId("emailFinalStatus"),
   emailMetadata: byId("emailMetadata"),
   emailSender: byId("emailSender"),
   emailSubject: byId("emailSubject"),
-  emailModelStatus: byId("emailModelStatus"),
-  emailModelMessage: byId("emailModelMessage"),
-  aiReviewCard: byId("aiReviewCard"),
-  aiReviewStatus: byId("aiReviewStatus"),
-  aiReviewMessage: byId("aiReviewMessage"),
+  emailDecisionMessage: byId("emailDecisionMessage"),
   indicatorsCard: byId("indicatorsCard"),
   indicatorList: byId("indicatorList"),
-  guidanceCard: byId("guidanceCard"),
-  guidanceTitle: byId("guidanceTitle"),
-  guidanceMessage: byId("guidanceMessage"),
   websiteScore: byId("websiteScore"),
   websiteThreshold: byId("websiteThreshold"),
   websiteModelSignal: byId("websiteModelSignal"),
   emailScore: byId("emailScore"),
   emailThreshold: byId("emailThreshold"),
+  emailModelSignal: byId("emailModelSignal"),
   emailTruncated: byId("emailTruncated"),
-  cloudReviewToggle: byId("cloudReviewToggle"),
-  cloudSettingStatus: byId("cloudSettingStatus"),
-  cloudPrivacyText: byId("cloudPrivacyText"),
-  cloudUrlReviewToggle: byId("cloudUrlReviewToggle"),
-  cloudUrlSettingStatus: byId("cloudUrlSettingStatus"),
-  cloudUrlPrivacyText: byId("cloudUrlPrivacyText")
+  pairingCard: byId("pairingCard"),
+  pairingState: byId("pairingState"),
+  pairingMessage: byId("pairingMessage"),
+  pairingForm: byId("pairingForm"),
+  pairingCode: byId("pairingCode"),
+  pairingButton: byId("pairingButton"),
+  unpairButton: byId("unpairButton")
 };
 
 function percentage(value) {
@@ -126,35 +114,7 @@ function finalStyle(result) {
 
 function setStatus(element, label, style) {
   element.textContent = label;
-  element.className = `${element === elements.emailFinalStatus ? "final-result" : element === elements.emailModelStatus ? "mini-badge" : "result-badge"} ${style}`;
-}
-
-function conciseCloudReviewMessage(status, isUrlReview = false) {
-  const normalized = String(status || "OFF").toUpperCase();
-  if (normalized === "NO_STRONG_WARNING_SIGNS") {
-    return isUrlReview
-      ? "No strong hostname warning signs were found. Page content and user accounts were not evaluated."
-      : "No strong contextual warning signs were found. This does not guarantee that the message is legitimate.";
-  }
-  if (normalized === "NEEDS_CAUTION") {
-    return isUrlReview
-      ? "Some hostname details require caution. Verify the address before sharing sensitive information."
-      : "Some details require caution. Verify unexpected requests through an official channel.";
-  }
-  if (normalized === "SUSPICIOUS_SIGNS_FOUND") {
-    return isUrlReview
-      ? "The hostname shows warning signs. Verify the address before entering sensitive information."
-      : "The message contains warning signs. Do not share passwords, OTPs, or payment details until verified.";
-  }
-  if (normalized === "CHECKING") {
-    return "Reviewing the available information.";
-  }
-  if (normalized === "UNAVAILABLE") {
-    return isUrlReview
-      ? "Cloud review is unavailable. The address-bar result still applies."
-      : "Cloud review is unavailable. The local email result still applies.";
-  }
-  return "";
+  element.className = `${element === elements.emailFinalStatus ? "final-result" : "result-badge"} ${style}`;
 }
 
 function renderServer(server) {
@@ -192,45 +152,6 @@ function renderWebsite(state) {
   elements.websiteScore.textContent = percentage(result.suspicious_probability);
   elements.websiteThreshold.textContent = percentage(result.threshold);
   elements.websiteModelSignal.textContent = result.signal || "--";
-
-  const review = detector.cloud_review || result.llm_review || {};
-  let reviewStatus = cloudUrlReviewEnabled
-    ? String(review.status || "OFF").toUpperCase()
-    : "OFF";
-  if (
-    cloudUrlReviewEnabled &&
-    reviewStatus === "OFF" &&
-    result.signal === "SAFE"
-  ) {
-    reviewStatus = "NOT_NEEDED";
-  }
-  setStatus(
-    elements.websiteAiReviewStatus,
-    reviewStatus === "UNAVAILABLE" && review.failure_reason === "QUOTA_REACHED"
-      ? "QUOTA REACHED"
-      : reviewStatus === "UNAVAILABLE"
-        ? "UNAVAILABLE"
-      : reviewStatus === "NOT_NEEDED"
-        ? "NOT NEEDED"
-        : FINAL_LABELS[reviewStatus] || reviewStatus,
-    reviewStatus === "NOT_NEEDED" ? "safe" : finalStyle(reviewStatus)
-  );
-  if (cloudUrlReviewEnabled && backgroundSupportsCloudUrlReview === false) {
-    setStatus(
-      elements.websiteAiReviewStatus,
-      "RELOAD REQUIRED",
-      "unavailable"
-    );
-    elements.websiteAiReviewMessage.textContent =
-      "The popup is newer than the background service worker. Reload BantAI on the extensions page.";
-  } else {
-    const reviewSummary = conciseCloudReviewMessage(reviewStatus, true);
-    elements.websiteAiReviewMessage.textContent = cloudUrlReviewEnabled
-      ? reviewStatus === "NOT_NEEDED"
-        ? "The local URL model found no warning, so no cloud request was needed."
-        : reviewSummary || "Cloud URL Review runs only when the local URL model warns."
-      : "Cloud URL Review is off. Only the local URL model is used.";
-  }
 }
 
 function renderIndicators(state, fusionResult) {
@@ -271,14 +192,11 @@ function renderEmail(state) {
   const provider = String(state?.provider || detector.provider || result.provider || "").toLowerCase();
   if (!SUPPORTED_EMAIL_PROVIDERS.has(provider)) {
     elements.emailCard.classList.add("hidden");
-    elements.aiReviewCard.classList.add("hidden");
     elements.indicatorsCard.classList.add("hidden");
-    renderGuidance(state, null);
     return;
   }
 
   elements.emailCard.classList.remove("hidden");
-  elements.aiReviewCard.classList.remove("hidden");
   elements.emailProvider.textContent = detector.provider_label || state.provider_label || provider;
 
   const fusionResult = state?.fusion?.final_result || (detector.state === "analyzing" ? "ANALYZING" : detector.signal || "WAITING");
@@ -293,56 +211,13 @@ function renderEmail(state) {
   elements.emailSubject.textContent = subject || "No subject";
 
   const modelSignal = String(result.signal || detector.signal || "WAITING").toUpperCase();
-  setStatus(
-    elements.emailModelStatus,
-    modelSignal === "UNAVAILABLE" ? "UNABLE TO CHECK" : modelSignal,
-    technicalStyle(modelSignal)
-  );
-  elements.emailModelMessage.textContent = result.message || detector.message || "Open an email to run the local detector.";
+  elements.emailDecisionMessage.textContent = state?.fusion?.message || detector.message || "Analyzing the opened email.";
   elements.emailScore.textContent = percentage(result.suspicious_probability);
   elements.emailThreshold.textContent = percentage(result.threshold);
+  elements.emailModelSignal.textContent = modelSignal;
   elements.emailTruncated.textContent = typeof result.was_truncated === "boolean" ? (result.was_truncated ? "Yes" : "No") : "--";
 
-  const review = state?.llm_review || {};
-  const reviewStatus = cloudReviewEnabled ? String(review.status || "OFF").toUpperCase() : "OFF";
-  setStatus(
-    elements.aiReviewStatus,
-    reviewStatus === "UNAVAILABLE" ? "UNAVAILABLE" : FINAL_LABELS[reviewStatus] || reviewStatus,
-    finalStyle(reviewStatus)
-  );
-  const reviewSummary = conciseCloudReviewMessage(reviewStatus);
-  elements.aiReviewMessage.textContent = cloudReviewEnabled
-    ? reviewSummary || "Open or reopen an email to use Cloud AI Review."
-    : "Cloud AI Review is off. Your email is checked only by BantAI's local detectors.";
-
   renderIndicators(state, fusionResult);
-  renderGuidance(state, fusionResult);
-}
-
-function renderGuidance(state, fusionResult) {
-  const websiteSignal = state?.url_detector?.result?.final_result || state?.url_detector?.signal;
-  if (fusionResult && FINAL_LABELS[fusionResult]) {
-    const style = finalStyle(fusionResult);
-    elements.guidanceCard.className = `guidance ${style}`;
-    elements.guidanceTitle.textContent = FINAL_LABELS[fusionResult];
-    elements.guidanceMessage.textContent = state?.fusion?.message || "Continue carefully and verify unexpected requests.";
-    return;
-  }
-  if (websiteSignal === "SUSPICIOUS" || websiteSignal === "SUSPICIOUS_SIGNS_FOUND") {
-    elements.guidanceCard.className = "guidance suspicious";
-    elements.guidanceTitle.textContent = "SUSPICIOUS SIGNS FOUND";
-    elements.guidanceMessage.textContent = "Warning signs were found in this web address. Verify it before entering passwords, OTPs, personal information, or payment details.";
-    return;
-  }
-  if (websiteSignal === "NEEDS_CAUTION") {
-    elements.guidanceCard.className = "guidance caution";
-    elements.guidanceTitle.textContent = "NEEDS CAUTION";
-    elements.guidanceMessage.textContent = state?.url_detector?.result?.message || "Some details require caution. Verify the address before sharing sensitive information.";
-    return;
-  }
-  elements.guidanceCard.className = "guidance neutral";
-  elements.guidanceTitle.textContent = "Continue carefully";
-  elements.guidanceMessage.textContent = "Verify unexpected requests before clicking, paying, or sharing information.";
 }
 
 function renderState(state) {
@@ -351,48 +226,9 @@ function renderState(state) {
   renderEmail(latestState);
 }
 
-function renderCloudSetting() {
-  elements.cloudReviewToggle.checked = cloudReviewEnabled;
-  elements.cloudSettingStatus.textContent = cloudReviewEnabled ? "ON" : "OFF";
-  elements.cloudPrivacyText.textContent = cloudReviewEnabled
-    ? "BantAI may send a limited, cleaned version of the opened email to the configured AI service for additional scam analysis."
-    : "Your email is checked only by BantAI's local detectors.";
-}
-
-function renderCloudUrlSetting() {
-  elements.cloudUrlReviewToggle.checked = cloudUrlReviewEnabled;
-  elements.cloudUrlSettingStatus.textContent = cloudUrlReviewEnabled ? "ON" : "OFF";
-  elements.cloudUrlPrivacyText.textContent = cloudUrlReviewEnabled
-    ? "After a local URL warning, BantAI may send only the website origin to the configured AI service. Page content and browsing paths are not shared."
-    : "Website addresses are checked only by BantAI's local URL model.";
-}
-
 async function loadActiveTab() {
   const tabs = await chrome.tabs.query({active: true, lastFocusedWindow: true});
   activeTabId = tabs[0]?.id ?? null;
-}
-
-async function loadCloudSetting() {
-  const stored = await chrome.storage.local.get(STORAGE_KEYS.cloudReviewEnabled);
-  cloudReviewEnabled = stored[STORAGE_KEYS.cloudReviewEnabled] === true;
-  renderCloudSetting();
-}
-
-async function loadCloudUrlSetting() {
-  const stored = await chrome.storage.local.get(STORAGE_KEYS.cloudUrlReviewEnabled);
-  cloudUrlReviewEnabled = stored[STORAGE_KEYS.cloudUrlReviewEnabled] === true;
-  renderCloudUrlSetting();
-}
-
-async function checkBackgroundCapabilities() {
-  try {
-    const capabilities = await chrome.runtime.sendMessage({
-      type: "BANTAI_GET_CAPABILITIES"
-    });
-    backgroundSupportsCloudUrlReview = capabilities?.cloud_url_review === true;
-  } catch {
-    backgroundSupportsCloudUrlReview = false;
-  }
 }
 
 async function loadStoredState() {
@@ -401,6 +237,85 @@ async function loadStoredState() {
   const states = stored[STORAGE_KEYS.tabStates] || {};
   renderState(states[String(activeTabId)] || {});
 }
+
+async function loadPairingState() {
+  try {
+    const response = await fetch("http://127.0.0.1:8000/companion/status", {cache: "no-store"});
+    if (!response.ok) throw new Error("Companion unavailable");
+    const state = await response.json();
+    if (state.paired) {
+      elements.pairingState.textContent = "Connected";
+      elements.pairingMessage.textContent = `Activity is connected to ${state.user_email || "your BantAI account"}.`;
+      elements.pairingForm.classList.add("hidden");
+      elements.unpairButton.classList.remove("hidden");
+    } else if (!state.platform_configured) {
+      elements.pairingState.textContent = "Setup needed";
+      elements.pairingMessage.textContent = "Restart BantAI Companion so it can connect to the local web service.";
+      elements.pairingForm.classList.add("hidden");
+      elements.unpairButton.classList.add("hidden");
+    } else {
+      elements.pairingState.textContent = "Not connected";
+      elements.pairingMessage.textContent = "Generate a pairing code from the BantAI web dashboard, then enter it here.";
+      elements.pairingForm.classList.remove("hidden");
+      elements.unpairButton.classList.add("hidden");
+    }
+  } catch {
+    elements.pairingState.textContent = "Unavailable";
+    elements.pairingMessage.textContent = "Start BantAI Companion before connecting your web account.";
+    elements.pairingForm.classList.add("hidden");
+    elements.unpairButton.classList.add("hidden");
+  }
+}
+
+elements.pairingForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const code = elements.pairingCode.value.replace(/\s+/g, "").toUpperCase();
+  elements.pairingButton.disabled = true;
+  elements.pairingMessage.textContent = "Connecting this computer…";
+  try {
+    const response = await fetch("http://127.0.0.1:8000/companion/pair", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({code, device_label: `BantAI on ${navigator.platform || "Windows"}`})
+    });
+    if (!response.ok) {
+      let message = "That code is invalid, expired, or the shared service is unavailable.";
+      try {
+        const problem = await response.json();
+        if (typeof problem.detail === "string" && problem.detail.length <= 160) {
+          message = problem.detail;
+        }
+      } catch {
+        // Keep the privacy-safe generic message for non-JSON failures.
+      }
+      throw new Error(message);
+    }
+    elements.pairingCode.value = "";
+    await loadPairingState();
+  } catch (error) {
+    elements.pairingState.textContent = "Try again";
+    elements.pairingMessage.textContent = error instanceof Error
+      ? error.message
+      : "That code is invalid, expired, or the shared service is unavailable.";
+  } finally {
+    elements.pairingButton.disabled = false;
+  }
+});
+
+elements.unpairButton.addEventListener("click", async () => {
+  elements.unpairButton.disabled = true;
+  elements.pairingMessage.textContent = "Disconnecting this computer…";
+  try {
+    const response = await fetch("http://127.0.0.1:8000/companion/unpair", {method: "POST"});
+    if (!response.ok) throw new Error("Disconnect failed");
+    await loadPairingState();
+  } catch {
+    elements.pairingState.textContent = "Try again";
+    elements.pairingMessage.textContent = "BantAI could not remove the local device credential.";
+  } finally {
+    elements.unpairButton.disabled = false;
+  }
+});
 
 async function configureAutoClose() {
   const stored = await chrome.storage.session.get(STORAGE_KEYS.autoPopup);
@@ -426,30 +341,6 @@ async function configureAutoClose() {
   countdownTimer = window.setInterval(updateCountdown, 100);
 }
 
-elements.cloudReviewToggle.addEventListener("change", async () => {
-  cloudReviewEnabled = elements.cloudReviewToggle.checked === true;
-  await chrome.storage.local.set({[STORAGE_KEYS.cloudReviewEnabled]: cloudReviewEnabled});
-  renderCloudSetting();
-  renderEmail(latestState);
-  void chrome.runtime.sendMessage({
-    type: "BANTAI_CLOUD_REVIEW_SETTING_CHANGED",
-    enabled: cloudReviewEnabled
-  });
-});
-
-elements.cloudUrlReviewToggle.addEventListener("change", async () => {
-  cloudUrlReviewEnabled = elements.cloudUrlReviewToggle.checked === true;
-  await chrome.storage.local.set({
-    [STORAGE_KEYS.cloudUrlReviewEnabled]: cloudUrlReviewEnabled
-  });
-  renderCloudUrlSetting();
-  renderWebsite(latestState);
-  void chrome.runtime.sendMessage({
-    type: "BANTAI_CLOUD_URL_REVIEW_SETTING_CHANGED",
-    enabled: cloudUrlReviewEnabled
-  });
-});
-
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "session") {
     if (changes[STORAGE_KEYS.server]) renderServer(changes[STORAGE_KEYS.server].newValue);
@@ -458,24 +349,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       renderState(states[String(activeTabId)] || {});
     }
   }
-  if (areaName === "local" && changes[STORAGE_KEYS.cloudReviewEnabled]) {
-    cloudReviewEnabled = changes[STORAGE_KEYS.cloudReviewEnabled].newValue === true;
-    renderCloudSetting();
-    renderEmail(latestState);
-  }
-  if (areaName === "local" && changes[STORAGE_KEYS.cloudUrlReviewEnabled]) {
-    cloudUrlReviewEnabled = changes[STORAGE_KEYS.cloudUrlReviewEnabled].newValue === true;
-    renderCloudUrlSetting();
-    renderWebsite(latestState);
-  }
 });
 
 async function initialize() {
   await loadActiveTab();
-  await loadCloudSetting();
-  await loadCloudUrlSetting();
-  await checkBackgroundCapabilities();
   await loadStoredState();
+  await loadPairingState();
   await configureAutoClose();
   void chrome.runtime.sendMessage({type: "BANTAI_CHECK_SERVER"});
   /* Manual opening requests a fresh tab.url scan but does not start auto-close. */

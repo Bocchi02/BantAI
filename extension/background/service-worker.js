@@ -10,11 +10,7 @@ const STORAGE_KEYS = {
   server:
     "bantai_v110_server",
   autoPopup:
-    "bantai_v110_auto_popup",
-  cloudReviewEnabled:
-    "bantai_cloud_ai_review_enabled",
-  cloudUrlReviewEnabled:
-    "bantai_cloud_url_review_enabled"
+    "bantai_v110_auto_popup"
 };
 
 const AUTO_POPUP_DURATION_MS =
@@ -251,38 +247,6 @@ function shouldAutomaticallyOpenForUrl(
 }
 
 
-async function getCloudReviewEnabled() {
-  const stored =
-    await chrome.storage
-      .local
-      .get(
-        STORAGE_KEYS
-          .cloudReviewEnabled
-      );
-
-  return stored[
-    STORAGE_KEYS
-      .cloudReviewEnabled
-  ] === true;
-}
-
-
-async function getCloudUrlReviewEnabled() {
-  const stored =
-    await chrome.storage
-      .local
-      .get(
-        STORAGE_KEYS
-          .cloudUrlReviewEnabled
-      );
-
-  return stored[
-    STORAGE_KEYS
-      .cloudUrlReviewEnabled
-  ] === true;
-}
-
-
 async function getTabStates() {
   const stored =
     await chrome.storage
@@ -455,6 +419,57 @@ async function checkServer() {
     );
 
     return null;
+  }
+}
+
+
+function minimizedOrigin(
+  value
+) {
+  try {
+    const parsed =
+      new URL(
+        String(
+          value ||
+          ""
+        )
+      );
+
+    if (
+      parsed.protocol !== "http:" &&
+      parsed.protocol !== "https:"
+    ) {
+      return null;
+    }
+
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+
+async function submitCompanionActivity(
+  activity
+) {
+  try {
+    await fetch(
+      `${API_BASE}/companion/activity`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify(
+            activity
+          )
+      }
+    );
+  } catch {
+    // Local results are authoritative; dashboard delivery is best-effort and
+    // the companion keeps a bounded protected retry outbox when paired.
   }
 }
 
@@ -741,6 +756,18 @@ async function scanCurrentTabUrl(
       )
     ];
 
+  const activityEventId =
+    existing
+      ?.current_url ===
+        currentUrl &&
+    existing
+      ?.url_detector
+      ?.activity_event_id
+      ? existing
+          .url_detector
+          .activity_event_id
+      : `url:${tabId}:${compactHash(currentUrl)}:${Date.now()}`;
+
   if (
     !force &&
     existing
@@ -802,6 +829,8 @@ async function scanCurrentTabUrl(
         message:
           "Checking the current website address...",
         reason,
+        activity_event_id:
+          activityEventId,
         requested_at:
           nowIso()
       },
@@ -812,9 +841,6 @@ async function scanCurrentTabUrl(
         )
     })
   );
-
-  const cloudUrlReviewEnabled =
-    await getCloudUrlReviewEnabled();
 
   try {
     const result =
@@ -832,7 +858,6 @@ async function scanCurrentTabUrl(
     }
 
     const shouldRunCloudReview =
-      cloudUrlReviewEnabled &&
       (
         result.signal ===
           "SUSPICIOUS" ||
@@ -870,6 +895,8 @@ async function scanCurrentTabUrl(
                   }
                 : result.llm_review,
             reason,
+            activity_event_id:
+              activityEventId,
             completed_at:
               nowIso()
           }
@@ -884,6 +911,31 @@ async function scanCurrentTabUrl(
     await checkServer();
 
     if (!shouldRunCloudReview) {
+      await submitCompanionActivity({
+        client_event_id:
+          activityEventId,
+        event_type:
+          "URL",
+        origin:
+          minimizedOrigin(
+            currentUrl
+          ),
+        provider:
+          null,
+        sender:
+          null,
+        subject:
+          null,
+        outcome:
+          result.final_result,
+        cloud_status:
+          "COMPLETE",
+        occurred_at:
+          state?.url_detector
+            ?.completed_at ||
+          nowIso()
+      });
+
       return state
         ?.url_detector ||
         null;
@@ -919,6 +971,8 @@ async function scanCurrentTabUrl(
               cloud_review:
                 cloudResult.llm_review,
               reason,
+              activity_event_id:
+                activityEventId,
               completed_at:
                 nowIso()
             }
@@ -972,6 +1026,43 @@ async function scanCurrentTabUrl(
           })
         );
     }
+
+    const finalUrlResult =
+      state?.url_detector
+        ?.result ||
+      result;
+
+    await submitCompanionActivity({
+      client_event_id:
+        activityEventId,
+      event_type:
+        "URL",
+      origin:
+        minimizedOrigin(
+          currentUrl
+        ),
+      provider:
+        null,
+      sender:
+        null,
+      subject:
+        null,
+      outcome:
+        finalUrlResult
+          ?.final_result ||
+        "SUSPICIOUS_SIGNS_FOUND",
+      cloud_status:
+        cloudReviewIsComplete(
+          state?.url_detector
+            ?.cloud_review
+        )
+          ? "COMPLETE"
+          : "UNAVAILABLE",
+      occurred_at:
+        state?.url_detector
+          ?.completed_at ||
+        nowIso()
+    });
 
     return state
       ?.url_detector ||
@@ -1265,10 +1356,10 @@ async function analyzeOpenedEmail(
         contextual_count: 0
       },
       llm_review: {
-        enabled: false,
-        status: "OFF",
+        enabled: true,
+        status: "CHECKING",
         message:
-          "Cloud AI Review is off while local checks run."
+          "Cloud AI Review will run after local checks finish."
       },
       fusion: null,
       local_fusion: null
@@ -1280,9 +1371,6 @@ async function analyzeOpenedEmail(
       tab.url ||
       ""
     );
-
-  const cloudReviewEnabled =
-    await getCloudReviewEnabled();
 
   let localResult;
 
@@ -1335,7 +1423,7 @@ async function analyzeOpenedEmail(
         },
         llm_review: {
           enabled:
-            cloudReviewEnabled,
+            true,
           status:
             "UNAVAILABLE",
           reasoning_summary:
@@ -1425,19 +1513,16 @@ async function analyzeOpenedEmail(
         },
         local_indicators:
           localResult.local_indicators,
-        llm_review:
-          cloudReviewEnabled
-            ? {
-                enabled: true,
-                status: "CHECKING",
-                provider:
-                  localResult.llm_review
-                    ?.provider ||
-                  "gemini",
-                reasoning_summary:
-                  "A limited, cleaned version of this email is being reviewed."
-              }
-            : localResult.llm_review,
+        llm_review: {
+          enabled: true,
+          status: "CHECKING",
+          provider:
+            localResult.llm_review
+              ?.provider ||
+            "gemini",
+          reasoning_summary:
+            "A limited, cleaned version of this email is being reviewed."
+        },
         fusion:
           localResult.fusion,
         local_fusion:
@@ -1453,10 +1538,6 @@ async function analyzeOpenedEmail(
   );
 
   await checkServer();
-
-  if (!cloudReviewEnabled) {
-    return true;
-  }
 
   try {
     const cloudResult =
@@ -1569,6 +1650,64 @@ async function analyzeOpenedEmail(
           current.fusion
       })
     );
+  }
+
+  const completedStates =
+    await getTabStates();
+
+  const completedEmailState =
+    completedStates[
+      String(
+        tabId
+      )
+    ];
+
+  const finalEmailOutcome =
+    completedEmailState
+      ?.fusion
+      ?.final_result;
+
+  if (
+    COMPLETE_CLOUD_STATUSES
+      .has(
+        String(
+          finalEmailOutcome ||
+          ""
+        ).toUpperCase()
+      )
+  ) {
+    await submitCompanionActivity({
+      client_event_id:
+        completedEmailState
+          ?.hybrid_analysis_id ||
+        localResult.analysis_id,
+      event_type:
+        "EMAIL",
+      origin:
+        null,
+      provider:
+        provider.id,
+      sender:
+        payload?.sender ||
+        null,
+      subject:
+        payload?.subject ||
+        "",
+      outcome:
+        finalEmailOutcome,
+      cloud_status:
+        cloudReviewIsComplete(
+          completedEmailState
+            ?.llm_review
+        )
+          ? "COMPLETE"
+          : "UNAVAILABLE",
+      occurred_at:
+        completedEmailState
+          ?.email_detector
+          ?.completed_at ||
+        nowIso()
+    });
   }
 
   return true;
@@ -2161,80 +2300,6 @@ chrome.runtime.onMessage
         sendResponse({
           received:
             true
-        });
-
-        return false;
-      }
-
-      if (
-        message?.type ===
-          "BANTAI_CLOUD_URL_REVIEW_SETTING_CHANGED"
-      ) {
-        void scanActiveTab(
-          "cloud_url_review_setting_changed",
-          true
-        );
-
-        sendResponse({
-          received:
-            true
-        });
-
-        return false;
-      }
-
-      if (
-        message?.type ===
-          "BANTAI_CLOUD_REVIEW_SETTING_CHANGED"
-      ) {
-        const enabled =
-          message?.enabled ===
-          true;
-
-        void chrome.tabs.query({
-          active: true,
-          lastFocusedWindow: true
-        }).then(
-          (tabs) => {
-            const tabId =
-              tabs[0]?.id;
-
-            if (
-              Number.isInteger(
-                tabId
-              )
-            ) {
-              return patchTabState(
-                tabId,
-                (current) => ({
-                  ...current,
-                  llm_review: {
-                    enabled,
-                    status: "OFF",
-                    provider:
-                      current.llm_review
-                        ?.provider ||
-                      "gemini",
-                    reasoning_summary:
-                      enabled
-                        ? "Open or reopen an email to use Cloud AI Review."
-                        : "Cloud AI Review is off. Local BantAI checks still run."
-                  },
-                  fusion:
-                    current.local_fusion ||
-                    current.fusion
-                })
-              );
-            }
-
-            return null;
-          }
-        ).catch(
-          () => {}
-        );
-
-        sendResponse({
-          received: true
         });
 
         return false;

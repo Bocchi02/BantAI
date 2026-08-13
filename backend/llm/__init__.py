@@ -17,6 +17,7 @@ from .cache import (
     normalized_url_fingerprint,
 )
 from .gemini_provider import GeminiProvider
+from .remote_provider import RemotePlatformProvider
 from .redaction import (
     DEFAULT_MAX_EMAIL_CHARS,
     prepare_cloud_payload,
@@ -66,7 +67,7 @@ class LLMReviewCoordinator:
             "provider": self.provider_name,
             "configured": bool(self.provider and self.provider.configured),
             "available": bool(self.provider and self.provider.available),
-            "cloud_review_default": False,
+            "cloud_review_default": True,
         }
         if self.provider is not None:
             active_model = getattr(self.provider, "active_model", None)
@@ -305,7 +306,10 @@ def create_coordinator_from_environment() -> LLMReviewCoordinator:
         ttl = float(os.getenv("BANTAI_LLM_CACHE_TTL_SECONDS", "600"))
     except ValueError:
         ttl = 600.0
-    provider: LLMProvider | None = GeminiProvider() if provider_name == "gemini" else None
+    if os.getenv("BANTAI_PLATFORM_API", "").strip():
+        provider: LLMProvider | None = RemotePlatformProvider()
+    else:
+        provider = GeminiProvider() if provider_name == "gemini" else None
     return LLMReviewCoordinator(
         provider,
         cache=TTLCache(ttl_seconds=min(3600, max(30, ttl)), max_entries=128),

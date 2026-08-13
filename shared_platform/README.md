@@ -1,0 +1,38 @@
+# BantAI shared platform
+
+This service owns verified accounts, web sessions, one-time device pairing,
+privacy-minimized activity history, aggregate administration, and the backend-
+only LLM gateway. The local detector remains authoritative.
+
+## Local development
+
+1. Copy `.env.example` to `.env` and replace every placeholder secret.
+2. Generate the encryption key with a cryptographically secure 32-byte value
+   encoded with URL-safe base64.
+3. Start MySQL and the API with `docker compose up --build` from the project
+   root. Compose supplies its internal `mysql` hostname; the example's
+   `127.0.0.1` database URL is for running the API directly on Windows.
+   Compose does not publish MySQL's port to Windows, avoiding conflicts with
+   an existing local MySQL installation and keeping database access private to
+   the Docker network.
+   The platform container applies pending Alembic migrations before starting,
+   so profile fields and later schema updates are added without deleting the
+   existing MySQL volume.
+4. Configure SMTP before testing registration outside an automated test.
+
+Production startup should run `alembic upgrade head` before Uvicorn and keep
+`BANTAI_CREATE_SCHEMA=false`. Terminate TLS at a trusted reverse proxy, set
+`BANTAI_COOKIE_SECURE=true`, and configure only the exact web and extension
+origins. Route the web app and `/api/v1` through the same public hostname so
+the session and CSRF cookies stay same-origin. Disable query-string access logs
+at the reverse proxy as the application container does.
+
+The service never accepts email bodies on activity endpoints. URL activity is
+normalized to scheme, hostname, and optional port before encryption.
+
+## Account profile
+
+User accounts store separate first, optional middle, and last name fields.
+Signed-in users can update those fields and change their password from the
+Profile page. A password change revokes other web sessions while preserving the
+session that performed the change.

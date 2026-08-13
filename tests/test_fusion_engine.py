@@ -93,6 +93,38 @@ class FusionEngineTests(unittest.TestCase):
                 self.assertNotIn("cloud", normalized)
                 self.assertNotIn("combined", normalized)
 
+    def test_visible_warning_names_the_detected_email_behavior(self) -> None:
+        otp_markers = {
+            "markers": [
+                {
+                    "category": "OTP_REQUEST",
+                    "severity": "CRITICAL",
+                    "evidence": "Send the verification code.",
+                }
+            ],
+            "critical_count": 1,
+            "strong_count": 0,
+            "contextual_count": 0,
+        }
+        result = fuse_email_signals(
+            email_signal="SUSPICIOUS",
+            local_indicators=otp_markers,
+            llm_review=llm(NO_STRONG_WARNING_SIGNS),
+        )
+        self.assertEqual(result["final_result"], SUSPICIOUS_SIGNS_FOUND)
+        self.assertIn("asks for an OTP", result["message"])
+        self.assertIn("official channel", result["message"])
+        self.assertLessEqual(result["message"].count("."), 2)
+
+    def test_caution_explains_when_no_specific_indicator_is_available(self) -> None:
+        result = fuse_email_signals(
+            email_signal="SUSPICIOUS",
+            local_indicators=CLEAN,
+            llm_review=llm(NO_STRONG_WARNING_SIGNS),
+        )
+        self.assertIn("suspicious language patterns", result["message"])
+        self.assertLessEqual(result["message"].count("."), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

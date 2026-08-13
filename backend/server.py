@@ -4,6 +4,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit
@@ -13,7 +14,8 @@ import pandas as pd
 import torch
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, ConfigDict, Field
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -34,6 +36,7 @@ from llm import create_coordinator_from_environment, off_review
 from llm.cache import TTLCache, normalized_email_fingerprint
 from scam_indicator_engine import analyze_scam_indicators
 from url_fusion_engine import fuse_url_signals
+from companion import CompanionError, companion_manager
 
 
 VERSION = "1.1.0"
@@ -150,6 +153,27 @@ class HybridEmailAnalysisResponse(BaseModel):
     local_indicators: dict
     llm_review: dict
     fusion: dict
+
+
+class CompanionPairRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    code: str = Field(min_length=8, max_length=8)
+    device_label: str = Field(min_length=1, max_length=80)
+
+
+class CompanionActivityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    event_type: str
+    origin: Optional[str] = Field(default=None, max_length=512)
+    provider: Optional[str] = None
+    sender: Optional[str] = Field(default=None, max_length=320)
+    subject: Optional[str] = Field(default=None, max_length=500)
+    outcome: str
+    cloud_status: str
+    occurred_at: str = Field(min_length=20, max_length=40)
 
 
 def resolve_required_path(
@@ -401,9 +425,25 @@ app = FastAPI(
     version=VERSION,
     description=(
         "Independent frozen detectors, explainable local scam indicators, "
-        "optional contextual cloud review, and deterministic email fusion."
+        "privacy-minimized cloud review, and deterministic email fusion."
     ),
     lifespan=lifespan,
+)
+
+configured_web_origins = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+}
+for environment_name in ("BANTAI_WEB_ORIGIN", "BANTAI_WEB_DASHBOARD"):
+    configured_origin = os.getenv(environment_name, "").strip().rstrip("/")
+    if configured_origin:
+        configured_web_origins.add(configured_origin)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=sorted(configured_web_origins),
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Accept"],
 )
 
 
@@ -467,6 +507,137 @@ def health() -> dict:
         "overall_numeric_risk_score":
             False,
     }
+
+
+@app.get("/companion/status")
+def companion_status() -> dict:
+    """Return pairing state without exposing the stored device credential."""
+
+    return companion_manager.status()
+
+
+@app.get("/connection-status")
+def connection_status() -> dict:
+    """Return privacy-safe readiness for the signed-in web dashboard."""
+
+    companion = companion_manager.status()
+    platform = companion_manager.platform_status()
+    url_ready = runtime.url_model is not None
+    email_ready = runtime.email_model is not None
+    paired = bool(companion["paired"] and platform["device_authenticated"])
+    cloud_connected = bool(
+        paired
+        and platform["reachable"]
+        and platform["cloud_ai_configured"]
+        and platform["cloud_ai_available"]
+    )
+    return {
+        "checked_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "extension": {
+            "connected": paired,
+            "device_label": companion.get("device_label"),
+            "message": (
+                "The extension is paired with this BantAI Companion."
+                if paired
+                else "Pair this computer from the Paired Devices page."
+            ),
+        },
+        "local_models": {
+            "connected": url_ready and email_ready,
+            "url_model_ready": url_ready,
+            "email_model_ready": email_ready,
+            "message": (
+                "The local URL and email models are loaded and ready."
+                if url_ready and email_ready
+                else "BantAI is still loading one or more local models."
+            ),
+        },
+        "cloud_ai": {
+            "connected": cloud_connected,
+            "platform_reachable": platform["reachable"],
+            "configured": platform["cloud_ai_configured"],
+            "message": (
+                "Cloud AI Review is configured and reachable through the paired extension."
+                if cloud_connected
+                else (
+                    "Pair the extension before Cloud AI Review can be used."
+                    if not paired
+                    else (
+                        "The shared BantAI service is currently unreachable."
+                        if not platform["reachable"]
+                        else "Cloud AI Review needs a provider key in the shared service."
+                    )
+                )
+            ),
+        },
+    }
+
+
+@app.post("/companion/pair")
+def pair_companion(request: CompanionPairRequest) -> dict:
+    try:
+        return companion_manager.pair(request.code, request.device_label)
+    except CompanionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/companion/unpair")
+def unpair_companion() -> dict:
+    """Remove the local credential so a revoked device can be paired again."""
+
+    try:
+        return companion_manager.unpair()
+    except CompanionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/companion/activity")
+def submit_companion_activity(request: CompanionActivityRequest) -> dict:
+    event_type = request.event_type.upper()
+    allowed_outcomes = {
+        "NO_STRONG_WARNING_SIGNS",
+        "NEEDS_CAUTION",
+        "SUSPICIOUS_SIGNS_FOUND",
+    }
+    if request.outcome.upper() not in allowed_outcomes:
+        raise HTTPException(status_code=400, detail="Activity has an invalid final outcome.")
+    if request.cloud_status.upper() not in {"COMPLETE", "UNAVAILABLE"}:
+        raise HTTPException(status_code=400, detail="Activity has an invalid cloud status.")
+
+    event = request.model_dump()
+    event["event_type"] = event_type
+    event["outcome"] = request.outcome.upper()
+    event["cloud_status"] = request.cloud_status.upper()
+
+    if event_type == "URL":
+        try:
+            parsed = urlsplit(request.origin or "")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="URL activity has an invalid origin.") from exc
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise HTTPException(status_code=400, detail="URL activity has an invalid origin.")
+        host = parsed.hostname.lower()
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        event.update(
+            {
+                "origin": f"{parsed.scheme.lower()}://{host}",
+                "provider": None,
+                "sender": None,
+                "subject": None,
+            }
+        )
+    elif event_type == "EMAIL":
+        provider = (request.provider or "").lower()
+        if provider not in SUPPORTED_EMAIL_PROVIDERS:
+            raise HTTPException(status_code=400, detail="Email activity has an invalid provider.")
+        if request.origin is not None:
+            raise HTTPException(status_code=400, detail="Email activity cannot include a URL.")
+        event["provider"] = provider
+    else:
+        raise HTTPException(status_code=400, detail="Activity has an invalid type.")
+
+    return companion_manager.submit_activity(event)
 
 
 @app.post(
@@ -562,8 +733,8 @@ def analyze_url(
         llm_review["enabled"] = False
         llm_review["status"] = "OFF"
         llm_review["reasoning_summary"] = (
-            "Cloud URL Review is off. Enable its separate setting to review "
-            "locally suspicious website origins."
+            "Cloud URL Review runs automatically after this local URL warning "
+            "when requested by the extension."
             if signal == "SUSPICIOUS"
             else "Cloud URL Review was not needed because the local URL model did not warn."
         )

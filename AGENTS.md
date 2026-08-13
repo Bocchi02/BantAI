@@ -8,7 +8,7 @@ extension with a local FastAPI backend. It combines five transparent parts:
 1. the frozen Random Forest URL Model V4-B;
 2. the frozen XLM-RoBERTa Email NLP Model V1;
 3. an explainable Philippine Scam Indicator Engine;
-4. optional, redacted LLM contextual review; and
+4. automatic, redacted LLM contextual review; and
 5. deterministic email decision fusion.
 
 The LLM is an additional contextual analysis layer. It never replaces the
@@ -51,21 +51,22 @@ guarantee that the email or website is legitimate.
 - Keep current website and opened-email signals independent.
 - A SAFE webmail address-bar result must never lower an email warning.
 - Do not add an overall numeric risk score.
-- Opening a supported email triggers URL, local email, marker, optional cloud,
+- Opening a supported email triggers URL, local email, marker, cloud,
   and deterministic fusion analysis.
 - The automatic result popup lasts approximately five seconds. A manually
   opened toolbar popup follows normal browser behavior and does not auto-close.
 - Automatic popups open only after both the local result and an enabled cloud
-  review return complete assessment states. Cloud OFF, CHECKING, or UNAVAILABLE
-  states do not trigger an automatic popup.
+  review return complete assessment states. CHECKING or UNAVAILABLE cloud states
+  do not trigger an automatic popup.
 - Do not reopen the same automatic result because of tab focus, page focus, or
   repeated extraction of the same opened email.
 
 ## Cloud AI privacy and security
 
-- Cloud AI Review defaults to OFF and requires explicit locally stored consent.
-- Cloud URL Review has a separate consent setting, defaults OFF, runs only after
-  the frozen URL model warns, and sends only the minimized URL origin.
+- Cloud AI Review is always enabled and has no user-facing toggle or stored
+  preference. Redaction and all backend-only key protections remain mandatory.
+- Cloud URL Review is always enabled, runs only after the frozen URL model
+  warns, and sends only the minimized URL origin. It has no user-facing toggle.
 - The API key exists only in the backend environment.
 - Redact reasonably detectable OTPs, phone numbers, email addresses, cards, and
   account identifiers before an LLM request.
@@ -93,7 +94,7 @@ Run `python scripts/verify_models.py` to verify presence without loading weights
 
 - `extension/background/service-worker.js` — tab and email orchestration
 - `extension/content/` — provider-specific visible-email extractors
-- `extension/popup/` — simple v1.1 results and consent UI
+- `extension/popup/` — simple v1.1 results UI
 - `backend/server.py` — preserved detector endpoints and hybrid endpoint
 - `backend/scam_indicator_engine.py` — explainable evidence extraction
 - `backend/fusion_engine.py` — deterministic Rules A-H

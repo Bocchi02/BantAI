@@ -7,7 +7,7 @@ ACTIVE TAB
     |                                      +-- independent SAFE / SUSPICIOUS
     |                                      +-- optional minimized URL AI context
     |                                              |
-    |                                              +-- separate consent; RF warnings only
+    |                                              +-- always enabled; RF warnings only
     |                                              +-- origin only; no path/page content
     |                                              +-- HIGH-confidence clean -> NO STRONG WARNING SIGNS
     |                                              +-- lower-confidence disagreement -> NEEDS CAUTION
@@ -20,11 +20,9 @@ ACTIVE TAB
                     |
                     +-- Explainable Philippine Scam Indicator Engine
                     |
-                    +-- Cloud AI Review enabled by user?
+                    +-- Cloud AI Review always enabled
                     |       |
-                    |       +-- No: OFF; local analysis continues
-                    |       |
-                    |       +-- Yes: redact + minimize + strict LLM schema
+                    |       +-- redact + minimize + strict LLM schema
                     |                    |
                     |                    +-- valid result or UNAVAILABLE
                     |
@@ -57,10 +55,10 @@ COMPLETE-RESULT POPUP FLOW
 --------------------------
 1. A new supported email or eligible address change starts a sequence-bound request.
 2. Local results are stored without opening the automatic popup.
-3. If cloud consent is ON and the review is required, the cloud request runs.
+3. The applicable redacted/origin-only cloud request runs automatically.
 4. The popup opens for approximately five seconds only after both outputs have
    complete assessment states.
-5. Cloud OFF, CHECKING, or UNAVAILABLE states never trigger an automatic popup.
+5. Cloud CHECKING or UNAVAILABLE states never trigger an automatic popup.
 6. A result fingerprint opens automatically at most once; focus, tab clicks,
    repeated extraction, and page-complete events do not reopen it.
 7. Manually opening the toolbar popup never schedules a five-second close.

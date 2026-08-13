@@ -11,18 +11,64 @@ SUSPICIOUS_SIGNS_FOUND = "SUSPICIOUS_SIGNS_FOUND"
 
 GUIDANCE = {
     NO_STRONG_WARNING_SIGNS: (
-        "No strong warning signs were found. This does not guarantee that the email "
-        "or website is legitimate."
+        "No strong credential, payment, urgency, or impersonation warning was "
+        "identified. This is not a guarantee that the sender or email is legitimate."
     ),
     NEEDS_CAUTION: (
-        "Some details require caution. Verify the sender or website before clicking, "
-        "paying, or sharing information."
+        "The email contains unclear or conflicting warning signals. Verify the sender "
+        "through an official channel before clicking, paying, or sharing information."
     ),
     SUSPICIOUS_SIGNS_FOUND: (
-        "Warning signs were found. Do not provide passwords, OTPs, "
-        "personal information, or payment details until you verify the request "
-        "through an official channel."
+        "The email contains language or requests commonly associated with scams. Do "
+        "not share credentials, OTPs, personal information, or payment details until "
+        "the request is verified through an official channel."
     ),
+}
+
+
+INDICATOR_PHRASES = {
+    "OTP_REQUEST": "asks for an OTP",
+    "MPIN_REQUEST": "asks for an MPIN",
+    "PASSWORD_REQUEST": "asks for a password",
+    "PIN_OR_CVV_REQUEST": "asks for a PIN or CVV",
+    "CREDENTIAL_REQUEST": "requests account credentials",
+    "ACCOUNT_SECURITY_SCARE": "uses an account-security scare",
+    "ADVANCE_FEE": "requests an upfront fee before a promised benefit",
+    "DELIVERY_PAYMENT_REQUEST": "requests a parcel or delivery payment",
+    "INVESTMENT_PROMISE": "promises unusually certain investment returns",
+    "JOB_OR_TASK_OFFER": "uses a paid-task or job offer as a lure",
+    "PRIZE_OR_REWARD": "promises a prize or reward",
+    "PAYMENT_REQUEST": "requests money or payment",
+    "EMERGENCY_REQUEST": "uses an emergency money request",
+    "AUTHORITY_IMPERSONATION": "claims to represent a trusted organization",
+    "THREAT_OR_COERCION": "uses threats or coercion",
+    "URGENCY": "pressures the reader to act urgently",
+    "ACTION_DEMAND": "demands an immediate action",
+    "SCARCITY": "uses a limited-time claim",
+    "FAMILIARITY": "claims familiarity while requesting something sensitive",
+    "ROMANCE_OR_EMOTIONAL_MANIPULATION": "uses emotional pressure for money",
+    "COMMITMENT_ESCALATION": "asks for another task or payment",
+    "CREDENTIAL_VERIFICATION_PRETEXT": "uses verification as a reason to request credentials",
+    "ADVANCE_FEE_MANIPULATION": "requires payment before a promised benefit",
+    "EMPLOYMENT_LURE": "uses earnings or employment as a lure",
+    "IMPERSONATION": "may be impersonating a trusted person or organization",
+    "COERCION": "uses coercion or a threatened consequence",
+    "FEAR": "uses fear to pressure the reader",
+    "REWARD": "uses a promised reward as pressure",
+    "AUTHORITY": "uses authority to pressure the reader",
+    "EMERGENCY": "uses an emergency as social pressure",
+}
+
+GENERIC_INDICATOR_CATEGORIES = {
+    "ADVANCE_FEE_MANIPULATION",
+    "AUTHORITY",
+    "COERCION",
+    "CREDENTIAL_VERIFICATION_PRETEXT",
+    "EMERGENCY",
+    "EMPLOYMENT_LURE",
+    "FEAR",
+    "IMPERSONATION",
+    "REWARD",
 }
 
 
@@ -43,6 +89,73 @@ def _llm_assessment(llm_review: dict[str, Any] | None) -> str | None:
     }:
         return str(assessment)
     return None
+
+
+def _indicator_phrases(
+    local_indicators: dict[str, Any] | None,
+    llm_review: dict[str, Any] | None,
+) -> list[str]:
+    markers = [
+        *((local_indicators or {}).get("markers") or []),
+        *((llm_review or {}).get("indicators") or []),
+    ]
+    categories = [
+        str(marker.get("category", "")).upper()
+        for marker in markers
+        if isinstance(marker, dict)
+    ]
+    ordered = [
+        category for category in categories
+        if category not in GENERIC_INDICATOR_CATEGORIES
+    ] + [
+        category for category in categories
+        if category in GENERIC_INDICATOR_CATEGORIES
+    ]
+    phrases: list[str] = []
+    for category in ordered:
+        phrase = INDICATOR_PHRASES.get(category)
+        if phrase and phrase not in phrases:
+            phrases.append(phrase)
+        if len(phrases) == 2:
+            break
+    return phrases
+
+
+def _specific_guidance(
+    *,
+    final_result: str,
+    email_signal: str,
+    local_indicators: dict[str, Any] | None,
+    llm_review: dict[str, Any] | None,
+) -> str:
+    if final_result == NO_STRONG_WARNING_SIGNS:
+        return GUIDANCE[NO_STRONG_WARNING_SIGNS]
+
+    phrases = _indicator_phrases(local_indicators, llm_review)
+    if phrases:
+        evidence = f"The email {phrases[0]}"
+        if len(phrases) == 2:
+            evidence += f" and {phrases[1]}"
+        evidence += "."
+    elif str(email_signal).upper() == "SUSPICIOUS":
+        evidence = (
+            "The email contains suspicious language patterns, but no specific strong "
+            "scam request was identified."
+        )
+    else:
+        evidence = GUIDANCE[final_result].split(". ", maxsplit=1)[0] + "."
+
+    if final_result == SUSPICIOUS_SIGNS_FOUND:
+        action = (
+            "Do not share credentials, OTPs, personal information, or payment details "
+            "until the request is verified through an official channel."
+        )
+    else:
+        action = (
+            "Verify the sender through an official channel before clicking, paying, "
+            "or sharing information."
+        )
+    return f"{evidence} {action}"
 
 
 def fuse_email_signals(
@@ -103,7 +216,12 @@ def fuse_email_signals(
     return {
         "final_result": final_result,
         "supporting_sources": supporting_sources,
-        "message": GUIDANCE[final_result],
+        "message": _specific_guidance(
+            final_result=final_result,
+            email_signal=normalized_email,
+            local_indicators=local_indicators,
+            llm_review=llm_review,
+        ),
         "applied_rule": rule,
         "strategy": "DETERMINISTIC",
         "overall_numeric_risk_score": False,

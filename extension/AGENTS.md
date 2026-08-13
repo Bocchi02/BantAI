@@ -17,15 +17,23 @@ These instructions apply under `extension/`.
 - Use Roboto, large plain language, and a simple layout.
 - Primary email outcomes are NO STRONG WARNING SIGNS, NEEDS CAUTION, and
   SUSPICIOUS SIGNS FOUND; SAFE may remain only as a technical detector badge.
+- Show one final email outcome. Do not display a standalone email AI Review card;
+  cloud assessment remains an internal input to deterministic email fusion.
+- Show one final URL outcome. Do not display a standalone Cloud URL Review row;
+  cloud assessment remains an internal input to deterministic URL fusion.
+- Show each final URL or email verdict and explanation only once; do not repeat
+  either result in a separate guidance card.
+- Keep each final explanation to one or two sentences and name the specific
+  observable warning or reassuring evidence whenever it is available.
 - Keep scores and thresholds under `More details`.
 - Automatic email-result popups last approximately five seconds.
 - Manual toolbar popups must not be forced to auto-close.
 - Open an automatic popup only after local and enabled cloud assessment outputs
   are complete; never reopen it for focus changes or the same result fingerprint.
-- Cloud AI Review defaults OFF. Store only its Boolean preference in
-  `chrome.storage.local`; never store an API key or raw email body.
-- Cloud URL Review uses a separate Boolean preference that defaults OFF. Run it
-  only after a frozen RF warning and never send page content or browsing paths.
+- Cloud AI Review is always enabled and has no toggle or stored preference.
+  Never store an API key or raw email body.
+- Cloud URL Review is always enabled and has no toggle or stored preference. Run
+  it only after a frozen RF warning and never send page content or browsing paths.
 
 ## Security
 
