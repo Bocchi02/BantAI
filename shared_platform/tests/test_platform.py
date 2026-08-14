@@ -4,7 +4,6 @@ import base64
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
-from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 
@@ -18,7 +17,7 @@ from sqlalchemy import func, select
 
 from shared_platform.app.database import Base, SessionLocal, engine
 from shared_platform.app.main import app, cleanup_expired
-from shared_platform.app.models import ActivityEvent, PairedDevice, PairingCode, User, UserRole, UserStatus, utcnow
+from shared_platform.app.models import ActivityEvent, PairedDevice, PairingCode, UrlReport, User, UserRole, UserStatus, utcnow
 from shared_platform.app.security import decrypt_text, encrypt_text, hash_password, token_hash
 
 
@@ -38,7 +37,6 @@ class PlatformTests(unittest.TestCase):
                 last_name="User",
                 password_hash=hash_password("correct horse battery staple"),
                 status=UserStatus.ACTIVE,
-                verified_at=utcnow(),
             )
             self.admin = User(
                 email="admin@example.com",
@@ -48,7 +46,6 @@ class PlatformTests(unittest.TestCase):
                 password_hash=hash_password("admin correct horse battery"),
                 status=UserStatus.ACTIVE,
                 role=UserRole.ADMIN,
-                verified_at=utcnow(),
             )
             db.add_all([self.user, self.admin])
             db.commit()
@@ -83,54 +80,92 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(200, health.status_code, health.text)
         self.assertIn("configured", health.json()["cloud_ai"])
         self.assertIn("available", health.json()["cloud_ai"])
+        self.assertNotIn("email_delivery", health.json())
         self.assertNotIn("api_key", health.text.lower())
         self.assertNotIn("GEMINI_API_KEY", health.text)
 
-    def test_registration_verification_and_password_reset(self) -> None:
-        with patch("shared_platform.app.main.send_account_link") as send_link:
-            registration = self.client.post(
+    def test_registration_is_active_immediately_and_email_account_flows_are_absent(self) -> None:
+        registration = self.client.post(
+            "/api/v1/auth/register",
+            json={
+                "first_name": "New",
+                "middle_name": "Example",
+                "last_name": "User",
+                "email": "new-user@example.com",
+                "password": "StrongInitial1!",
+            },
+        )
+        self.assertEqual(201, registration.status_code, registration.text)
+        self.assertEqual("Your BantAI account was created.", registration.json()["message"])
+        self.login("new-user@example.com", "StrongInitial1!")
+
+        removed_routes = (
+            ("/api/v1/auth/verify-email", {"token": "synthetic-token-value-123456789"}),
+            ("/api/v1/auth/resend-verification", {"email": "new-user@example.com"}),
+            ("/api/v1/auth/request-password-reset", {"email": "new-user@example.com"}),
+            (
+                "/api/v1/auth/reset-password",
+                {"token": "synthetic-token-value-123456789", "password": "StrongReplacement2!"},
+            ),
+        )
+        for path, payload in removed_routes:
+            with self.subTest(path=path):
+                self.assertEqual(404, self.client.post(path, json=payload).status_code)
+
+        self.assertNotIn("account_tokens", Base.metadata.tables)
+
+    def test_registration_checks_case_insensitive_email_availability_first(self) -> None:
+        available = self.client.post(
+            "/api/v1/auth/email-availability",
+            json={"email": "unused@example.com"},
+        )
+        in_use = self.client.post(
+            "/api/v1/auth/email-availability",
+            json={"email": "USER@example.com"},
+        )
+
+        self.assertEqual(200, available.status_code, available.text)
+        self.assertTrue(available.json()["available"])
+        self.assertEqual(200, in_use.status_code, in_use.text)
+        self.assertFalse(in_use.json()["available"])
+
+        with patch("shared_platform.app.main.hash_password") as hash_password_call:
+            duplicate = self.client.post(
                 "/api/v1/auth/register",
                 json={
-                    "first_name": "New",
-                    "middle_name": "Example",
+                    "first_name": "Duplicate",
+                    "middle_name": None,
                     "last_name": "User",
-                    "email": "new-user@example.com",
-                    "password": "initial correct horse battery",
+                    "email": "USER@example.com",
+                    "password": "StrongDuplicate3!",
                 },
             )
-            self.assertEqual(202, registration.status_code, registration.text)
-            verification_path = send_link.call_args.kwargs["path"]
-            verification_token = parse_qs(urlsplit(verification_path).query)["token"][0]
 
-        blocked = self.client.post(
-            "/api/v1/auth/login",
-            json={"email": "new-user@example.com", "password": "initial correct horse battery"},
-        )
-        self.assertEqual(403, blocked.status_code)
-        verified = self.client.post("/api/v1/auth/verify-email", json={"token": verification_token})
-        self.assertEqual(200, verified.status_code, verified.text)
-        self.login("new-user@example.com", "initial correct horse battery")
+        self.assertEqual(409, duplicate.status_code, duplicate.text)
+        self.assertEqual("This email is already in use.", duplicate.json()["detail"])
+        hash_password_call.assert_not_called()
 
-        with patch("shared_platform.app.main.send_account_link") as send_link:
-            reset_request = self.client.post(
-                "/api/v1/auth/request-password-reset",
-                json={"email": "new-user@example.com"},
-            )
-            self.assertEqual(202, reset_request.status_code)
-            reset_path = send_link.call_args.kwargs["path"]
-            reset_token = parse_qs(urlsplit(reset_path).query)["token"][0]
-
-        reset = self.client.post(
-            "/api/v1/auth/reset-password",
-            json={"token": reset_token, "password": "replacement correct horse battery"},
+    def test_registration_rejects_passwords_missing_required_character_types(self) -> None:
+        weak_passwords = (
+            "lowercase123!",
+            "UPPERCASE123!",
+            "NoNumberHere!",
+            "NoSpecial123",
         )
-        self.assertEqual(200, reset.status_code, reset.text)
-        old_password = self.client.post(
-            "/api/v1/auth/login",
-            json={"email": "new-user@example.com", "password": "initial correct horse battery"},
-        )
-        self.assertEqual(401, old_password.status_code)
-        self.login("new-user@example.com", "replacement correct horse battery")
+        for index, password in enumerate(weak_passwords):
+            with self.subTest(password=password):
+                response = self.client.post(
+                    "/api/v1/auth/register",
+                    json={
+                        "first_name": "Password",
+                        "middle_name": None,
+                        "last_name": "Test",
+                        "email": f"password-test-{index}@example.com",
+                        "password": password,
+                    },
+                )
+                self.assertEqual(422, response.status_code, response.text)
+                self.assertIn("uppercase letter", response.json()["detail"])
 
     def test_profile_name_and_password_change(self) -> None:
         self.login("user@example.com", "correct horse battery staple")
@@ -145,7 +180,7 @@ class PlatformTests(unittest.TestCase):
         wrong = self.client.post(
             "/api/v1/profile/change-password",
             headers=self.csrf(),
-            json={"current_password": "wrong password", "new_password": "another correct horse battery"},
+            json={"current_password": "wrong password", "new_password": "AnotherStrong3!"},
         )
         self.assertEqual(400, wrong.status_code)
         changed = self.client.post(
@@ -153,7 +188,7 @@ class PlatformTests(unittest.TestCase):
             headers=self.csrf(),
             json={
                 "current_password": "correct horse battery staple",
-                "new_password": "another correct horse battery",
+                "new_password": "AnotherStrong3!",
             },
         )
         self.assertEqual(200, changed.status_code, changed.text)
@@ -167,7 +202,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(401, old_login.status_code)
         new_login = fresh_client.post(
             "/api/v1/auth/login",
-            json={"email": "user@example.com", "password": "another correct horse battery"},
+            json={"email": "user@example.com", "password": "AnotherStrong3!"},
         )
         self.assertEqual(200, new_login.status_code, new_login.text)
 
@@ -236,6 +271,78 @@ class PlatformTests(unittest.TestCase):
         )
         self.assertEqual(400, blocked.status_code)
 
+    def test_user_can_enter_url_and_admin_can_review_without_reporter_identity(self) -> None:
+        self.login("user@example.com", "correct horse battery staple")
+        created = self.client.post(
+            "/api/v1/url-reports",
+            headers=self.csrf(),
+            json={
+                "url": "https://review.example.test/private/path?secret=1#fragment",
+                "detector_outcome": "NEEDS_CAUTION",
+                "classification": "LEGITIMATE",
+            },
+        )
+        self.assertEqual(201, created.status_code, created.text)
+        report = created.json()["report"]
+        self.assertEqual("https://review.example.test", report["origin"])
+        self.assertEqual("NEEDS_CAUTION", report["detector_outcome"])
+        self.assertEqual("PENDING", report["status"])
+        self.assertNotIn("private", created.text)
+        self.assertNotIn("secret", created.text)
+
+        duplicate = self.client.post(
+            "/api/v1/url-reports",
+            headers=self.csrf(),
+            json={
+                "url": "https://REVIEW.example.test/different/path",
+                "detector_outcome": "SUSPICIOUS_SIGNS_FOUND",
+                "classification": "SUSPICIOUS",
+            },
+        )
+        self.assertEqual(409, duplicate.status_code)
+        invalid = self.client.post(
+            "/api/v1/url-reports",
+            headers=self.csrf(),
+            json={
+                "url": "javascript:alert(1)",
+                "detector_outcome": "NO_STRONG_WARNING_SIGNS",
+                "classification": "SUSPICIOUS",
+            },
+        )
+        self.assertEqual(422, invalid.status_code)
+        self.assertEqual(403, self.client.get("/api/v1/admin/url-reports").status_code)
+
+        with SessionLocal() as db:
+            stored = db.get(UrlReport, report["id"])
+            self.assertIsNotNone(stored)
+            self.assertNotIn("review.example.test", stored.origin_encrypted)
+            self.assertNotIn("review.example.test", stored.origin_fingerprint)
+
+        admin_client = TestClient(app)
+        admin_login = admin_client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "admin correct horse battery"},
+        )
+        self.assertEqual(200, admin_login.status_code, admin_login.text)
+        queue = admin_client.get("/api/v1/admin/url-reports")
+        self.assertEqual(200, queue.status_code, queue.text)
+        self.assertEqual(1, queue.json()["total"])
+        self.assertNotIn("user@example.com", queue.text)
+        self.assertNotIn("user_id", queue.text)
+        self.assertNotIn("activity_event_id", queue.text)
+
+        reviewed = admin_client.patch(
+            f"/api/v1/admin/url-reports/{report['id']}",
+            headers={"X-CSRF-Token": admin_client.cookies.get("bantai_csrf")},
+            json={"assessment": "LEGITIMATE"},
+        )
+        self.assertEqual(200, reviewed.status_code, reviewed.text)
+        self.assertEqual("REVIEWED", reviewed.json()["report"]["status"])
+        self.assertEqual("LEGITIMATE", reviewed.json()["report"]["admin_assessment"])
+
+        personal = self.client.get("/api/v1/url-reports")
+        self.assertEqual("LEGITIMATE", personal.json()["items"][0]["admin_assessment"])
+
     def test_regular_user_cannot_access_admin_api(self) -> None:
         self.login("user@example.com", "correct horse battery staple")
         response = self.client.get("/api/v1/admin/users")
@@ -284,22 +391,34 @@ class PlatformTests(unittest.TestCase):
             device = PairedDevice(user_id=self.user_id, token_hash=token_hash("cleanup-token"), label="Cleanup test")
             db.add(device)
             db.flush()
+            event = ActivityEvent(
+                user_id=self.user_id,
+                device_id=device.id,
+                client_event_id="old-event-0001",
+                event_type="URL",
+                origin_encrypted=encrypt_text("https://example.com"),
+                outcome="NEEDS_CAUTION",
+                cloud_status="COMPLETE",
+                occurred_at=utcnow() - timedelta(days=91),
+            )
+            db.add(event)
+            db.flush()
             db.add(
-                ActivityEvent(
+                UrlReport(
                     user_id=self.user_id,
-                    device_id=device.id,
-                    client_event_id="old-event-0001",
-                    event_type="URL",
+                    activity_event_id=event.id,
                     origin_encrypted=encrypt_text("https://example.com"),
-                    outcome="NEEDS_CAUTION",
-                    cloud_status="COMPLETE",
-                    occurred_at=utcnow() - timedelta(days=91),
+                    detector_outcome="NEEDS_CAUTION",
+                    user_classification="SUSPICIOUS",
+                    submitted_at=utcnow() - timedelta(days=91),
                 )
             )
             db.commit()
             cleanup_expired(db)
             total = db.scalar(select(func.count(ActivityEvent.id)))
             self.assertEqual(0, total)
+            reports = db.scalar(select(func.count(UrlReport.id)))
+            self.assertEqual(0, reports)
 
     def test_activity_schema_rejects_email_body(self) -> None:
         token = self.paired_device_token()

@@ -29,18 +29,19 @@ from .dependencies import (
     current_device,
     current_web_user,
 )
-from .mailer import send_account_link
 from .models import (
-    AccountToken,
+    AdminUrlAssessment,
     ActivityEvent,
     EventType,
     Outcome,
     PairedDevice,
     PairingCode,
-    TokenPurpose,
     User,
     UserRole,
     UserStatus,
+    UrlReport,
+    UrlReportClassification,
+    UrlReportStatus,
     WebSession,
     utcnow,
 )
@@ -51,17 +52,19 @@ from .schemas import (
     EmailRequest,
     LoginRequest,
     PairingConsumeRequest,
+    PASSWORD_REQUIREMENTS,
     ProfileUpdateRequest,
     RegisterRequest,
-    ResetPasswordRequest,
-    TokenRequest,
     UrlCloudReviewRequest,
+    UrlReportCreateRequest,
+    UrlReportReviewRequest,
     UserView,
+    require_strong_password,
 )
-from .security import decrypt_text, encrypt_text, hash_password, pairing_code, random_token, token_hash, verify_password
+from .security import blind_index, decrypt_text, encrypt_text, hash_password, pairing_code, random_token, token_hash, verify_password
 
 
-GENERIC_ACCOUNT_MESSAGE = "If the account can continue, BantAI will send an email with the next step."
+EMAIL_IN_USE_MESSAGE = "This email is already in use."
 OUTCOME_VALUES = [item.value for item in Outcome]
 
 
@@ -115,8 +118,8 @@ class RateLimitMiddleware:
 def cleanup_expired(db: Session) -> None:
     now = utcnow()
     cutoff = now - timedelta(days=settings.activity_retention_days)
+    db.execute(delete(UrlReport).where(UrlReport.submitted_at < cutoff))
     db.execute(delete(ActivityEvent).where(ActivityEvent.occurred_at < cutoff))
-    db.execute(delete(AccountToken).where(or_(AccountToken.expires_at < now, AccountToken.consumed_at.is_not(None))))
     db.execute(delete(PairingCode).where(or_(PairingCode.expires_at < now, PairingCode.consumed_at.is_not(None))))
     db.execute(delete(WebSession).where(or_(WebSession.expires_at < now, WebSession.revoked_at.is_not(None))))
     db.commit()
@@ -129,7 +132,7 @@ def seed_admin(db: Session) -> None:
         return
     user = db.scalar(select(User).where(User.email == email))
     if user is None:
-        db.add(User(email=email, first_name="BantAI", last_name="Administrator", password_hash=hash_password(password), role=UserRole.ADMIN, status=UserStatus.ACTIVE, verified_at=utcnow()))
+        db.add(User(email=email, first_name="BantAI", last_name="Administrator", password_hash=hash_password(password), role=UserRole.ADMIN, status=UserStatus.ACTIVE))
         db.commit()
 
 
@@ -179,18 +182,9 @@ def user_view(user: User) -> dict:
         full_name=full_name,
         role=user.role,
         status=user.status,
-        verified_at=user.verified_at,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     ).model_dump(mode="json")
-
-
-def issue_account_token(db: Session, user: User, purpose: TokenPurpose, minutes: int) -> str:
-    raw = random_token()
-    db.execute(update(AccountToken).where(AccountToken.user_id == user.id, AccountToken.purpose == purpose, AccountToken.consumed_at.is_(None)).values(consumed_at=utcnow()))
-    db.add(AccountToken(user_id=user.id, token_hash=token_hash(raw), purpose=purpose, expires_at=utcnow() + timedelta(minutes=minutes)))
-    db.commit()
-    return raw
 
 
 @app.get("/health")
@@ -203,47 +197,41 @@ def health() -> dict:
     }
 
 
-@app.post("/api/v1/auth/register", status_code=202)
+@app.post("/api/v1/auth/register", status_code=201)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict:
-    email = str(payload.email).lower()
+    email = str(payload.email).strip().lower()
     existing = db.scalar(select(User).where(User.email == email))
-    if existing is None:
-        user = User(
-            email=email,
-            first_name=payload.first_name,
-            middle_name=payload.middle_name,
-            last_name=payload.last_name,
-            password_hash=hash_password(payload.password),
-        )
-        db.add(user)
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=EMAIL_IN_USE_MESSAGE)
+
+    try:
+        require_strong_password(payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=PASSWORD_REQUIREMENTS) from exc
+
+    user = User(
+        email=email,
+        first_name=payload.first_name,
+        middle_name=payload.middle_name,
+        last_name=payload.last_name,
+        password_hash=hash_password(payload.password),
+        status=UserStatus.ACTIVE,
+    )
+    db.add(user)
+    try:
         db.flush()
-        raw = issue_account_token(db, user, TokenPurpose.EMAIL_VERIFICATION, 60 * 24)
-        send_account_link(recipient=email, subject="Verify your BantAI account", path=f"/verify-email?token={raw}")
-    return {"message": GENERIC_ACCOUNT_MESSAGE}
-
-
-@app.post("/api/v1/auth/verify-email")
-def verify_email(payload: TokenRequest, db: Session = Depends(get_db)) -> dict:
-    record = db.scalar(select(AccountToken).where(AccountToken.token_hash == token_hash(payload.token), AccountToken.purpose == TokenPurpose.EMAIL_VERIFICATION, AccountToken.consumed_at.is_(None)))
-    if record is None or _aware(record.expires_at) <= utcnow():
-        raise HTTPException(status_code=400, detail="This verification link is invalid or expired.")
-    user = db.get(User, record.user_id)
-    if user is None:
-        raise HTTPException(status_code=400, detail="This verification link is invalid or expired.")
-    record.consumed_at = utcnow()
-    user.status = UserStatus.ACTIVE
-    user.verified_at = utcnow()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=EMAIL_IN_USE_MESSAGE) from exc
     db.commit()
-    return {"message": "Your BantAI account is verified. You can now sign in."}
+    return {"message": "Your BantAI account was created."}
 
 
-@app.post("/api/v1/auth/resend-verification", status_code=202)
-def resend_verification(payload: EmailRequest, db: Session = Depends(get_db)) -> dict:
-    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
-    if user is not None and user.status == UserStatus.PENDING_VERIFICATION:
-        raw = issue_account_token(db, user, TokenPurpose.EMAIL_VERIFICATION, 60 * 24)
-        send_account_link(recipient=user.email, subject="Verify your BantAI account", path=f"/verify-email?token={raw}")
-    return {"message": GENERIC_ACCOUNT_MESSAGE}
+@app.post("/api/v1/auth/email-availability")
+def email_availability(payload: EmailRequest, db: Session = Depends(get_db)) -> dict:
+    email = str(payload.email).strip().lower()
+    existing = db.scalar(select(User.id).where(User.email == email))
+    return {"available": existing is None}
 
 
 @app.post("/api/v1/auth/login")
@@ -251,8 +239,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
     if user is None or not verify_password(user.password_hash, payload.password):
         raise HTTPException(status_code=401, detail="The email or password is incorrect.")
-    if user.status == UserStatus.PENDING_VERIFICATION:
-        raise HTTPException(status_code=403, detail="Verify your email before signing in.")
     if user.status == UserStatus.SUSPENDED:
         raise HTTPException(status_code=403, detail="This account is suspended.")
     session_token = random_token()
@@ -316,30 +302,6 @@ def change_password(
     return {"message": "Your password was changed. Other signed-in sessions were closed."}
 
 
-@app.post("/api/v1/auth/request-password-reset", status_code=202)
-def request_password_reset(payload: EmailRequest, db: Session = Depends(get_db)) -> dict:
-    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
-    if user is not None and user.status != UserStatus.SUSPENDED:
-        raw = issue_account_token(db, user, TokenPurpose.PASSWORD_RESET, 30)
-        send_account_link(recipient=user.email, subject="Reset your BantAI password", path=f"/reset-password?token={raw}")
-    return {"message": GENERIC_ACCOUNT_MESSAGE}
-
-
-@app.post("/api/v1/auth/reset-password")
-def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)) -> dict:
-    record = db.scalar(select(AccountToken).where(AccountToken.token_hash == token_hash(payload.token), AccountToken.purpose == TokenPurpose.PASSWORD_RESET, AccountToken.consumed_at.is_(None)))
-    if record is None or _aware(record.expires_at) <= utcnow():
-        raise HTTPException(status_code=400, detail="This reset link is invalid or expired.")
-    user = db.get(User, record.user_id)
-    if user is None:
-        raise HTTPException(status_code=400, detail="This reset link is invalid or expired.")
-    user.password_hash = hash_password(payload.password)
-    record.consumed_at = utcnow()
-    db.execute(update(WebSession).where(WebSession.user_id == user.id, WebSession.revoked_at.is_(None)).values(revoked_at=utcnow()))
-    db.commit()
-    return {"message": "Your password was changed. Sign in again on your devices."}
-
-
 @app.post("/api/v1/pairing", status_code=201)
 def create_pairing(current: CurrentWebUser = Depends(csrf_protected), db: Session = Depends(get_db)) -> dict:
     raw = pairing_code()
@@ -397,7 +359,11 @@ def normalized_origin(value: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         raise HTTPException(status_code=422, detail="URL activity must contain an HTTP/HTTPS origin.")
-    port = f":{parsed.port}" if parsed.port else ""
+    try:
+        parsed_port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="URL activity contains an invalid port.") from exc
+    port = f":{parsed_port}" if parsed_port else ""
     return f"{parsed.scheme}://{parsed.hostname.lower()}{port}"
 
 
@@ -413,6 +379,22 @@ def event_view(event: ActivityEvent) -> dict:
         "cloud_status": event.cloud_status.value,
         "occurred_at": utc_timestamp(event.occurred_at),
     }
+
+
+def url_report_view(report: UrlReport, *, include_activity_reference: bool = True) -> dict:
+    view = {
+        "id": report.id,
+        "origin": decrypt_text(report.origin_encrypted),
+        "detector_outcome": report.detector_outcome.value,
+        "user_classification": report.user_classification.value,
+        "status": report.status.value,
+        "admin_assessment": report.admin_assessment.value if report.admin_assessment else None,
+        "submitted_at": utc_timestamp(report.submitted_at),
+        "reviewed_at": utc_timestamp(report.reviewed_at),
+    }
+    if include_activity_reference:
+        view["activity_event_id"] = report.activity_event_id
+    return view
 
 
 @app.post("/api/v1/activities", status_code=202)
@@ -480,6 +462,56 @@ def activities(
     return {"items": [event_view(row) for row in rows], "page": page, "page_size": page_size, "total": total, "pages": math.ceil(total / page_size) if total else 0}
 
 
+@app.post("/api/v1/url-reports", status_code=201)
+def create_url_report(
+    payload: UrlReportCreateRequest,
+    current: CurrentWebUser = Depends(csrf_protected),
+    db: Session = Depends(get_db),
+) -> dict:
+    origin = normalized_origin(payload.url)
+    report = UrlReport(
+        user_id=current.user.id,
+        activity_event_id=None,
+        origin_encrypted=encrypt_text(origin),
+        origin_fingerprint=blind_index(origin, "url-report-origin-v1"),
+        detector_outcome=payload.detector_outcome,
+        user_classification=payload.classification,
+    )
+    db.add(report)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This website result was already reported.") from exc
+    db.refresh(report)
+    return {"message": "Your website report was submitted for administrator review.", "report": url_report_view(report)}
+
+
+@app.get("/api/v1/url-reports")
+def personal_url_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    current: CurrentWebUser = Depends(current_web_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    filters = [UrlReport.user_id == current.user.id]
+    total = db.scalar(select(func.count(UrlReport.id)).where(*filters)) or 0
+    rows = db.scalars(
+        select(UrlReport)
+        .where(*filters)
+        .order_by(UrlReport.submitted_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "items": [url_report_view(row) for row in rows],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": math.ceil(total / page_size) if total else 0,
+    }
+
+
 def outcome_distribution(db: Session, filters: list) -> list[dict]:
     rows = db.execute(select(ActivityEvent.event_type, ActivityEvent.outcome, func.count(ActivityEvent.id)).where(*filters).group_by(ActivityEvent.event_type, ActivityEvent.outcome)).all()
     counts = {(event_type.value, outcome.value): count for event_type, outcome, count in rows}
@@ -523,6 +555,61 @@ def admin_dashboard(days: int = Query(30, ge=7, le=90), _: CurrentWebUser = Depe
     if days not in {7, 30, 90}:
         raise HTTPException(status_code=422, detail="Dashboard range must be 7, 30, or 90 days.")
     return {"range_days": days, "distribution": outcome_distribution(db, [ActivityEvent.occurred_at >= utcnow() - timedelta(days=days)])}
+
+
+@app.get("/api/v1/admin/url-reports")
+def admin_url_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    report_status: UrlReportStatus | None = None,
+    classification: UrlReportClassification | None = None,
+    _: CurrentWebUser = Depends(admin_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    filters = []
+    if report_status:
+        filters.append(UrlReport.status == report_status)
+    if classification:
+        filters.append(UrlReport.user_classification == classification)
+    total = db.scalar(select(func.count(UrlReport.id)).where(*filters)) or 0
+    rows = db.scalars(
+        select(UrlReport)
+        .where(*filters)
+        .order_by(UrlReport.submitted_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "items": [url_report_view(row, include_activity_reference=False) for row in rows],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": math.ceil(total / page_size) if total else 0,
+    }
+
+
+@app.patch("/api/v1/admin/url-reports/{report_id}")
+def review_url_report(
+    report_id: str,
+    payload: UrlReportReviewRequest,
+    current: CurrentWebUser = Depends(admin_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    report = db.get(UrlReport, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Website report not found.")
+    if report.user_id == current.user.id:
+        raise HTTPException(status_code=400, detail="Administrators cannot review their own website report.")
+    report.status = UrlReportStatus.REVIEWED
+    report.admin_assessment = payload.assessment
+    report.reviewed_by = current.user.id
+    report.reviewed_at = utcnow()
+    db.commit()
+    db.refresh(report)
+    return {
+        "message": "The website report was reviewed.",
+        "report": url_report_view(report, include_activity_reference=False),
+    }
 
 
 @app.get("/api/v1/admin/users")

@@ -30,12 +30,6 @@ class Settings:
     encryption_key: str = os.getenv("BANTAI_ENCRYPTION_KEY", "")
     admin_email: str = os.getenv("BANTAI_ADMIN_EMAIL", "")
     admin_password: str = os.getenv("BANTAI_ADMIN_PASSWORD", "")
-    smtp_host: str = os.getenv("BANTAI_SMTP_HOST", "")
-    smtp_port: int = int(os.getenv("BANTAI_SMTP_PORT", "587"))
-    smtp_username: str = os.getenv("BANTAI_SMTP_USERNAME", "")
-    smtp_password: str = os.getenv("BANTAI_SMTP_PASSWORD", "")
-    smtp_from: str = os.getenv("BANTAI_SMTP_FROM", "BantAI <no-reply@localhost>")
-    smtp_starttls: bool = _bool("BANTAI_SMTP_STARTTLS", True)
     session_hours: int = 24
     activity_retention_days: int = 90
 

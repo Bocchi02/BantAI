@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render(path = "/") {
@@ -19,6 +20,7 @@ test("server-renders BantAI account experience", async () => {
   const html = await response.text();
   assert.match(html, /BantAI/);
   assert.match(html, /Decision support for safer browsing/i);
+  assert.doesNotMatch(html, /Forgot password|email verification|account recovery/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
@@ -27,4 +29,17 @@ test("keeps sensitive configuration out of rendered HTML", async () => {
   const html = await response.text();
   assert.doesNotMatch(html, /GEMINI_API_KEY|BANTAI_ENCRYPTION_KEY|mysql\+pymysql/i);
   assert.doesNotMatch(html, /checkpoint-15666|suspicious_probability|overall_numeric_risk_score/i);
+});
+
+test("includes privacy-minimized user reporting and administrator review interfaces", async () => {
+  const source = await readFile(new URL("../app/BantAIApp.tsx", import.meta.url), "utf8");
+  assert.match(source, /Report a website result/);
+  assert.match(source, /Only its origin is submitted/);
+  assert.match(source, /type="url"/);
+  assert.match(source, /What result did BantAI show/);
+  assert.match(source, /Review website reports/);
+  assert.match(source, /No reporter identity/);
+  assert.match(source, /does not automatically change future outcomes/);
+  assert.doesNotMatch(source, /href=\{report\.origin\}|window\.open\(report\.origin/);
+  assert.doesNotMatch(source, /Select a recent website/);
 });

@@ -10,7 +10,8 @@
 
 The account experience includes separate first, optional middle, and last name
 fields, an editable Profile page, authenticated password changes, and explicit
-sign-out from the Profile page.
+sign-out from the Profile page. New accounts are active immediately; email
+verification and email-based password recovery are excluded from this version.
 
 The personal dashboard includes a live Protection connections panel for the
 local RF/XLM-R models, the paired browser extension/device credential, and the
@@ -37,7 +38,7 @@ never personal activity.
 
 - Confirm redistribution rights for both frozen models.
 - Obtain a Windows code-signing certificate and set the signing thumbprint.
-- Configure production MySQL, HTTPS, SMTP, encryption key, allowed origins, and
+- Configure production MySQL, HTTPS, encryption key, allowed origins, and
   Gemini credentials in the shared service.
 - Set `BANTAI_PLATFORM_API` and `BANTAI_WEB_DASHBOARD` in the Companion release.
 - Perform the documented Chrome/Edge acceptance flow before claiming browser

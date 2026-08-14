@@ -20,14 +20,24 @@ class UserRole(str, enum.Enum):
 
 
 class UserStatus(str, enum.Enum):
-    PENDING_VERIFICATION = "PENDING_VERIFICATION"
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
 
 
-class TokenPurpose(str, enum.Enum):
-    EMAIL_VERIFICATION = "EMAIL_VERIFICATION"
-    PASSWORD_RESET = "PASSWORD_RESET"
+class UrlReportClassification(str, enum.Enum):
+    LEGITIMATE = "LEGITIMATE"
+    SUSPICIOUS = "SUSPICIOUS"
+
+
+class UrlReportStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    REVIEWED = "REVIEWED"
+
+
+class AdminUrlAssessment(str, enum.Enum):
+    LEGITIMATE = "LEGITIMATE"
+    SUSPICIOUS = "SUSPICIOUS"
+    INCONCLUSIVE = "INCONCLUSIVE"
 
 
 class EventType(str, enum.Enum):
@@ -60,8 +70,7 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String(80), default="")
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER)
-    status: Mapped[UserStatus] = mapped_column(Enum(UserStatus), default=UserStatus.PENDING_VERIFICATION)
-    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[UserStatus] = mapped_column(Enum(UserStatus), default=UserStatus.ACTIVE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -81,18 +90,6 @@ class WebSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="sessions")
-
-
-class AccountToken(Base):
-    __tablename__ = "account_tokens"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    purpose: Mapped[TokenPurpose] = mapped_column(Enum(TokenPurpose))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class PairingCode(Base):
@@ -147,3 +144,33 @@ class ActivityEvent(Base):
     cloud_status: Mapped[CloudStatus] = mapped_column(Enum(CloudStatus))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class UrlReport(Base):
+    __tablename__ = "url_reports"
+    __table_args__ = (
+        UniqueConstraint("user_id", "activity_event_id", name="uq_url_report_user_activity"),
+        UniqueConstraint("user_id", "origin_fingerprint", name="uq_url_report_user_origin"),
+        CheckConstraint(
+            "(status = 'PENDING' AND admin_assessment IS NULL AND reviewed_at IS NULL) OR "
+            "(status = 'REVIEWED' AND admin_assessment IS NOT NULL AND reviewed_at IS NOT NULL)",
+            name="ck_url_report_review_shape",
+        ),
+        Index("ix_url_reports_status_submitted", "status", "submitted_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    activity_event_id: Mapped[str | None] = mapped_column(
+        ForeignKey("activity_events.id", ondelete="SET NULL"),
+        index=True,
+    )
+    origin_encrypted: Mapped[str] = mapped_column(Text)
+    origin_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
+    user_classification: Mapped[UrlReportClassification] = mapped_column(Enum(UrlReportClassification))
+    status: Mapped[UrlReportStatus] = mapped_column(Enum(UrlReportStatus), default=UrlReportStatus.PENDING)
+    admin_assessment: Mapped[AdminUrlAssessment | None] = mapped_column(Enum(AdminUrlAssessment))
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

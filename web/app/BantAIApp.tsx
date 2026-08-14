@@ -4,9 +4,12 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 
 import { api, ApiError } from "./api";
 
 type Role = "USER" | "ADMIN";
-type UserStatus = "PENDING_VERIFICATION" | "ACTIVE" | "SUSPENDED";
+type UserStatus = "ACTIVE" | "SUSPENDED";
 type Outcome = "NO_STRONG_WARNING_SIGNS" | "NEEDS_CAUTION" | "SUSPICIOUS_SIGNS_FOUND";
 type EventType = "URL" | "EMAIL";
+type UrlReportClassification = "LEGITIMATE" | "SUSPICIOUS";
+type UrlReportStatus = "PENDING" | "REVIEWED";
+type AdminUrlAssessment = "LEGITIMATE" | "SUSPICIOUS" | "INCONCLUSIVE";
 
 type User = {
   id: string;
@@ -17,7 +20,6 @@ type User = {
   full_name: string;
   role: Role;
   status: UserStatus;
-  verified_at: string | null;
   created_at: string;
   last_login_at: string | null;
 };
@@ -32,6 +34,18 @@ type Activity = {
   outcome: Outcome;
   cloud_status: "COMPLETE" | "UNAVAILABLE";
   occurred_at: string;
+};
+
+type UrlReport = {
+  id: string;
+  activity_event_id: string | null;
+  origin: string;
+  detector_outcome: Outcome;
+  user_classification: UrlReportClassification;
+  status: UrlReportStatus;
+  admin_assessment: AdminUrlAssessment | null;
+  submitted_at: string;
+  reviewed_at: string | null;
 };
 
 type Distribution = {
@@ -68,7 +82,7 @@ type ConnectionStatus = {
 const COMPANION_URL =
   process.env.NEXT_PUBLIC_BANTAI_COMPANION_URL || "http://127.0.0.1:8000";
 
-type PageName = "dashboard" | "activity" | "devices" | "profile" | "admin" | "users";
+type PageName = "dashboard" | "activity" | "reports" | "devices" | "profile" | "admin" | "review-reports" | "users";
 
 const OUTCOMES: { value: Outcome; label: string; short: string }[] = [
   { value: "NO_STRONG_WARNING_SIGNS", label: "No strong warning signs", short: "No warning signs" },
@@ -76,12 +90,38 @@ const OUTCOMES: { value: Outcome; label: string; short: string }[] = [
   { value: "SUSPICIOUS_SIGNS_FOUND", label: "Suspicious signs found", short: "Suspicious" },
 ];
 
+const PASSWORD_REQUIREMENTS =
+  "Use 12 to 128 characters with at least one uppercase letter, one lowercase letter, one number, and one special character.";
+
+function passwordValidationMessage(value: unknown) {
+  const password = String(value || "");
+  const isStrong =
+    password.length >= 12 &&
+    password.length <= 128 &&
+    /[A-Z]/.test(password) &&
+    /[a-z]/.test(password) &&
+    /[0-9]/.test(password) &&
+    /[^A-Za-z0-9\s]/.test(password);
+  return isStrong ? "" : PASSWORD_REQUIREMENTS;
+}
+
 function cx(...values: (string | false | null | undefined)[]) {
   return values.filter(Boolean).join(" ");
 }
 
 function outcomeInfo(outcome: Outcome) {
   return OUTCOMES.find((item) => item.value === outcome) || OUTCOMES[1];
+}
+
+function userClassificationLabel(value: UrlReportClassification) {
+  return value === "LEGITIMATE" ? "I believe it is legitimate" : "I believe it is suspicious";
+}
+
+function adminAssessmentLabel(value: AdminUrlAssessment | null) {
+  if (value === "LEGITIMATE") return "Likely legitimate";
+  if (value === "SUSPICIOUS") return "Likely suspicious";
+  if (value === "INCONCLUSIVE") return "Inconclusive";
+  return "Awaiting review";
 }
 
 function userName(user: User) {
@@ -205,45 +245,43 @@ function AuthLayout({ children, eyebrow, title, description }: { children: React
 }
 
 function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void }) {
-  const [path, setPath] = useState(() => (typeof window === "undefined" ? "/login" : window.location.pathname));
-  const [message, setMessage] = useState("");
+  const [path, setPath] = useState(() => (
+    typeof window !== "undefined" && window.location.pathname === "/register" ? "/register" : "/login"
+  ));
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(() => path === "/verify-email");
+  const [busy, setBusy] = useState(false);
 
   const go = (next: string) => {
     history.pushState({}, "", next);
     setPath(next);
-    setMessage("");
     setError("");
   };
 
   useEffect(() => {
-    const handler = () => setPath(window.location.pathname);
+    if (!["/login", "/register"].includes(window.location.pathname)) {
+      history.replaceState({}, "", "/login");
+    }
+    const handler = () => setPath(window.location.pathname === "/register" ? "/register" : "/login");
     window.addEventListener("popstate", handler);
     return () => window.removeEventListener("popstate", handler);
   }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (path === "/verify-email" && token) {
-      api<{ message: string }>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) })
-        .then((result) => setMessage(result.message))
-        .catch((reason: ApiError) => setError(reason.message))
-        .finally(() => setBusy(false));
-    }
-  }, [path]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setError("");
-    setMessage("");
     const data = Object.fromEntries(new FormData(event.currentTarget));
     try {
       if (path === "/register") {
+        const availability = await api<{ available: boolean }>("/auth/email-availability", {
+          method: "POST",
+          body: JSON.stringify({ email: data.email }),
+        });
+        if (!availability.available) throw new Error("This email is already in use.");
+        const passwordError = passwordValidationMessage(data.password);
+        if (passwordError) throw new Error(passwordError);
         if (data.password !== data.confirm_password) throw new Error("Passwords do not match.");
-        const result = await api<{ message: string }>("/auth/register", {
+        await api<{ message: string }>("/auth/register", {
           method: "POST",
           body: JSON.stringify({
             first_name: data.first_name,
@@ -253,29 +291,13 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void
             password: data.password,
           }),
         });
-        setMessage(result.message);
-      } else if (path === "/forgot-password") {
-        const result = await api<{ message: string }>("/auth/request-password-reset", {
-          method: "POST",
-          body: JSON.stringify({ email: data.email }),
-        });
-        setMessage(result.message);
-      } else if (path === "/reset-password") {
-        if (data.password !== data.confirm_password) throw new Error("Passwords do not match.");
-        const token = new URLSearchParams(window.location.search).get("token") || "";
-        const result = await api<{ message: string }>("/auth/reset-password", {
-          method: "POST",
-          body: JSON.stringify({ token, password: data.password }),
-        });
-        setMessage(result.message);
-      } else {
-        const result = await api<{ user: User }>("/auth/login", {
-          method: "POST",
-          body: JSON.stringify({ email: data.email, password: data.password }),
-        });
-        history.replaceState({}, "", "/dashboard");
-        onAuthenticated(result.user);
       }
+      const result = await api<{ user: User }>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: data.email, password: data.password }),
+      });
+      history.replaceState({}, "", "/dashboard");
+      onAuthenticated(result.user);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "BantAI could not complete that request.");
     } finally {
@@ -283,31 +305,14 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void
     }
   };
 
-  if (path === "/verify-email") {
-    return (
-      <AuthLayout eyebrow="EMAIL VERIFICATION" title={busy ? "Checking your link…" : message ? "Email verified" : "We couldn’t verify that link"} description={message || error || "Please wait while BantAI validates your secure link."}>
-        {message && <Notice type="success">{message}</Notice>}
-        {error && <Notice type="error">{error}</Notice>}
-        <button className="button primary full" onClick={() => go("/login")}>Continue to sign in</button>
-      </AuthLayout>
-    );
-  }
-
   const isRegister = path === "/register";
-  const isForgot = path === "/forgot-password";
-  const isReset = path === "/reset-password";
-  const title = isRegister ? "Create your account" : isForgot ? "Reset your password" : isReset ? "Choose a new password" : "Welcome back";
+  const title = isRegister ? "Create your account" : "Welcome back";
   const description = isRegister
-    ? "Verify your email, then connect BantAI in a few guided steps."
-    : isForgot
-      ? "We’ll email a secure reset link if the account is eligible."
-      : isReset
-        ? "Use at least 12 characters for a strong new password."
-        : "Sign in to review your recent website and email checks.";
+    ? "Create a secure BantAI account using your email address."
+    : "Sign in to review your recent website and email checks.";
 
   return (
-    <AuthLayout eyebrow={isRegister ? "GET STARTED" : isForgot || isReset ? "ACCOUNT RECOVERY" : "SECURE SIGN IN"} title={title} description={description}>
-      {message && <Notice type="success">{message}</Notice>}
+    <AuthLayout eyebrow={isRegister ? "GET STARTED" : "SECURE SIGN IN"} title={title} description={description}>
       {error && <Notice type="error">{error}</Notice>}
       <form className="auth-form" onSubmit={submit}>
         {isRegister && (
@@ -326,33 +331,27 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void
             </label>
           </div>
         )}
-        {!isReset && (
-          <label>
-            <span>Email address</span>
-            <input name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
-          </label>
-        )}
-        {!isForgot && (
-          <label>
-            <span>{isReset ? "New password" : "Password"}</span>
-            <input name="password" type="password" autoComplete={isRegister ? "new-password" : "current-password"} minLength={12} placeholder="At least 12 characters" required />
-          </label>
-        )}
-        {(isRegister || isReset) && (
+        <label>
+          <span>Email address</span>
+          <input name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
+        </label>
+        <label>
+          <span>Password</span>
+          <input name="password" type="password" autoComplete={isRegister ? "new-password" : "current-password"} minLength={12} maxLength={128} aria-describedby={isRegister ? "password-requirements" : undefined} placeholder={isRegister ? "Create a strong password" : "Your password"} required />
+        </label>
+        {isRegister && <p id="password-requirements" className="password-requirements">{PASSWORD_REQUIREMENTS}</p>}
+        {isRegister && (
           <label>
             <span>Confirm password</span>
-            <input name="confirm_password" type="password" autoComplete="new-password" minLength={12} placeholder="Repeat your password" required />
+            <input name="confirm_password" type="password" autoComplete="new-password" minLength={12} maxLength={128} placeholder="Repeat your password" required />
           </label>
         )}
-        {!isRegister && !isForgot && !isReset && (
-          <button type="button" className="text-button align-right" onClick={() => go("/forgot-password")}>Forgot password?</button>
-        )}
         <button className="button primary full" disabled={busy}>
-          {busy ? "Please wait…" : isRegister ? "Create account" : isForgot ? "Send reset link" : isReset ? "Update password" : "Sign in"}
+          {busy ? "Please wait…" : isRegister ? "Create account" : "Sign in"}
         </button>
       </form>
       <div className="auth-switch">
-        {isRegister ? <>Already have an account? <button onClick={() => go("/login")}>Sign in</button></> : isForgot || isReset ? <button onClick={() => go("/login")}>← Back to sign in</button> : <>New to BantAI? <button onClick={() => go("/register")}>Create an account</button></>}
+        {isRegister ? <>Already have an account? <button onClick={() => go("/login")}>Sign in</button></> : <>New to BantAI? <button onClick={() => go("/register")}>Create an account</button></>}
       </div>
     </AuthLayout>
   );
@@ -363,10 +362,12 @@ function AppShell({ user, page, navigate, children }: { user: User; page: PageNa
   const nav = [
     { id: "dashboard" as const, icon: "⌂", label: "Dashboard" },
     { id: "activity" as const, icon: "≡", label: "Activity" },
+    { id: "reports" as const, icon: "!", label: "URL reports" },
     { id: "devices" as const, icon: "◇", label: "Paired devices" },
   ];
   const adminNav = [
     { id: "admin" as const, icon: "▦", label: "Admin overview" },
+    { id: "review-reports" as const, icon: "✓", label: "Review reports" },
     { id: "users" as const, icon: "♙", label: "Users" },
   ];
   return (
@@ -414,22 +415,56 @@ function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string;
   );
 }
 
+function doughnutGradient(row: Distribution) {
+  const colorByOutcome: Record<Outcome, string> = {
+    NO_STRONG_WARNING_SIGNS: "var(--teal)",
+    NEEDS_CAUTION: "#e09a21",
+    SUSPICIOUS_SIGNS_FOUND: "var(--coral)",
+  };
+  let cursor = 0;
+  const segments = OUTCOMES.map(({ value }) => {
+    const percentage = row.outcomes.find((part) => part.outcome === value)?.percentage || 0;
+    const start = cursor;
+    cursor += percentage;
+    return `${colorByOutcome[value]} ${start}% ${cursor}%`;
+  });
+  return `conic-gradient(from -90deg, ${segments.join(", ")})`;
+}
+
 function OutcomeChart({ distribution }: { distribution: Distribution[] }) {
   return (
     <section className="card chart-card" aria-labelledby="outcome-chart-title">
       <div className="card-header"><div><p className="eyebrow">DETECTION OUTCOMES</p><h2 id="outcome-chart-title">What BantAI found</h2></div><span className="privacy-chip">Percent of checks</span></div>
-      <div className="legend">{OUTCOMES.map((item) => <span key={item.value}><i className={`legend-${item.value.toLowerCase()}`} />{item.short}</span>)}</div>
       <div className="chart-rows">
         {distribution.map((row) => (
-          <div className="chart-row" key={row.event_type}>
-            <div className="chart-row-heading"><span>{row.event_type === "URL" ? "Website addresses" : "Opened emails"}</span><strong>{row.total} {row.total === 1 ? "check" : "checks"}</strong></div>
-            {row.total ? (
-              <div className="stacked-bar" role="img" aria-label={`${row.event_type}: ${row.outcomes.map((part) => `${outcomeInfo(part.outcome).label} ${part.percentage}%`).join(", ")}`}>
-                {row.outcomes.map((part) => <span key={part.outcome} className={`segment segment-${part.outcome.toLowerCase()}`} style={{ width: `${part.percentage}%` }} title={`${outcomeInfo(part.outcome).label}: ${part.count} (${part.percentage}%)`} />)}
+          <article className="doughnut-panel" key={row.event_type}>
+            <div className="doughnut-panel-heading">
+              <span className="doughnut-type-icon" aria-hidden="true">{row.event_type === "URL" ? "◎" : "✉"}</span>
+              <div><p className="eyebrow">{row.event_type === "URL" ? "WEBSITE DETECTIONS" : "EMAIL DETECTIONS"}</p><h3>{row.event_type === "URL" ? "Website addresses" : "Opened emails"}</h3></div>
+            </div>
+            <div className="doughnut-layout">
+              <div
+                className={cx("doughnut-chart", !row.total && "doughnut-empty")}
+                style={row.total ? { background: doughnutGradient(row) } : undefined}
+                role="img"
+                aria-label={row.total ? `${row.event_type}: ${row.outcomes.map((part) => `${outcomeInfo(part.outcome).label} ${part.percentage}%`).join(", ")}` : `${row.event_type}: no checks in this period`}
+              >
+                <div className="doughnut-center" aria-hidden="true"><span>{row.event_type === "URL" ? "◎" : "✉"}</span><strong>{row.event_type === "URL" ? "Websites" : "Emails"}</strong></div>
               </div>
-            ) : <div className="empty-bar">No checks in this period</div>}
-            <div className="chart-counts">{row.outcomes.map((part) => <span key={part.outcome}><strong>{part.count}</strong> {outcomeInfo(part.outcome).short}</span>)}</div>
-          </div>
+              <dl className="doughnut-stats">
+                {OUTCOMES.map((outcome) => {
+                  const part = row.outcomes.find((item) => item.outcome === outcome.value);
+                  return (
+                    <div className="doughnut-stat" key={outcome.value}>
+                      <dt><i className={`legend-${outcome.value.toLowerCase()}`} aria-hidden="true" /><span>{outcome.label}</span></dt>
+                      <dd>{part?.percentage || 0}<small>%</small></dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </div>
+            {!row.total && <p className="doughnut-empty-message">No checks in this period</p>}
+          </article>
         ))}
       </div>
       <p className="chart-note">These percentages summarize categorical outcomes. BantAI does not calculate an overall risk score.</p>
@@ -660,6 +695,170 @@ function ActivityPage() {
   );
 }
 
+function UrlReportsPage() {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<{ items: UrlReport[]; page: number; pages: number; total: number } | null>(null);
+  const [url, setUrl] = useState("");
+  const [detectorOutcome, setDetectorOutcome] = useState<Outcome | "">("");
+  const [classification, setClassification] = useState<UrlReportClassification>("LEGITIMATE");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(() => {
+    return api<{ items: UrlReport[]; page: number; pages: number; total: number }>(`/url-reports?page=${page}&page_size=25`)
+      .then(setData)
+      .catch((reason: ApiError) => setError(reason.message || "BantAI could not load website reports."));
+  }, [page]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!url.trim() || !detectorOutcome) return;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{ message: string }>("/url-reports", {
+        method: "POST",
+        body: JSON.stringify({ url: url.trim(), detector_outcome: detectorOutcome, classification }),
+      });
+      setUrl("");
+      setDetectorOutcome("");
+      setMessage(result.message);
+      setPage(1);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "BantAI could not submit this website report.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <PageHeader eyebrow="RESULT FEEDBACK" title="Report a website result" description="Paste a website address when you believe BantAI classified it incorrectly. Only its origin is submitted." />
+      {error && <Notice type="error">{error}</Notice>}
+      {message && <Notice type="success">{message}</Notice>}
+      <div className="report-layout">
+        <section className="card report-form-card" aria-labelledby="new-url-report-title">
+          <div className="card-header"><div><p className="eyebrow">NEW REPORT</p><h2 id="new-url-report-title">Enter the website address</h2></div><span className="privacy-chip">Origin only</span></div>
+          <form className="report-form" onSubmit={submit}>
+            <label>
+              <span>Website URL</span>
+              <input type="url" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" maxLength={2048} autoCapitalize="none" autoComplete="off" spellCheck={false} aria-describedby="url-report-help" required />
+            </label>
+            <p id="url-report-help" className="form-help">Paste the complete address from your browser. BantAI removes its path, query, and fragment before storage.</p>
+            <label>
+              <span>What result did BantAI show?</span>
+              <select value={detectorOutcome} onChange={(event) => setDetectorOutcome(event.target.value as Outcome | "")} required>
+                <option value="">Select the displayed result</option>
+                {OUTCOMES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              </select>
+            </label>
+            <fieldset className="report-choice-fieldset">
+              <legend>What do you believe about this website?</legend>
+              <label className={cx("report-choice", classification === "LEGITIMATE" && "selected")}>
+                <input type="radio" name="classification" value="LEGITIMATE" checked={classification === "LEGITIMATE"} onChange={() => setClassification("LEGITIMATE")} />
+                <span className="report-choice-icon legitimate" aria-hidden="true">✓</span>
+                <span><strong>Legitimate website</strong><small>The detection may have been too cautious.</small></span>
+              </label>
+              <label className={cx("report-choice", classification === "SUSPICIOUS" && "selected")}>
+                <input type="radio" name="classification" value="SUSPICIOUS" checked={classification === "SUSPICIOUS"} onChange={() => setClassification("SUSPICIOUS")} />
+                <span className="report-choice-icon suspicious" aria-hidden="true">!</span>
+                <span><strong>Suspicious website</strong><small>The detection may have missed warning signs.</small></span>
+              </label>
+            </fieldset>
+            <button className="button primary report-submit" disabled={busy || !url.trim() || !detectorOutcome}>{busy ? "Submitting..." : "Submit for review"}</button>
+          </form>
+        </section>
+        <aside className="report-guidance" aria-label="Report privacy information">
+          <span aria-hidden="true">◉</span>
+          <div><p className="eyebrow">PRIVACY BOUNDARY</p><h2>Your full browsing address stays private.</h2><p>BantAI sends the administrator only the website origin, your selected classification, and the original detector outcome. Paths, queries, fragments, and your identity are not included in the review queue.</p></div>
+        </aside>
+      </div>
+      <section className="card activity-card report-history-card">
+        <div className="card-header"><div><p className="eyebrow">YOUR SUBMISSIONS</p><h2>{data ? `${data.total} website ${data.total === 1 ? "report" : "reports"}` : "Loading reports..."}</h2></div><span className="privacy-chip">90-day retention</span></div>
+        {data && data.items.length > 0 ? <div className="table-scroll"><table className="data-table report-table"><thead><tr><th>Website origin</th><th>Detector result</th><th>Your report</th><th>Admin review</th><th>Submitted</th></tr></thead><tbody>{data.items.map((report) => <tr key={report.id}><td><strong className="origin-cell">{report.origin}</strong></td><td><StatusBadge outcome={report.detector_outcome} /></td><td><span className={cx("report-pill", report.user_classification.toLowerCase())}>{userClassificationLabel(report.user_classification)}</span></td><td><span className={cx("review-pill", report.status.toLowerCase(), report.admin_assessment?.toLowerCase())}>{adminAssessmentLabel(report.admin_assessment)}</span>{report.reviewed_at && <small className="reviewed-date">Reviewed {niceDate(report.reviewed_at)}</small>}</td><td>{niceDate(report.submitted_at)}</td></tr>)}</tbody></table></div> : data ? <EmptyState icon="!" title="No website reports" text="Enter a website address above when you believe its detection outcome may be wrong." /> : <DashboardSkeleton />}
+        {data && data.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.pages}</span><button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
+      </section>
+      <p className="safe-disclaimer"><strong>Reports are decision-support feedback.</strong> They do not automatically retrain the frozen detector or guarantee that a website is legitimate or malicious.</p>
+    </>
+  );
+}
+
+function AdminUrlReportsPage() {
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [classificationFilter, setClassificationFilter] = useState("");
+  const [data, setData] = useState<{ items: UrlReport[]; page: number; pages: number; total: number } | null>(null);
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(() => {
+    const params = new URLSearchParams({ page: String(page), page_size: "25" });
+    if (statusFilter) params.set("report_status", statusFilter);
+    if (classificationFilter) params.set("classification", classificationFilter);
+    return api<{ items: UrlReport[]; page: number; pages: number; total: number }>(`/admin/url-reports?${params}`)
+      .then(setData)
+      .catch((reason: ApiError) => setError(reason.message || "BantAI could not load the administrator review queue."));
+  }, [classificationFilter, page, statusFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const review = async (report: UrlReport, assessment: AdminUrlAssessment) => {
+    setBusyId(report.id);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{ message: string }>(`/admin/url-reports/${report.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ assessment }),
+      });
+      setMessage(result.message);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "BantAI could not save this review.");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  const copyOrigin = async (origin: string) => {
+    try {
+      await navigator.clipboard.writeText(origin);
+      setMessage("Website origin copied. Review it using your approved manual process.");
+    } catch {
+      setError("The website origin could not be copied from this browser.");
+    }
+  };
+
+  return (
+    <>
+      <PageHeader eyebrow="ADMINISTRATION" title="Review website reports" description="Manually assess user-submitted website origins without access to reporter identities or personal browsing history." />
+      <section className="admin-privacy-banner"><span aria-hidden="true">◉</span><div><strong>Explicit reports only</strong><p>The queue contains a minimized origin because a user chose to submit it. BantAI never opens, crawls, or follows the website for you.</p></div></section>
+      {error && <Notice type="error">{error}</Notice>}
+      {message && <Notice type="success">{message}</Notice>}
+      <section className="card filter-card users-filter">
+        <label><span>Review status</span><select value={statusFilter} onChange={(event) => { setPage(1); setStatusFilter(event.target.value); }}><option value="">All reports</option><option value="PENDING">Awaiting review</option><option value="REVIEWED">Reviewed</option></select></label>
+        <label><span>User classification</span><select value={classificationFilter} onChange={(event) => { setPage(1); setClassificationFilter(event.target.value); }}><option value="">All classifications</option><option value="LEGITIMATE">Believes legitimate</option><option value="SUSPICIOUS">Believes suspicious</option></select></label>
+      </section>
+      <section className="card activity-card admin-report-card">
+        <div className="card-header"><div><p className="eyebrow">MANUAL REVIEW QUEUE</p><h2>{data ? `${data.total} ${data.total === 1 ? "submission" : "submissions"}` : "Loading submissions..."}</h2></div><span className="privacy-chip">No reporter identity</span></div>
+        {data && data.items.length > 0 ? <div className="admin-report-list">{data.items.map((report) => <article className="admin-report-item" key={report.id}>
+          <div className="admin-report-origin"><div><p className="eyebrow">WEBSITE ORIGIN</p><h3>{report.origin}</h3><p>Submitted {niceDate(report.submitted_at)}</p></div><button className="button ghost" type="button" onClick={() => void copyOrigin(report.origin)}>Copy origin</button></div>
+          <div className="admin-report-signals"><div><span>Detector result</span><StatusBadge outcome={report.detector_outcome} /></div><div><span>User report</span><strong className={cx("report-pill", report.user_classification.toLowerCase())}>{userClassificationLabel(report.user_classification)}</strong></div><div><span>Current review</span><strong className={cx("review-pill", report.status.toLowerCase(), report.admin_assessment?.toLowerCase())}>{adminAssessmentLabel(report.admin_assessment)}</strong></div></div>
+          <fieldset className="admin-review-actions" disabled={busyId === report.id}><legend>Record your manual assessment</legend><button type="button" className="button review-legitimate" onClick={() => void review(report, "LEGITIMATE")}>Likely legitimate</button><button type="button" className="button review-suspicious" onClick={() => void review(report, "SUSPICIOUS")}>Likely suspicious</button><button type="button" className="button ghost" onClick={() => void review(report, "INCONCLUSIVE")}>Inconclusive</button></fieldset>
+        </article>)}</div> : data ? <EmptyState icon="✓" title="No reports in this view" text="New user-submitted website reports will appear here for manual assessment." /> : <DashboardSkeleton />}
+        {data && data.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.pages}</span><button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
+      </section>
+      <p className="safe-disclaimer"><strong>An administrator assessment is not a guarantee.</strong> It remains separate from BantAI’s frozen detection models and does not automatically change future outcomes.</p>
+    </>
+  );
+}
+
 function DevicesPage() {
   const [devices, setDevices] = useState<{ id: string; label: string; paired_at: string; last_seen_at: string | null; status: string }[]>([]);
   const [pair, setPair] = useState<{ code: string; expires_at: string } | null>(null);
@@ -712,7 +911,7 @@ function UsersPage({ currentUser }: { currentUser: User }) {
     <>
       <PageHeader eyebrow="ADMINISTRATION" title="Users" description="Manage account access. Detection history and personal activity are not available to administrators." />
       {error && <Notice type="error">{error}</Notice>}
-      <section className="card filter-card users-filter"><label className="search-field"><span>Search accounts</span><input type="search" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Search by name or email" /></label><label><span>Status</span><select value={statusFilter} onChange={(event) => { setPage(1); setStatusFilter(event.target.value); }}><option value="">All statuses</option><option value="ACTIVE">Active</option><option value="PENDING_VERIFICATION">Pending verification</option><option value="SUSPENDED">Suspended</option></select></label></section>
+      <section className="card filter-card users-filter"><label className="search-field"><span>Search accounts</span><input type="search" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Search by name or email" /></label><label><span>Status</span><select value={statusFilter} onChange={(event) => { setPage(1); setStatusFilter(event.target.value); }}><option value="">All statuses</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option></select></label></section>
       <section className="card activity-card"><div className="card-header"><div><p className="eyebrow">ACCOUNTS</p><h2>{data ? `${data.total} users` : "Loading users…"}</h2></div><span className="privacy-chip">No personal activity access</span></div>
         {data && <div className="table-scroll"><table className="data-table user-table"><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Registered</th><th>Last sign-in</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{data.items.map((user) => <tr key={user.id}><td><span className="user-cell"><i>{userName(user).slice(0, 1).toUpperCase()}</i><span><strong>{userName(user)}</strong><small>{user.email}</small></span></span></td><td>{user.role === "ADMIN" ? "Administrator" : "User"}</td><td><span className={cx("account-status", `account-${user.status.toLowerCase()}`)}>{user.status.replaceAll("_", " ").toLowerCase()}</span></td><td>{niceDate(user.created_at)}</td><td>{niceDate(user.last_login_at)}</td><td>{user.role !== "ADMIN" && user.id !== currentUser.id && <button className={cx("button", user.status === "SUSPENDED" ? "ghost" : "danger-ghost")} onClick={() => toggle(user)}>{user.status === "SUSPENDED" ? "Reactivate" : "Suspend"}</button>}</td></tr>)}</tbody></table></div>}
         {data && data.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.pages}</span><button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
@@ -761,6 +960,8 @@ function ProfilePage({ user, onUserChanged, onSignOut }: { user: User; onUserCha
     const form = event.currentTarget;
     const data = Object.fromEntries(new FormData(form));
     try {
+      const passwordError = passwordValidationMessage(data.new_password);
+      if (passwordError) throw new Error(passwordError);
       if (data.new_password !== data.confirm_password) throw new Error("New passwords do not match.");
       const result = await api<{ message: string }>("/profile/change-password", {
         method: "POST",
@@ -807,12 +1008,12 @@ function ProfilePage({ user, onUserChanged, onSignOut }: { user: User; onUserCha
         </section>
 
         <section className="card profile-card" aria-labelledby="password-title">
-          <div className="card-header"><div><p className="eyebrow">ACCOUNT SECURITY</p><h2 id="password-title">Change password</h2></div><span className="privacy-chip">12+ characters</span></div>
+          <div className="card-header"><div><p className="eyebrow">ACCOUNT SECURITY</p><h2 id="password-title">Change password</h2></div><span className="privacy-chip">Strong password</span></div>
           <form className="profile-form" onSubmit={changePassword}>
             <label><span>Current password</span><input name="current_password" type="password" autoComplete="current-password" maxLength={128} required /></label>
-            <label><span>New password</span><input name="new_password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
+            <label><span>New password</span><input name="new_password" type="password" autoComplete="new-password" minLength={12} maxLength={128} aria-describedby="profile-password-requirements" required /></label>
             <label><span>Confirm new password</span><input name="confirm_password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
-            <p className="form-help">Changing your password closes your other signed-in web sessions.</p>
+            <p id="profile-password-requirements" className="form-help">{PASSWORD_REQUIREMENTS} Changing your password closes your other signed-in web sessions.</p>
             {passwordMessage && <Notice type="success">{passwordMessage}</Notice>}
             <button className="button primary profile-submit" disabled={passwordBusy}>{passwordBusy ? "Updating..." : "Change password"}</button>
           </form>
@@ -830,7 +1031,7 @@ function ProfilePage({ user, onUserChanged, onSignOut }: { user: User; onUserCha
 function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserChanged: (user: User) => void; onSignedOut: () => void }) {
   const initialPage = ((typeof window === "undefined" ? "dashboard" : window.location.pathname.split("/")[1]) || "dashboard") as PageName;
   const allowed = useMemo<PageName[]>(
-    () => user.role === "ADMIN" ? ["dashboard", "activity", "devices", "profile", "admin", "users"] : ["dashboard", "activity", "devices", "profile"],
+    () => user.role === "ADMIN" ? ["dashboard", "activity", "reports", "devices", "profile", "admin", "review-reports", "users"] : ["dashboard", "activity", "reports", "devices", "profile"],
     [user.role],
   );
   const [page, setPage] = useState<PageName>(allowed.includes(initialPage) ? initialPage : "dashboard");
@@ -849,9 +1050,11 @@ function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserC
     <AppShell user={user} page={page} navigate={navigate}>
       {page === "dashboard" && <DashboardPage onViewActivity={() => navigate("activity")} onPairDevice={() => navigate("devices")} />}
       {page === "activity" && <ActivityPage />}
+      {page === "reports" && <UrlReportsPage />}
       {page === "devices" && <DevicesPage />}
       {page === "profile" && <ProfilePage user={user} onUserChanged={onUserChanged} onSignOut={logout} />}
       {page === "admin" && user.role === "ADMIN" && <AdminDashboardPage />}
+      {page === "review-reports" && user.role === "ADMIN" && <AdminUrlReportsPage />}
       {page === "users" && user.role === "ADMIN" && <UsersPage currentUser={user} />}
     </AppShell>
   );

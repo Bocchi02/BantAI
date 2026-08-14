@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import secrets
 
 from argon2 import PasswordHasher
@@ -31,6 +32,13 @@ def random_token(bytes_count: int = 32) -> str:
 
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def blind_index(value: str, purpose: str) -> str:
+    """Create a deterministic, keyed lookup without storing searchable clear text."""
+
+    payload = f"{purpose}\0{value}".encode("utf-8")
+    return hmac.new(_encryption_key(), payload, hashlib.sha256).hexdigest()
 
 
 def pairing_code() -> str:
@@ -65,4 +73,3 @@ def decrypt_text(value: str | None) -> str | None:
     payload = base64.urlsafe_b64decode(value.encode("ascii"))
     clear = AESGCM(_encryption_key()).decrypt(payload[:12], payload[12:], b"bantai-activity-v1")
     return clear.decode("utf-8")
-
