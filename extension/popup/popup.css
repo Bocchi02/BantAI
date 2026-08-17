@@ -66,6 +66,7 @@ body {
 .card,
 .settings,
 .details,
+.review-card,
 .pairing-card {
   margin-top: 12px;
   padding: 15px;
@@ -87,6 +88,34 @@ body {
 .unpair-button:hover { background: #f4f7fa; }
 .unpair-button:focus-visible { outline: 3px solid rgba(36, 105, 166, .35); outline-offset: 2px; }
 .unpair-button:disabled { cursor: wait; opacity: .6; }
+
+.review-card { border-color: #bfd9d7; background: linear-gradient(145deg, #fff 65%, #f1faf8 100%); }
+.review-form { margin-top: 13px; }
+.review-options,
+.review-classification { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0; border: 0; padding: 0; }
+.review-options legend,
+.review-classification legend { grid-column: 1 / -1; margin-bottom: 1px; color: #667487; font-size: 10px; font-weight: 700; }
+.review-options label,
+.review-classification label { position: relative; display: grid; min-height: 42px; place-items: center; border: 1px solid #d5dee5; border-radius: 9px; padding: 6px; color: #34475a; background: #fff; cursor: pointer; font-size: 10px; font-weight: 700; text-align: center; }
+.review-options input,
+.review-classification input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.review-options label:has(input:checked),
+.review-classification label:has(input:checked) { border-color: #168976; color: #126958; background: #edf8f5; box-shadow: 0 0 0 2px rgba(22, 137, 118, .1); }
+.review-options label:has(input:focus-visible),
+.review-classification label:has(input:focus-visible) { outline: 3px solid rgba(36, 105, 166, .35); outline-offset: 2px; }
+.review-correction { display: grid; gap: 8px; margin-top: 12px; border-top: 1px solid #dceae6; padding-top: 12px; }
+.review-classification { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.review-reason { color: #667487; font-size: 10px; font-weight: 700; }
+.review-reason span { font-weight: 400; }
+.review-correction select { width: 100%; border: 1px solid #cfd9e2; border-radius: 8px; padding: 8px 9px; color: #162033; background: #fff; font: inherit; font-size: 11px; }
+.review-submit { width: 100%; margin-top: 11px; border: 0; border-radius: 8px; padding: 9px 12px; color: #fff; background: #17324d; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.review-submit:disabled { cursor: not-allowed; opacity: .45; }
+.review-submit:focus-visible,
+.review-correction select:focus-visible { outline: 3px solid rgba(36, 105, 166, .35); outline-offset: 2px; }
+.review-message { min-height: 14px; margin: 7px 0 0; color: #8f2931; font-size: 10px; line-height: 1.35; }
+.review-complete { margin-top: 12px; border-radius: 10px; padding: 11px; color: #12633c; background: #ecf8f1; }
+.review-complete strong { font-size: 12px; }
+.review-complete p { margin: 4px 0 0; color: #44685a; font-size: 10px; line-height: 1.4; }
 
 .pairing-card.access-required {
   margin-top: 4px;

@@ -37,7 +37,17 @@ test("includes privacy-minimized user reporting and administrator review interfa
   assert.match(source, /Only its origin is submitted/);
   assert.match(source, /type="url"/);
   assert.match(source, /What result did BantAI show/);
-  assert.match(source, /Review website reports/);
+  assert.match(source, /Do you think BantAI got this result right/);
+  assert.match(source, /Yes, looks right/);
+  assert.match(source, /No, report correction/);
+  assert.match(source, /Select one response/);
+  assert.match(source, /Submit feedback/);
+  assert.match(source, /confirmed: true/);
+  assert.doesNotMatch(source, /onClick=\{\(\) => void submit\("(?:CORRECT|UNSURE)"\)\}/);
+  assert.match(source, /Review training candidates/);
+  assert.match(source, /Approve legitimate/);
+  assert.match(source, /Reject feedback/);
+  assert.match(source, /RF V4-B remains frozen/);
   assert.match(source, /No reporter identity/);
   assert.match(source, /does not automatically change future outcomes/);
   assert.doesNotMatch(source, /href=\{report\.origin\}|window\.open\(report\.origin/);

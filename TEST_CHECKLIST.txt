@@ -54,6 +54,9 @@ MANUAL CHROME / EDGE
 [ ] The popup shows one final URL decision without a standalone Cloud URL Review row
 [ ] Each URL or email verdict and explanation appears only once in the popup
 [ ] Each explanation names specific observed behavior and remains one or two sentences
+[ ] URL feedback is created only after the user selects a response and presses Submit feedback
+[ ] The manually opened extension popup can submit feedback for the exact current URL detection
+[ ] An older report for the same origin does not mark a new detection as already reviewed
 [ ] Raw email-model probability, threshold, and signal remain under More details
 [ ] Raw RF probability, threshold, and signal remain under More details
 [ ] Probabilities and thresholds appear only under More details

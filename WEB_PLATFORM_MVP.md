@@ -18,6 +18,14 @@ local RF/XLM-R models, the paired browser extension/device credential, and the
 shared Cloud AI gateway. It checks readiness without sending a test LLM prompt
 or exposing provider credentials.
 
+Users may explicitly review a completed URL result from the dashboard,
+activity history, or manually opened extension popup. The interface requires a
+selected response and a separate submit action; it never infers feedback from
+an older report for the same origin. Incorrect feedback requires the user to
+choose a corrected legitimate or suspicious classification. Only the event ID
+and selected structured feedback travel through the Companion; no browsing
+path is added to the report.
+
 ## Privacy boundary
 
 The extension sends exact address-bar URLs and opened email content only to the

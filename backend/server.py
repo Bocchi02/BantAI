@@ -6,7 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import urlsplit
 
 import joblib
@@ -15,7 +15,7 @@ import torch
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -174,6 +174,32 @@ class CompanionActivityRequest(BaseModel):
     outcome: str
     cloud_status: str
     occurred_at: str = Field(min_length=20, max_length=40)
+
+
+class CompanionUrlFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    verdict: Literal["CORRECT", "INCORRECT", "UNSURE"]
+    classification: Optional[Literal["LEGITIMATE", "SUSPICIOUS"]] = None
+    reason: Optional[
+        Literal[
+            "TRUSTED_OR_OFFICIAL",
+            "INCORRECT_WARNING",
+            "MISSED_WARNING",
+            "IMPERSONATION_OR_DECEPTIVE",
+            "OTHER",
+        ]
+    ] = None
+    confirmed: Literal[True]
+
+    @model_validator(mode="after")
+    def require_explicit_correction(self) -> "CompanionUrlFeedbackRequest":
+        if self.verdict == "INCORRECT" and self.classification is None:
+            raise ValueError("Incorrect feedback requires a legitimate or suspicious correction.")
+        if self.verdict != "INCORRECT" and self.classification is not None:
+            raise ValueError("Only incorrect feedback may include a corrected classification.")
+        return self
 
 
 def require_detection_access() -> None:
@@ -661,6 +687,19 @@ def submit_companion_activity(request: CompanionActivityRequest) -> dict:
         raise HTTPException(status_code=400, detail="Activity has an invalid type.")
 
     return companion_manager.submit_activity(event)
+
+
+@app.post(
+    "/companion/url-feedback",
+    dependencies=[Depends(require_detection_access)],
+)
+def submit_companion_url_feedback(request: CompanionUrlFeedbackRequest) -> dict:
+    """Forward only explicitly confirmed feedback for a synced URL detection."""
+
+    try:
+        return companion_manager.submit_url_feedback(request.model_dump(exclude_none=True))
+    except CompanionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post(

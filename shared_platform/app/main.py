@@ -33,21 +33,27 @@ from .models import (
     AdminUrlAssessment,
     ActivityEvent,
     EventType,
+    FeedbackSource,
+    FeedbackVerdict,
     Outcome,
     PairedDevice,
     PairingCode,
+    TrainingStatus,
     User,
     UserRole,
     UserStatus,
     UrlReport,
     UrlReportClassification,
     UrlReportStatus,
+    UrlTrainingCandidate,
     WebSession,
     utcnow,
 )
 from .schemas import (
+    AdminReviewAction,
     ActivityBatchRequest,
     ChangePasswordRequest,
+    DeviceUrlActivityFeedbackRequest,
     EmailCloudReviewRequest,
     EmailRequest,
     LoginRequest,
@@ -56,6 +62,7 @@ from .schemas import (
     ProfileUpdateRequest,
     RegisterRequest,
     UrlCloudReviewRequest,
+    UrlActivityFeedbackRequest,
     UrlReportCreateRequest,
     UrlReportReviewRequest,
     UserView,
@@ -367,7 +374,7 @@ def normalized_origin(value: str) -> str:
     return f"{parsed.scheme}://{parsed.hostname.lower()}{port}"
 
 
-def event_view(event: ActivityEvent) -> dict:
+def event_view(event: ActivityEvent, *, feedback_submitted: bool = False) -> dict:
     return {
         "id": event.id,
         "event_type": event.event_type.value,
@@ -378,15 +385,42 @@ def event_view(event: ActivityEvent) -> dict:
         "outcome": event.outcome.value,
         "cloud_status": event.cloud_status.value,
         "occurred_at": utc_timestamp(event.occurred_at),
+        "feedback_submitted": feedback_submitted,
     }
 
 
-def url_report_view(report: UrlReport, *, include_activity_reference: bool = True) -> dict:
+def feedback_activity_ids(db: Session, user_id: str, events: list[ActivityEvent]) -> set[str]:
+    if not events:
+        return set()
+    event_ids = [event.id for event in events if event.event_type == EventType.URL]
+    if not event_ids:
+        return set()
+    return set(
+        db.scalars(
+            select(UrlReport.activity_event_id).where(
+                UrlReport.user_id == user_id,
+                UrlReport.activity_event_id.in_(event_ids),
+            )
+        ).all()
+    )
+
+
+def url_report_view(
+    report: UrlReport,
+    *,
+    include_activity_reference: bool = True,
+    similar_report_count: int | None = None,
+) -> dict:
     view = {
         "id": report.id,
         "origin": decrypt_text(report.origin_encrypted),
         "detector_outcome": report.detector_outcome.value,
         "user_classification": report.user_classification.value,
+        "feedback_verdict": report.feedback_verdict.value,
+        "feedback_reason": report.feedback_reason.value if report.feedback_reason else None,
+        "feedback_source": report.feedback_source.value,
+        "training_status": report.training_status.value,
+        "detector_model_version": report.detector_model_version,
         "status": report.status.value,
         "admin_assessment": report.admin_assessment.value if report.admin_assessment else None,
         "submitted_at": utc_timestamp(report.submitted_at),
@@ -394,7 +428,54 @@ def url_report_view(report: UrlReport, *, include_activity_reference: bool = Tru
     }
     if include_activity_reference:
         view["activity_event_id"] = report.activity_event_id
+    if similar_report_count is not None:
+        view["similar_report_count"] = similar_report_count
     return view
+
+
+def persist_url_activity_feedback(
+    *,
+    event: ActivityEvent,
+    user_id: str,
+    verdict: FeedbackVerdict,
+    classification: UrlReportClassification | None,
+    reason,
+    db: Session,
+) -> UrlReport:
+    origin = decrypt_text(event.origin_encrypted)
+    if not origin:
+        raise HTTPException(status_code=422, detail="Website activity has no reportable origin.")
+
+    if verdict == FeedbackVerdict.INCORRECT:
+        stored_classification = classification
+    elif verdict == FeedbackVerdict.CORRECT and event.outcome == Outcome.NO_STRONG_WARNING_SIGNS:
+        stored_classification = UrlReportClassification.LEGITIMATE
+    elif verdict == FeedbackVerdict.CORRECT and event.outcome == Outcome.SUSPICIOUS_SIGNS_FOUND:
+        stored_classification = UrlReportClassification.SUSPICIOUS
+    else:
+        stored_classification = UrlReportClassification.UNSURE
+
+    report = UrlReport(
+        user_id=user_id,
+        activity_event_id=event.id,
+        origin_encrypted=encrypt_text(origin),
+        origin_fingerprint=blind_index(origin, "url-report-origin-v1"),
+        detector_outcome=event.outcome,
+        user_classification=stored_classification,
+        feedback_verdict=verdict,
+        feedback_reason=reason,
+        feedback_source=FeedbackSource.RECENT_DETECTION,
+        training_status=TrainingStatus.PENDING,
+        detector_model_version="RF V4-B",
+    )
+    db.add(report)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Feedback for this website result was already submitted.") from exc
+    db.refresh(report)
+    return report
 
 
 @app.post("/api/v1/activities", status_code=202)
@@ -458,8 +539,9 @@ def activities(
     if date_to:
         filters.append(ActivityEvent.occurred_at <= date_to)
     total = db.scalar(select(func.count(ActivityEvent.id)).where(*filters)) or 0
-    rows = db.scalars(select(ActivityEvent).where(*filters).order_by(ActivityEvent.occurred_at.desc()).offset((page - 1) * page_size).limit(page_size)).all()
-    return {"items": [event_view(row) for row in rows], "page": page, "page_size": page_size, "total": total, "pages": math.ceil(total / page_size) if total else 0}
+    rows = list(db.scalars(select(ActivityEvent).where(*filters).order_by(ActivityEvent.occurred_at.desc()).offset((page - 1) * page_size).limit(page_size)).all())
+    reported = feedback_activity_ids(db, current.user.id, rows)
+    return {"items": [event_view(row, feedback_submitted=row.id in reported) for row in rows], "page": page, "page_size": page_size, "total": total, "pages": math.ceil(total / page_size) if total else 0}
 
 
 @app.post("/api/v1/url-reports", status_code=201)
@@ -469,13 +551,28 @@ def create_url_report(
     db: Session = Depends(get_db),
 ) -> dict:
     origin = normalized_origin(payload.url)
+    fingerprint = blind_index(origin, "url-report-origin-v1")
+    existing = db.scalar(
+        select(UrlReport.id).where(
+            UrlReport.user_id == current.user.id,
+            UrlReport.activity_event_id.is_(None),
+            UrlReport.origin_fingerprint == fingerprint,
+        )
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="This website result was already reported.")
     report = UrlReport(
         user_id=current.user.id,
         activity_event_id=None,
         origin_encrypted=encrypt_text(origin),
-        origin_fingerprint=blind_index(origin, "url-report-origin-v1"),
+        origin_fingerprint=fingerprint,
         detector_outcome=payload.detector_outcome,
         user_classification=payload.classification,
+        feedback_verdict=FeedbackVerdict.INCORRECT,
+        feedback_reason=payload.reason,
+        feedback_source=FeedbackSource.MANUAL_ENTRY,
+        training_status=TrainingStatus.PENDING,
+        detector_model_version="RF V4-B",
     )
     db.add(report)
     try:
@@ -485,6 +582,74 @@ def create_url_report(
         raise HTTPException(status_code=409, detail="This website result was already reported.") from exc
     db.refresh(report)
     return {"message": "Your website report was submitted for administrator review.", "report": url_report_view(report)}
+
+
+@app.post("/api/v1/url-reports/from-activity", status_code=201)
+def create_activity_url_feedback(
+    payload: UrlActivityFeedbackRequest,
+    current: CurrentWebUser = Depends(csrf_protected),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = db.scalar(
+        select(ActivityEvent).where(
+            ActivityEvent.id == payload.activity_event_id,
+            ActivityEvent.user_id == current.user.id,
+            ActivityEvent.event_type == EventType.URL,
+        )
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Website activity not found.")
+    report = persist_url_activity_feedback(
+        event=event,
+        user_id=current.user.id,
+        verdict=payload.verdict,
+        classification=payload.classification,
+        reason=payload.reason,
+        db=db,
+    )
+    return {"message": "Thank you. Your feedback is awaiting administrator review.", "report": url_report_view(report)}
+
+
+@app.post("/api/v1/url-reports/from-device-activity", status_code=201)
+def create_device_activity_url_feedback(
+    payload: DeviceUrlActivityFeedbackRequest,
+    current: CurrentDevice = Depends(current_device),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = db.scalar(
+        select(ActivityEvent).where(
+            ActivityEvent.device_id == current.device.id,
+            ActivityEvent.client_event_id == payload.client_event_id,
+            ActivityEvent.event_type == EventType.URL,
+        )
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Website activity has not synced yet. Try again shortly.")
+    existing = db.scalar(
+        select(UrlReport).where(
+            UrlReport.user_id == current.user.id,
+            UrlReport.activity_event_id == event.id,
+        )
+    )
+    if existing is not None:
+        return {
+            "message": "Feedback for this website was already received.",
+            "already_submitted": True,
+            "report": url_report_view(existing, include_activity_reference=False),
+        }
+    report = persist_url_activity_feedback(
+        event=event,
+        user_id=current.user.id,
+        verdict=payload.verdict,
+        classification=payload.classification,
+        reason=payload.reason,
+        db=db,
+    )
+    return {
+        "message": "Thank you. Your feedback is awaiting administrator review.",
+        "already_submitted": False,
+        "report": url_report_view(report, include_activity_reference=False),
+    }
 
 
 @app.get("/api/v1/url-reports")
@@ -530,9 +695,11 @@ def dashboard(days: int = Query(30, ge=7, le=90), current: CurrentWebUser = Depe
     base = [ActivityEvent.user_id == current.user.id]
     latest_url = db.scalar(select(ActivityEvent).where(*base, ActivityEvent.event_type == EventType.URL).order_by(ActivityEvent.occurred_at.desc()).limit(1))
     latest_email = db.scalar(select(ActivityEvent).where(*base, ActivityEvent.event_type == EventType.EMAIL).order_by(ActivityEvent.occurred_at.desc()).limit(1))
-    recent = db.scalars(select(ActivityEvent).where(*base).order_by(ActivityEvent.occurred_at.desc()).limit(10)).all()
+    recent = list(db.scalars(select(ActivityEvent).where(*base).order_by(ActivityEvent.occurred_at.desc()).limit(10)).all())
+    feedback_events = [event for event in [latest_url, latest_email, *recent] if event is not None]
+    reported = feedback_activity_ids(db, current.user.id, feedback_events)
     chart_filters = [*base, ActivityEvent.occurred_at >= utcnow() - timedelta(days=days)]
-    return {"range_days": days, "last_url": event_view(latest_url) if latest_url else None, "last_email": event_view(latest_email) if latest_email else None, "recent": [event_view(row) for row in recent], "distribution": outcome_distribution(db, chart_filters)}
+    return {"range_days": days, "last_url": event_view(latest_url, feedback_submitted=latest_url.id in reported) if latest_url else None, "last_email": event_view(latest_email, feedback_submitted=latest_email.id in reported) if latest_email else None, "recent": [event_view(row, feedback_submitted=row.id in reported) for row in recent], "distribution": outcome_distribution(db, chart_filters)}
 
 
 @app.post("/api/v1/cloud-review/email")
@@ -563,6 +730,7 @@ def admin_url_reports(
     page_size: int = Query(25, ge=1, le=100),
     report_status: UrlReportStatus | None = None,
     classification: UrlReportClassification | None = None,
+    training_status: TrainingStatus | None = None,
     _: CurrentWebUser = Depends(admin_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -571,6 +739,8 @@ def admin_url_reports(
         filters.append(UrlReport.status == report_status)
     if classification:
         filters.append(UrlReport.user_classification == classification)
+    if training_status:
+        filters.append(UrlReport.training_status == training_status)
     total = db.scalar(select(func.count(UrlReport.id)).where(*filters)) or 0
     rows = db.scalars(
         select(UrlReport)
@@ -579,8 +749,18 @@ def admin_url_reports(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+    fingerprints = [row.origin_fingerprint for row in rows if row.origin_fingerprint]
+    similar_counts = {
+        fingerprint: count
+        for fingerprint, count in db.execute(
+            select(UrlReport.origin_fingerprint, func.count(UrlReport.id))
+            .where(UrlReport.origin_fingerprint.in_(fingerprints))
+            .group_by(UrlReport.origin_fingerprint)
+        ).all()
+    } if fingerprints else {}
     return {
-        "items": [url_report_view(row, include_activity_reference=False) for row in rows],
+        "items": [url_report_view(row, include_activity_reference=False, similar_report_count=similar_counts.get(row.origin_fingerprint, 1)) for row in rows],
+        "training_candidate_total": db.scalar(select(func.count(UrlTrainingCandidate.id))) or 0,
         "page": page,
         "page_size": page_size,
         "total": total,
@@ -600,14 +780,63 @@ def review_url_report(
         raise HTTPException(status_code=404, detail="Website report not found.")
     if report.user_id == current.user.id:
         raise HTTPException(status_code=400, detail="Administrators cannot review their own website report.")
+    if report.status == UrlReportStatus.REVIEWED:
+        raise HTTPException(status_code=409, detail="This feedback has already been reviewed.")
+    if payload.action == AdminReviewAction.APPROVE:
+        if not report.origin_fingerprint:
+            origin = decrypt_text(report.origin_encrypted)
+            if not origin:
+                raise HTTPException(status_code=422, detail="This report has no training-safe website origin.")
+            report.origin_fingerprint = blind_index(origin, "url-report-origin-v1")
+        candidate = db.scalar(
+            select(UrlTrainingCandidate).where(
+                UrlTrainingCandidate.origin_fingerprint == report.origin_fingerprint,
+                UrlTrainingCandidate.detector_model_version == report.detector_model_version,
+            )
+        )
+        if candidate and candidate.approved_label != payload.assessment:
+            raise HTTPException(
+                status_code=409,
+                detail="This website already has a conflicting approved training label.",
+            )
+        if candidate:
+            candidate.evidence_count += 1
+            candidate.last_approved_at = utcnow()
+        else:
+            db.add(
+                UrlTrainingCandidate(
+                    origin_encrypted=report.origin_encrypted,
+                    origin_fingerprint=report.origin_fingerprint,
+                    detector_outcome=report.detector_outcome,
+                    approved_label=payload.assessment,
+                    feedback_reason=report.feedback_reason,
+                    feedback_source=report.feedback_source,
+                    detector_model_version=report.detector_model_version,
+                    evidence_count=1,
+                )
+            )
+        report.admin_assessment = payload.assessment
+        report.training_status = TrainingStatus.APPROVED
+        message = "The feedback was approved as a future training candidate."
+    elif payload.action == AdminReviewAction.REJECT:
+        report.admin_assessment = AdminUrlAssessment.INCONCLUSIVE
+        report.training_status = TrainingStatus.REJECTED
+        message = "The feedback was rejected and will not be used as a training candidate."
+    else:
+        report.admin_assessment = AdminUrlAssessment.INCONCLUSIVE
+        report.training_status = TrainingStatus.INCONCLUSIVE
+        message = "The feedback was marked inconclusive."
     report.status = UrlReportStatus.REVIEWED
-    report.admin_assessment = payload.assessment
     report.reviewed_by = current.user.id
     report.reviewed_at = utcnow()
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="The training-candidate store changed. Reload and try again.") from exc
     db.refresh(report)
     return {
-        "message": "The website report was reviewed.",
+        "message": message,
         "report": url_report_view(report, include_activity_reference=False),
     }
 

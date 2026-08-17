@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 from datetime import datetime
 from typing import Literal
 
@@ -9,6 +10,8 @@ from .models import (
     AdminUrlAssessment,
     CloudStatus,
     EventType,
+    FeedbackReason,
+    FeedbackVerdict,
     Outcome,
     UrlReportClassification,
     UserRole,
@@ -130,10 +133,73 @@ class UrlReportCreateRequest(StrictModel):
     url: str = Field(min_length=8, max_length=2048)
     detector_outcome: Outcome
     classification: UrlReportClassification
+    reason: FeedbackReason | None = None
+
+    @model_validator(mode="after")
+    def require_decisive_manual_classification(self) -> "UrlReportCreateRequest":
+        if self.classification == UrlReportClassification.UNSURE:
+            raise ValueError("Manual reports require a legitimate or suspicious classification.")
+        return self
+
+
+class UrlActivityFeedbackRequest(StrictModel):
+    activity_event_id: str = Field(min_length=36, max_length=36)
+    verdict: FeedbackVerdict
+    classification: UrlReportClassification | None = None
+    reason: FeedbackReason | None = None
+    confirmed: Literal[True]
+
+    @model_validator(mode="after")
+    def require_correction_for_incorrect_feedback(self) -> "UrlActivityFeedbackRequest":
+        if self.verdict == FeedbackVerdict.INCORRECT:
+            if self.classification not in {
+                UrlReportClassification.LEGITIMATE,
+                UrlReportClassification.SUSPICIOUS,
+            }:
+                raise ValueError("Incorrect feedback requires a legitimate or suspicious correction.")
+        elif self.classification is not None:
+            raise ValueError("Only incorrect feedback may include a corrected classification.")
+        return self
+
+
+class DeviceUrlActivityFeedbackRequest(StrictModel):
+    client_event_id: str = Field(min_length=8, max_length=128)
+    verdict: FeedbackVerdict
+    classification: UrlReportClassification | None = None
+    reason: FeedbackReason | None = None
+    confirmed: Literal[True]
+
+    @model_validator(mode="after")
+    def require_correction_for_incorrect_feedback(self) -> "DeviceUrlActivityFeedbackRequest":
+        if self.verdict == FeedbackVerdict.INCORRECT:
+            if self.classification not in {
+                UrlReportClassification.LEGITIMATE,
+                UrlReportClassification.SUSPICIOUS,
+            }:
+                raise ValueError("Incorrect feedback requires a legitimate or suspicious correction.")
+        elif self.classification is not None:
+            raise ValueError("Only incorrect feedback may include a corrected classification.")
+        return self
+
+
+class AdminReviewAction(str, enum.Enum):
+    APPROVE = "APPROVE"
+    REJECT = "REJECT"
+    INCONCLUSIVE = "INCONCLUSIVE"
 
 
 class UrlReportReviewRequest(StrictModel):
-    assessment: AdminUrlAssessment
+    action: AdminReviewAction
+    assessment: AdminUrlAssessment | None = None
+
+    @model_validator(mode="after")
+    def require_assessment_for_training_approval(self) -> "UrlReportReviewRequest":
+        if self.action == AdminReviewAction.APPROVE:
+            if self.assessment not in {AdminUrlAssessment.LEGITIMATE, AdminUrlAssessment.SUSPICIOUS}:
+                raise ValueError("Training approval requires a legitimate or suspicious assessment.")
+        elif self.assessment is not None:
+            raise ValueError("Rejected or inconclusive feedback cannot include a training label.")
+        return self
 
 
 class EmailCloudReviewRequest(StrictModel):

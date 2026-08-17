@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -27,6 +27,7 @@ class UserStatus(str, enum.Enum):
 class UrlReportClassification(str, enum.Enum):
     LEGITIMATE = "LEGITIMATE"
     SUSPICIOUS = "SUSPICIOUS"
+    UNSURE = "UNSURE"
 
 
 class UrlReportStatus(str, enum.Enum):
@@ -37,6 +38,32 @@ class UrlReportStatus(str, enum.Enum):
 class AdminUrlAssessment(str, enum.Enum):
     LEGITIMATE = "LEGITIMATE"
     SUSPICIOUS = "SUSPICIOUS"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+class FeedbackVerdict(str, enum.Enum):
+    CORRECT = "CORRECT"
+    INCORRECT = "INCORRECT"
+    UNSURE = "UNSURE"
+
+
+class FeedbackReason(str, enum.Enum):
+    TRUSTED_OR_OFFICIAL = "TRUSTED_OR_OFFICIAL"
+    INCORRECT_WARNING = "INCORRECT_WARNING"
+    MISSED_WARNING = "MISSED_WARNING"
+    IMPERSONATION_OR_DECEPTIVE = "IMPERSONATION_OR_DECEPTIVE"
+    OTHER = "OTHER"
+
+
+class FeedbackSource(str, enum.Enum):
+    RECENT_DETECTION = "RECENT_DETECTION"
+    MANUAL_ENTRY = "MANUAL_ENTRY"
+
+
+class TrainingStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
     INCONCLUSIVE = "INCONCLUSIVE"
 
 
@@ -150,13 +177,13 @@ class UrlReport(Base):
     __tablename__ = "url_reports"
     __table_args__ = (
         UniqueConstraint("user_id", "activity_event_id", name="uq_url_report_user_activity"),
-        UniqueConstraint("user_id", "origin_fingerprint", name="uq_url_report_user_origin"),
         CheckConstraint(
             "(status = 'PENDING' AND admin_assessment IS NULL AND reviewed_at IS NULL) OR "
             "(status = 'REVIEWED' AND admin_assessment IS NOT NULL AND reviewed_at IS NOT NULL)",
             name="ck_url_report_review_shape",
         ),
         Index("ix_url_reports_status_submitted", "status", "submitted_at"),
+        Index("ix_url_reports_training_status_submitted", "training_status", "submitted_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
@@ -169,8 +196,37 @@ class UrlReport(Base):
     origin_fingerprint: Mapped[str | None] = mapped_column(String(64))
     detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
     user_classification: Mapped[UrlReportClassification] = mapped_column(Enum(UrlReportClassification))
+    feedback_verdict: Mapped[FeedbackVerdict] = mapped_column(Enum(FeedbackVerdict), default=FeedbackVerdict.INCORRECT)
+    feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
+    feedback_source: Mapped[FeedbackSource] = mapped_column(Enum(FeedbackSource), default=FeedbackSource.MANUAL_ENTRY)
+    training_status: Mapped[TrainingStatus] = mapped_column(Enum(TrainingStatus), default=TrainingStatus.PENDING)
+    detector_model_version: Mapped[str] = mapped_column(String(40), default="RF V4-B")
     status: Mapped[UrlReportStatus] = mapped_column(Enum(UrlReportStatus), default=UrlReportStatus.PENDING)
     admin_assessment: Mapped[AdminUrlAssessment | None] = mapped_column(Enum(AdminUrlAssessment))
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UrlTrainingCandidate(Base):
+    __tablename__ = "url_training_candidates"
+    __table_args__ = (
+        UniqueConstraint("origin_fingerprint", "detector_model_version", name="uq_training_candidate_origin_model"),
+        CheckConstraint(
+            "approved_label IN ('LEGITIMATE', 'SUSPICIOUS')",
+            name="ck_training_candidate_label",
+        ),
+        Index("ix_training_candidate_label_approved", "approved_label", "last_approved_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
+    origin_encrypted: Mapped[str] = mapped_column(Text)
+    origin_fingerprint: Mapped[str] = mapped_column(String(64))
+    detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
+    approved_label: Mapped[AdminUrlAssessment] = mapped_column(Enum(AdminUrlAssessment))
+    feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
+    feedback_source: Mapped[FeedbackSource] = mapped_column(Enum(FeedbackSource))
+    detector_model_version: Mapped[str] = mapped_column(String(40))
+    evidence_count: Mapped[int] = mapped_column(Integer, default=1)
+    first_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

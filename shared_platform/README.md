@@ -39,9 +39,19 @@ before storing the encrypted value. Reports also keep the displayed detector
 outcome and the user's selected classification. Complete URLs and reporter
 identity are not exposed in the administrator review queue.
 Administrators may record a likely-legitimate, likely-suspicious, or
-inconclusive manual assessment. These assessments do not retrain or override
-the frozen detector, and reports are removed after the configured activity
-retention period.
+inconclusive manual assessment. The dashboard, activity history, and paired
+extension also allow explicit feedback on a retained URL detection: correct,
+incorrect, or unsure. No report is created until the user selects a response
+and confirms it. Feedback is linked to that exact detection rather than being
+inferred from an older report for the same origin.
+Incorrect feedback can include a corrected legitimate/suspicious label and an
+optional structured reason. Administrators may approve reviewed feedback as a
+future training candidate, reject it, or mark it inconclusive. Approval stores
+curated candidate metadata in a separate de-identified table with no user ID.
+That approved candidate survives ordinary report retention so it can be
+reviewed during a future, explicitly authorized offline training cycle. It does
+not retrain or override frozen RF V4-B. User reports are removed after the
+configured activity retention period.
 
 ## Account profile
 

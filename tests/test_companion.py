@@ -157,6 +157,41 @@ class CompanionManagerTests(unittest.TestCase):
                 self.assertEqual(0, status["queued_events"])
                 self.assertNotIn("secret-device-token", manager.state_path.read_text())
 
+    def test_explicit_url_feedback_flushes_activity_before_forwarding(self) -> None:
+        feedback = {
+            "client_event_id": "url:1:abc:123456",
+            "verdict": "CORRECT",
+            "confirmed": True,
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch("companion.platform.system", return_value="Linux"):
+                manager = CompanionManager()
+                manager.platform_url = "https://bantai.example.test"
+                manager.state_path = Path(temporary_directory) / "companion.dat"
+                manager._save(
+                    {
+                        "device_id": "device-1",
+                        "device_token": "synthetic-device-token",
+                        "device_label": "Test computer",
+                        "user_email": "user@example.test",
+                        "outbox": [{"client_event_id": feedback["client_event_id"]}],
+                    }
+                )
+                with patch.object(
+                    manager,
+                    "flush",
+                    return_value={"submitted": True, "queued": False, "remaining": 0},
+                ) as flush, patch.object(
+                    manager,
+                    "_request",
+                    return_value={"already_submitted": False},
+                ) as request:
+                    result = manager.submit_url_feedback(feedback)
+
+        flush.assert_called_once_with()
+        request.assert_called_once_with("/url-reports/from-device-activity", feedback)
+        self.assertFalse(result["already_submitted"])
+
 
 if __name__ == "__main__":
     unittest.main()

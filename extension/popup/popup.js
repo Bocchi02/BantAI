@@ -2,7 +2,8 @@ const STORAGE_KEYS = {
   tabStates: "bantai_v110_tab_states",
   server: "bantai_v110_server",
   autoPopup: "bantai_v110_auto_popup",
-  access: "bantai_v110_access"
+  access: "bantai_v110_access",
+  submittedUrlFeedback: "bantai_v110_submitted_url_feedback"
 };
 
 const SUPPORTED_EMAIL_PROVIDERS = new Set(["gmail", "outlook", "yahoo"]);
@@ -53,6 +54,10 @@ let activeTabId = null;
 let countdownTimer = null;
 let latestState = {};
 let detectionEnabled = false;
+let automaticPopupActive = false;
+let reviewEventId = null;
+let reviewBusy = false;
+let submittedReviewIds = new Set();
 
 const byId = (id) => document.getElementById(id);
 
@@ -80,6 +85,13 @@ const elements = {
   websiteScore: byId("websiteScore"),
   websiteThreshold: byId("websiteThreshold"),
   websiteModelSignal: byId("websiteModelSignal"),
+  reviewCard: byId("reviewCard"),
+  reviewForm: byId("reviewForm"),
+  reviewCorrection: byId("reviewCorrection"),
+  reviewReason: byId("reviewReason"),
+  reviewSubmit: byId("reviewSubmit"),
+  reviewMessage: byId("reviewMessage"),
+  reviewComplete: byId("reviewComplete"),
   emailScore: byId("emailScore"),
   emailThreshold: byId("emailThreshold"),
   emailModelSignal: byId("emailModelSignal"),
@@ -102,6 +114,7 @@ function setDetectionVisibility(enabled) {
   elements.detectionContent.setAttribute("aria-hidden", String(!detectionEnabled));
 
   if (!detectionEnabled) {
+    elements.reviewCard.classList.add("hidden");
     elements.autoPopupBanner.classList.add("hidden");
     const details = byId("moreDetails");
     if (details) details.open = false;
@@ -177,6 +190,75 @@ function renderWebsite(state) {
   elements.websiteModelSignal.textContent = result.signal || "--";
 }
 
+function selectedReviewValue(name) {
+  return elements.reviewForm.querySelector(`input[name="${name}"]:checked`)?.value || "";
+}
+
+function resetReviewForm() {
+  elements.reviewForm.reset();
+  elements.reviewCorrection.classList.add("hidden");
+  elements.reviewMessage.textContent = "";
+  elements.reviewSubmit.disabled = true;
+}
+
+function updateReviewControls() {
+  const verdict = selectedReviewValue("reviewVerdict");
+  const classification = selectedReviewValue("reviewClassification");
+  const needsCorrection = verdict === "INCORRECT";
+  elements.reviewCorrection.classList.toggle("hidden", !needsCorrection);
+  if (!needsCorrection) {
+    for (const input of elements.reviewForm.querySelectorAll('input[name="reviewClassification"]')) {
+      input.checked = false;
+    }
+    elements.reviewReason.value = "";
+  }
+  elements.reviewSubmit.disabled = reviewBusy || !verdict || (needsCorrection && !classification);
+}
+
+function reviewableUrlResult(state) {
+  const detector = state?.url_detector || {};
+  const result = detector.result || {};
+  const outcome = String(result.final_result || detector.signal || result.signal || "").toUpperCase();
+  const clientEventId = detector.activity_event_id;
+  if (
+    detector.state !== "complete" ||
+    !clientEventId ||
+    !["NO_STRONG_WARNING_SIGNS", "NEEDS_CAUTION", "SUSPICIOUS_SIGNS_FOUND"].includes(outcome)
+  ) {
+    return null;
+  }
+  return {clientEventId, outcome};
+}
+
+function renderReview(state) {
+  const review = reviewableUrlResult(state);
+  if (!detectionEnabled || automaticPopupActive || !review) {
+    elements.reviewCard.classList.add("hidden");
+    return;
+  }
+  if (reviewEventId !== review.clientEventId) {
+    reviewEventId = review.clientEventId;
+    resetReviewForm();
+  }
+  const submitted = submittedReviewIds.has(review.clientEventId);
+  elements.reviewCard.classList.remove("hidden");
+  elements.reviewForm.classList.toggle("hidden", submitted);
+  elements.reviewComplete.classList.toggle("hidden", !submitted);
+}
+
+async function loadSubmittedReviews() {
+  const stored = await chrome.storage.local.get(STORAGE_KEYS.submittedUrlFeedback);
+  const values = stored[STORAGE_KEYS.submittedUrlFeedback];
+  submittedReviewIds = new Set(Array.isArray(values) ? values.filter((value) => typeof value === "string") : []);
+}
+
+async function rememberSubmittedReview(clientEventId) {
+  submittedReviewIds.add(clientEventId);
+  const retained = [...submittedReviewIds].slice(-200);
+  submittedReviewIds = new Set(retained);
+  await chrome.storage.local.set({[STORAGE_KEYS.submittedUrlFeedback]: retained});
+}
+
 function renderIndicators(state, fusionResult) {
   if (![
     "NEEDS_CAUTION",
@@ -246,6 +328,7 @@ function renderEmail(state) {
 function renderState(state) {
   latestState = state || {};
   renderWebsite(latestState);
+  renderReview(latestState);
   renderEmail(latestState);
 }
 
@@ -301,6 +384,67 @@ async function loadPairingState() {
   }
 }
 
+elements.reviewForm.addEventListener("change", () => {
+  elements.reviewMessage.textContent = "";
+  updateReviewControls();
+});
+
+elements.reviewForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const review = reviewableUrlResult(latestState);
+  const verdict = selectedReviewValue("reviewVerdict");
+  const classification = selectedReviewValue("reviewClassification");
+  const reason = elements.reviewReason.value;
+  if (!review || review.clientEventId !== reviewEventId) {
+    elements.reviewMessage.textContent = "This website result changed. Review the current result instead.";
+    renderReview(latestState);
+    return;
+  }
+  if (!verdict || (verdict === "INCORRECT" && !classification)) {
+    elements.reviewMessage.textContent = "Select your feedback before submitting.";
+    updateReviewControls();
+    return;
+  }
+
+  reviewBusy = true;
+  elements.reviewMessage.textContent = "";
+  updateReviewControls();
+  try {
+    const response = await fetch("http://127.0.0.1:8000/companion/url-feedback", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        client_event_id: review.clientEventId,
+        verdict,
+        classification: verdict === "INCORRECT" ? classification : undefined,
+        reason: verdict === "INCORRECT" && reason ? reason : undefined,
+        confirmed: true
+      })
+    });
+    if (!response.ok) {
+      let message = "BantAI could not submit feedback. Try again shortly.";
+      try {
+        const problem = await response.json();
+        if (typeof problem.detail === "string" && problem.detail.length <= 180) {
+          message = problem.detail;
+        }
+      } catch {
+        // Keep the short local error for non-JSON failures.
+      }
+      throw new Error(message);
+    }
+    await rememberSubmittedReview(review.clientEventId);
+    renderReview(latestState);
+  } catch (error) {
+    elements.reviewMessage.textContent = error instanceof Error
+      ? error.message
+      : "BantAI could not submit feedback. Try again shortly.";
+  } finally {
+    reviewBusy = false;
+    updateReviewControls();
+  }
+});
+
 elements.pairingForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const code = elements.pairingCode.value.replace(/\s+/g, "").toUpperCase();
@@ -346,6 +490,9 @@ elements.unpairButton.addEventListener("click", async () => {
   try {
     const response = await fetch("http://127.0.0.1:8000/companion/unpair", {method: "POST"});
     if (!response.ok) throw new Error("Disconnect failed");
+    submittedReviewIds.clear();
+    reviewEventId = null;
+    await chrome.storage.local.remove(STORAGE_KEYS.submittedUrlFeedback);
     await loadPairingState();
     await chrome.runtime.sendMessage({type: "BANTAI_PAIRING_CHANGED"});
   } catch {
@@ -362,6 +509,7 @@ async function configureAutoClose() {
   if (!popup || popup.consumed || popup.tab_id !== activeTabId) return;
   const remaining = popup.deadline - Date.now();
   if (remaining <= 0) return;
+  automaticPopupActive = true;
   await chrome.storage.session.set({
     [STORAGE_KEYS.autoPopup]: {...popup, consumed: true, consumed_at: Date.now()}
   });
@@ -395,10 +543,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 async function initialize() {
   await loadActiveTab();
+  await loadSubmittedReviews();
   const enabled = await loadPairingState();
   if (enabled) {
-    await loadStoredState();
     await configureAutoClose();
+    await loadStoredState();
     void chrome.runtime.sendMessage({type: "BANTAI_CHECK_SERVER"});
     /* Manual opening requests a fresh tab.url scan but does not start auto-close. */
     void chrome.runtime.sendMessage({type: "BANTAI_REFRESH_ACTIVE_TAB"});

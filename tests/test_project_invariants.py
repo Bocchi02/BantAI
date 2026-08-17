@@ -212,7 +212,7 @@ class ProjectInvariantTests(unittest.TestCase):
         web_app = read("web/app/BantAIApp.tsx")
 
         self.assertIn("def require_detection_access", server)
-        self.assertEqual(server.count("Depends(require_detection_access)"), 3)
+        self.assertEqual(server.count("Depends(require_detection_access)"), 4)
         self.assertIn("def access_status", companion)
         self.assertIn('"detection_enabled": authenticated', companion)
         self.assertIn("async function checkDetectionAccess", worker)
@@ -225,6 +225,28 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertLess(initialize.index("loadPairingState()"), initialize.index("loadStoredState()"))
         self.assertIn("Detection details remain hidden until pairing is verified.", web_app)
         self.assertIn("status && !status.extension.connected", web_app)
+
+    def test_url_feedback_requires_explicit_confirmation_in_web_and_extension(self) -> None:
+        popup = read("extension/popup/popup.js")
+        popup_html = read("extension/popup/popup.html")
+        server = read("backend/server.py")
+        platform = read("shared_platform/app/main.py")
+        web_app = read("web/app/BantAIApp.tsx")
+
+        self.assertIn('id="reviewForm"', popup_html)
+        self.assertIn('id="reviewSubmit" class="review-submit" type="submit" disabled', popup_html)
+        self.assertNotRegex(popup_html, r'name="review(?:Verdict|Classification)"[^>]*\schecked')
+        submit_handler = popup[
+            popup.index('elements.reviewForm.addEventListener("submit"') :
+            popup.index('elements.pairingForm.addEventListener("submit"')
+        ]
+        self.assertIn('/companion/url-feedback', submit_handler)
+        self.assertIn('confirmed: true', submit_handler)
+        self.assertNotIn('/companion/url-feedback', popup[:popup.index('elements.reviewForm.addEventListener("submit"')])
+        self.assertIn('confirmed: Literal[True]', server)
+        self.assertIn('/api/v1/url-reports/from-device-activity', platform)
+        self.assertIn('confirmed: true', web_app)
+        self.assertNotIn('onClick={() => void submit("CORRECT")}', web_app)
 
     def test_automatic_email_popup_waits_for_complete_cloud_result(self) -> None:
         worker = read("extension/background/service-worker.js")

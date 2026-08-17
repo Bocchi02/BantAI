@@ -125,6 +125,16 @@ class CompanionManager:
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
                 return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            message = "The shared BantAI service rejected this request."
+            try:
+                problem = json.loads(exc.read().decode("utf-8"))
+                detail = problem.get("detail") if isinstance(problem, dict) else None
+                if isinstance(detail, str) and 0 < len(detail) <= 180:
+                    message = detail
+            except (ValueError, UnicodeDecodeError):
+                pass
+            raise CompanionError(message) from exc
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             raise CompanionError("The shared BantAI service is unavailable.") from exc
 
@@ -286,6 +296,19 @@ class CompanionManager:
             state["outbox"] = pending[-self.max_outbox_entries :]
             self._save(state)
             return self.flush()
+
+    def submit_url_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
+        """Flush the matching minimized activity before forwarding explicit feedback."""
+
+        with self._lock:
+            state = self._load()
+            if not self._credential(state):
+                raise CompanionError("Pair BantAI before submitting feedback.")
+            for _ in range(5):
+                delivery = self.flush()
+                if not delivery.get("submitted") or not delivery.get("remaining"):
+                    break
+            return self._request("/url-reports/from-device-activity", feedback)
 
     def flush(self) -> dict[str, Any]:
         with self._lock:

@@ -17,7 +17,17 @@ from sqlalchemy import func, select
 
 from shared_platform.app.database import Base, SessionLocal, engine
 from shared_platform.app.main import app, cleanup_expired
-from shared_platform.app.models import ActivityEvent, PairedDevice, PairingCode, UrlReport, User, UserRole, UserStatus, utcnow
+from shared_platform.app.models import (
+    ActivityEvent,
+    PairedDevice,
+    PairingCode,
+    UrlReport,
+    UrlTrainingCandidate,
+    User,
+    UserRole,
+    UserStatus,
+    utcnow,
+)
 from shared_platform.app.security import decrypt_text, encrypt_text, hash_password, token_hash
 
 
@@ -287,6 +297,10 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual("https://review.example.test", report["origin"])
         self.assertEqual("NEEDS_CAUTION", report["detector_outcome"])
         self.assertEqual("PENDING", report["status"])
+        self.assertEqual("INCORRECT", report["feedback_verdict"])
+        self.assertEqual("MANUAL_ENTRY", report["feedback_source"])
+        self.assertEqual("PENDING", report["training_status"])
+        self.assertEqual("RF V4-B", report["detector_model_version"])
         self.assertNotIn("private", created.text)
         self.assertNotIn("secret", created.text)
 
@@ -330,18 +344,201 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("user@example.com", queue.text)
         self.assertNotIn("user_id", queue.text)
         self.assertNotIn("activity_event_id", queue.text)
+        self.assertEqual(1, queue.json()["items"][0]["similar_report_count"])
+
+        invalid_approval = admin_client.patch(
+            f"/api/v1/admin/url-reports/{report['id']}",
+            headers={"X-CSRF-Token": admin_client.cookies.get("bantai_csrf")},
+            json={"action": "APPROVE"},
+        )
+        self.assertEqual(422, invalid_approval.status_code)
 
         reviewed = admin_client.patch(
             f"/api/v1/admin/url-reports/{report['id']}",
             headers={"X-CSRF-Token": admin_client.cookies.get("bantai_csrf")},
-            json={"assessment": "LEGITIMATE"},
+            json={"action": "APPROVE", "assessment": "LEGITIMATE"},
         )
         self.assertEqual(200, reviewed.status_code, reviewed.text)
         self.assertEqual("REVIEWED", reviewed.json()["report"]["status"])
         self.assertEqual("LEGITIMATE", reviewed.json()["report"]["admin_assessment"])
+        self.assertEqual("APPROVED", reviewed.json()["report"]["training_status"])
+        approved_queue = admin_client.get("/api/v1/admin/url-reports?training_status=APPROVED")
+        self.assertEqual(1, approved_queue.json()["total"])
+        self.assertEqual(1, approved_queue.json()["training_candidate_total"])
+
+        with SessionLocal() as db:
+            candidate = db.scalar(select(UrlTrainingCandidate))
+            self.assertIsNotNone(candidate)
+            self.assertEqual("LEGITIMATE", candidate.approved_label.value)
+            self.assertEqual("RF V4-B", candidate.detector_model_version)
+            self.assertEqual(1, candidate.evidence_count)
+            self.assertFalse(hasattr(candidate, "user_id"))
+            self.assertFalse(hasattr(candidate, "source_report_id"))
+            self.assertNotIn("review.example.test", candidate.origin_encrypted)
 
         personal = self.client.get("/api/v1/url-reports")
         self.assertEqual("LEGITIMATE", personal.json()["items"][0]["admin_assessment"])
+        self.assertEqual("APPROVED", personal.json()["items"][0]["training_status"])
+
+    def test_recent_detection_feedback_is_owned_minimized_and_pending_review(self) -> None:
+        token = self.paired_device_token()
+        ingested = self.client.post(
+            "/api/v1/activities",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"events": [{
+                "client_event_id": "feedback-url-0001",
+                "event_type": "URL",
+                "origin": "https://feedback.example.test/private/path?secret=1",
+                "provider": None,
+                "sender": None,
+                "subject": None,
+                "outcome": "NO_STRONG_WARNING_SIGNS",
+                "cloud_status": "COMPLETE",
+                "occurred_at": "2026-08-12T08:00:00+08:00",
+            }]},
+        )
+        self.assertEqual(202, ingested.status_code, ingested.text)
+
+        self.login("user@example.com", "correct horse battery staple")
+        dashboard = self.client.get("/api/v1/dashboard?days=90")
+        activity = dashboard.json()["last_url"]
+        self.assertFalse(activity["feedback_submitted"])
+
+        empty_feedback = self.client.post(
+            "/api/v1/url-reports/from-activity",
+            headers=self.csrf(),
+            json={},
+        )
+        self.assertEqual(422, empty_feedback.status_code)
+        with SessionLocal() as db:
+            self.assertEqual(0, db.scalar(select(func.count(UrlReport.id))))
+
+        missing_correction = self.client.post(
+            "/api/v1/url-reports/from-activity",
+            headers=self.csrf(),
+            json={"activity_event_id": activity["id"], "verdict": "INCORRECT", "confirmed": True},
+        )
+        self.assertEqual(422, missing_correction.status_code)
+
+        submitted = self.client.post(
+            "/api/v1/url-reports/from-activity",
+            headers=self.csrf(),
+            json={
+                "activity_event_id": activity["id"],
+                "verdict": "INCORRECT",
+                "classification": "SUSPICIOUS",
+                "reason": "MISSED_WARNING",
+                "confirmed": True,
+            },
+        )
+        self.assertEqual(201, submitted.status_code, submitted.text)
+        report = submitted.json()["report"]
+        self.assertEqual("https://feedback.example.test", report["origin"])
+        self.assertEqual("RECENT_DETECTION", report["feedback_source"])
+        self.assertEqual("INCORRECT", report["feedback_verdict"])
+        self.assertEqual("MISSED_WARNING", report["feedback_reason"])
+        self.assertEqual("PENDING", report["training_status"])
+        self.assertNotIn("private", submitted.text)
+        self.assertNotIn("secret", submitted.text)
+
+        refreshed = self.client.get("/api/v1/dashboard?days=90")
+        self.assertTrue(refreshed.json()["last_url"]["feedback_submitted"])
+        duplicate = self.client.post(
+            "/api/v1/url-reports/from-activity",
+            headers=self.csrf(),
+            json={"activity_event_id": activity["id"], "verdict": "CORRECT", "confirmed": True},
+        )
+        self.assertEqual(409, duplicate.status_code)
+
+        admin_client = TestClient(app)
+        admin_login = admin_client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "admin correct horse battery"},
+        )
+        self.assertEqual(200, admin_login.status_code)
+        cross_user = admin_client.post(
+            "/api/v1/url-reports/from-activity",
+            headers={"X-CSRF-Token": admin_client.cookies.get("bantai_csrf")},
+            json={"activity_event_id": activity["id"], "verdict": "CORRECT", "confirmed": True},
+        )
+        self.assertEqual(404, cross_user.status_code)
+
+    def test_device_feedback_requires_explicit_input_and_exact_detection(self) -> None:
+        token = self.paired_device_token()
+        events = []
+        for event_id, detected_at in (
+            ("device-feedback-0001", "2026-08-12T08:00:00+08:00"),
+            ("device-feedback-0002", "2026-08-12T09:00:00+08:00"),
+        ):
+            ingested = self.client.post(
+                "/api/v1/activities",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"events": [{
+                    "client_event_id": event_id,
+                    "event_type": "URL",
+                    "origin": "https://repeat.example.test/private/path",
+                    "provider": None,
+                    "sender": None,
+                    "subject": None,
+                    "outcome": "NO_STRONG_WARNING_SIGNS",
+                    "cloud_status": "COMPLETE",
+                    "occurred_at": detected_at,
+                }]},
+            )
+            self.assertEqual(202, ingested.status_code, ingested.text)
+            events.append(event_id)
+
+        self.login("user@example.com", "correct horse battery staple")
+        activity_by_client = {}
+        with SessionLocal() as db:
+            for row in db.scalars(select(ActivityEvent)).all():
+                activity_by_client[row.client_event_id] = row.id
+
+        first_feedback = self.client.post(
+            "/api/v1/url-reports/from-activity",
+            headers=self.csrf(),
+            json={
+                "activity_event_id": activity_by_client[events[0]],
+                "verdict": "CORRECT",
+                "confirmed": True,
+            },
+        )
+        self.assertEqual(201, first_feedback.status_code, first_feedback.text)
+        refreshed = self.client.get("/api/v1/activities?event_type=URL").json()["items"]
+        submitted_by_id = {item["id"]: item["feedback_submitted"] for item in refreshed}
+        self.assertTrue(submitted_by_id[activity_by_client[events[0]]])
+        self.assertFalse(submitted_by_id[activity_by_client[events[1]]])
+
+        empty = self.client.post(
+            "/api/v1/url-reports/from-device-activity",
+            headers={"Authorization": f"Bearer {token}"},
+            json={},
+        )
+        self.assertEqual(422, empty.status_code)
+        self.assertEqual(
+            401,
+            self.client.post(
+                "/api/v1/url-reports/from-device-activity",
+                json={"client_event_id": events[1], "verdict": "CORRECT", "confirmed": True},
+            ).status_code,
+        )
+
+        device_feedback = self.client.post(
+            "/api/v1/url-reports/from-device-activity",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"client_event_id": events[1], "verdict": "CORRECT", "confirmed": True},
+        )
+        self.assertEqual(201, device_feedback.status_code, device_feedback.text)
+        self.assertFalse(device_feedback.json()["already_submitted"])
+        repeated = self.client.post(
+            "/api/v1/url-reports/from-device-activity",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"client_event_id": events[1], "verdict": "CORRECT", "confirmed": True},
+        )
+        self.assertEqual(201, repeated.status_code, repeated.text)
+        self.assertTrue(repeated.json()["already_submitted"])
+        with SessionLocal() as db:
+            self.assertEqual(2, db.scalar(select(func.count(UrlReport.id))))
 
     def test_regular_user_cannot_access_admin_api(self) -> None:
         self.login("user@example.com", "correct horse battery staple")

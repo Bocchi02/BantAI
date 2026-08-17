@@ -42,6 +42,47 @@
       <p id="websiteMessage" class="explanation">BantAI checks only the URL shown in the address bar.</p>
     </section>
 
+    <section id="reviewCard" class="review-card hidden" aria-labelledby="reviewTitle">
+      <div class="card-heading">
+        <div>
+          <p class="kicker">RESULT FEEDBACK</p>
+          <h2 id="reviewTitle">Was this website result accurate?</h2>
+        </div>
+        <span class="scope-pill">Optional</span>
+      </div>
+      <p class="explanation">Nothing is submitted until you select an answer and press Submit feedback.</p>
+      <form id="reviewForm" class="review-form">
+        <fieldset class="review-options">
+          <legend>Select one response</legend>
+          <label><input type="radio" name="reviewVerdict" value="CORRECT"><span>Yes, looks right</span></label>
+          <label><input type="radio" name="reviewVerdict" value="INCORRECT"><span>No, correct it</span></label>
+          <label><input type="radio" name="reviewVerdict" value="UNSURE"><span>Not sure</span></label>
+        </fieldset>
+        <div id="reviewCorrection" class="review-correction hidden">
+          <fieldset class="review-classification">
+            <legend>What best describes this website?</legend>
+            <label><input type="radio" name="reviewClassification" value="LEGITIMATE"><span>Seems legitimate</span></label>
+            <label><input type="radio" name="reviewClassification" value="SUSPICIOUS"><span>Seems suspicious</span></label>
+          </fieldset>
+          <label class="review-reason" for="reviewReason">Reason <span>(optional)</span></label>
+          <select id="reviewReason" name="reviewReason">
+            <option value="">Select a reason</option>
+            <option value="TRUSTED_OR_OFFICIAL">Trusted or official website</option>
+            <option value="INCORRECT_WARNING">Incorrect warning</option>
+            <option value="MISSED_WARNING">Missed suspicious behavior</option>
+            <option value="IMPERSONATION_OR_DECEPTIVE">Impersonation or deceptive domain</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+        <button id="reviewSubmit" class="review-submit" type="submit" disabled>Submit feedback</button>
+        <p id="reviewMessage" class="review-message" role="status" aria-live="polite"></p>
+      </form>
+      <div id="reviewComplete" class="review-complete hidden" role="status">
+        <strong>Feedback received</strong>
+        <p>An administrator will review the minimized website-origin report.</p>
+      </div>
+    </section>
+
     <section id="emailCard" class="card neutral hidden" aria-labelledby="emailTitle">
       <div class="card-heading">
         <div>
