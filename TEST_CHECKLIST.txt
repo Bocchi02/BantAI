@@ -57,6 +57,27 @@ MANUAL CHROME / EDGE
 [ ] URL feedback is created only after the user selects a response and presses Submit feedback
 [ ] The manually opened extension popup can submit feedback for the exact current URL detection
 [ ] An older report for the same origin does not mark a new detection as already reviewed
+[ ] Explicit URL reports retain the submitted full address, including its path
+[ ] Routine activity history and Cloud URL Review remain origin-only
+[ ] Recent-detection feedback rejects a full address whose origin does not match the detection
+[ ] The admin User reviews page exposes only explicitly submitted full URL addresses
+[ ] The admin Training data page lists approved full-URL candidates without reporter identity
+[ ] Email report submission requires an explicit label, consent checkbox, and submit action
+[ ] A submitted email body is stored only as authenticated ciphertext, never plaintext
+[ ] The user and admin email-report APIs never return/decrypt the body, ciphertext, fingerprint, or reporter identity
+[ ] The admin Email reports page shows sender/subject and body-present metadata but cannot open the body
+[ ] Approval creates a de-identified encrypted email training candidate without a user ID
+[ ] The admin Training data page indicates encrypted body content without displaying it
+[ ] The admin can export the current approved URL/email inventory as a UTF-8 CSV manifest
+[ ] The CSV respects the selected legitimate/suspicious filter and neutralizes spreadsheet formulas
+[ ] The CSV contains no email body plaintext/ciphertext, internal fingerprint, activity ID, or reporter identity
+[ ] Email CSV rows use candidate IDs and mark body access as restricted-training-process only
+[ ] The dashboard does not show the Help improve BantAI feedback card
+[ ] The manually opened extension popup shows email feedback only for a completed supported-email result
+[ ] Email feedback requires an answer, explicit encrypted-report consent, and Submit feedback
+[ ] Extension email feedback rejects a changed opened email before sending its content
+[ ] Raw email body content is never placed in Chrome local or session storage
+[ ] Training-data controls do not retrain or change either frozen production model
 [ ] Raw email-model probability, threshold, and signal remain under More details
 [ ] Raw RF probability, threshold, and signal remain under More details
 [ ] Probabilities and thresholds appear only under More details

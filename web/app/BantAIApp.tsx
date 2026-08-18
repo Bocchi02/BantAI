@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, downloadApiFile, ApiError } from "./api";
 
 type Role = "USER" | "ADMIN";
 type UserStatus = "ACTIVE" | "SUSPENDED";
@@ -45,6 +45,7 @@ type Activity = {
 type UrlReport = {
   id: string;
   activity_event_id: string | null;
+  url: string;
   origin: string;
   detector_outcome: Outcome;
   user_classification: UrlReportClassification;
@@ -58,6 +59,81 @@ type UrlReport = {
   admin_assessment: AdminUrlAssessment | null;
   submitted_at: string;
   reviewed_at: string | null;
+};
+
+type UrlTrainingCandidate = {
+  id: string;
+  url: string;
+  origin: string;
+  detector_outcome: Outcome;
+  approved_label: "LEGITIMATE" | "SUSPICIOUS";
+  feedback_reason: FeedbackReason | null;
+  feedback_source: FeedbackSource;
+  detector_model_version: string;
+  evidence_count: number;
+  first_approved_at: string;
+  last_approved_at: string;
+};
+
+type EmailReport = {
+  id: string;
+  provider: "gmail" | "outlook" | "yahoo";
+  sender: string;
+  subject: string;
+  body_included: boolean;
+  body_character_count: number;
+  detector_outcome: Outcome;
+  user_classification: UrlReportClassification;
+  feedback_reason: FeedbackReason | null;
+  training_status: TrainingStatus;
+  detector_model_version: string;
+  similar_report_count?: number;
+  status: UrlReportStatus;
+  admin_assessment: AdminUrlAssessment | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+};
+
+type EmailTrainingCandidate = {
+  id: string;
+  provider: "gmail" | "outlook" | "yahoo";
+  sender: string;
+  subject: string;
+  body_included: boolean;
+  body_character_count: number;
+  detector_outcome: Outcome;
+  approved_label: "LEGITIMATE" | "SUSPICIOUS";
+  feedback_reason: FeedbackReason | null;
+  detector_model_version: string;
+  evidence_count: number;
+  first_approved_at: string;
+  last_approved_at: string;
+};
+
+type TrainingDataInventory = {
+  urls: {
+    items: UrlTrainingCandidate[];
+    page: number;
+    pages: number;
+    total: number;
+    candidate_total: number;
+    evidence_total: number;
+    label_counts: { LEGITIMATE: number; SUSPICIOUS: number };
+    model_version: string;
+  };
+  emails: {
+    items: EmailTrainingCandidate[];
+    page: number;
+    pages: number;
+    total: number;
+    candidate_total: number;
+    evidence_total: number;
+    label_counts: { LEGITIMATE: number; SUSPICIOUS: number };
+    observed_activity_total: number;
+    collection_status: "ENCRYPTED_REVIEW_CONTENT";
+    model_version: string;
+    privacy_message: string;
+  };
 };
 
 type Distribution = {
@@ -94,7 +170,7 @@ type ConnectionStatus = {
 const COMPANION_URL =
   process.env.NEXT_PUBLIC_BANTAI_COMPANION_URL || "http://127.0.0.1:8000";
 
-type PageName = "dashboard" | "activity" | "reports" | "devices" | "profile" | "admin" | "review-reports" | "users";
+type PageName = "dashboard" | "activity" | "reports" | "email-reports" | "devices" | "profile" | "admin" | "review-reports" | "admin-email-reports" | "training-data" | "users";
 
 const OUTCOMES: { value: Outcome; label: string; short: string }[] = [
   { value: "NO_STRONG_WARNING_SIGNS", label: "No strong warning signs", short: "No warning signs" },
@@ -160,6 +236,14 @@ function adminAssessmentLabel(value: AdminUrlAssessment | null) {
   if (value === "SUSPICIOUS") return "Likely suspicious";
   if (value === "INCONCLUSIVE") return "Inconclusive";
   return "Awaiting review";
+}
+
+function approvedTrainingLabel(value: "LEGITIMATE" | "SUSPICIOUS") {
+  return value === "LEGITIMATE" ? "Legitimate" : "Suspicious";
+}
+
+function feedbackSourceLabel(value: FeedbackSource) {
+  return value === "RECENT_DETECTION" ? "Detection review" : "Manual URL report";
 }
 
 function userName(user: User) {
@@ -401,11 +485,14 @@ function AppShell({ user, page, navigate, children }: { user: User; page: PageNa
     { id: "dashboard" as const, icon: "⌂", label: "Dashboard" },
     { id: "activity" as const, icon: "≡", label: "Activity" },
     { id: "reports" as const, icon: "!", label: "URL reports" },
+    { id: "email-reports" as const, icon: "✉", label: "Email reports" },
     { id: "devices" as const, icon: "◇", label: "Paired devices" },
   ];
   const adminNav = [
     { id: "admin" as const, icon: "▦", label: "Admin overview" },
-    { id: "review-reports" as const, icon: "✓", label: "Review reports" },
+    { id: "review-reports" as const, icon: "✓", label: "User reviews" },
+    { id: "admin-email-reports" as const, icon: "✉", label: "Email reports" },
+    { id: "training-data" as const, icon: "◎", label: "Training data" },
     { id: "users" as const, icon: "♙", label: "Users" },
   ];
   return (
@@ -524,6 +611,7 @@ function LatestCard({ type, item }: { type: EventType; item: Activity | null }) 
 }
 
 function DetectionFeedbackCard({ activity, onSubmitted, onClose }: { activity: Activity; onSubmitted: () => void | Promise<void>; onClose?: () => void }) {
+  const [reportedUrl, setReportedUrl] = useState("");
   const [verdict, setVerdict] = useState<FeedbackVerdict | "">("");
   const [classification, setClassification] = useState<UrlReportClassification | "">("");
   const [reason, setReason] = useState<FeedbackReason | "">("");
@@ -542,8 +630,8 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }: { activity: A
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!verdict || (verdict === "INCORRECT" && !classification)) {
-      setError("Select your feedback before submitting.");
+    if (!reportedUrl.trim() || !verdict || (verdict === "INCORRECT" && !classification)) {
+      setError("Enter the complete website address and select your feedback before submitting.");
       return;
     }
     setBusy(true);
@@ -553,6 +641,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }: { activity: A
         method: "POST",
         body: JSON.stringify({
           activity_event_id: activity.id,
+          url: reportedUrl.trim(),
           verdict,
           classification: verdict === "INCORRECT" ? classification : undefined,
           reason: verdict === "INCORRECT" && reason ? reason : undefined,
@@ -569,7 +658,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }: { activity: A
   };
 
   if (submitted) {
-    return <section className="card detection-feedback feedback-complete" aria-live="polite"><span className="feedback-icon" aria-hidden="true">✓</span><div><p className="eyebrow">FEEDBACK RECEIVED</p><h2>Thank you for helping improve BantAI.</h2><p>An administrator will review this minimized website-origin report before it can become a future training candidate.</p></div>{onClose && <button className="button ghost" type="button" onClick={onClose}>Close</button>}</section>;
+    return <section className="card detection-feedback feedback-complete" aria-live="polite"><span className="feedback-icon" aria-hidden="true">✓</span><div><p className="eyebrow">FEEDBACK RECEIVED</p><h2>Thank you for helping improve BantAI.</h2><p>An administrator will review the complete address you explicitly submitted before it can become a future training candidate.</p></div>{onClose && <button className="button ghost" type="button" onClick={onClose}>Close</button>}</section>;
   }
 
   return (
@@ -581,12 +670,13 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }: { activity: A
         <p><strong>{activity.origin}</strong> was shown as “{outcomeInfo(activity.outcome).label}.”</p>
         {error && <Notice type="error">{error}</Notice>}
         <form className="feedback-form" onSubmit={submit}>
+          <label className="feedback-reason"><span>Complete website address</span><input type="url" inputMode="url" value={reportedUrl} onChange={(event) => setReportedUrl(event.target.value)} placeholder={`${activity.origin || "https://example.com"}/page`} maxLength={2048} autoCapitalize="none" autoComplete="off" spellCheck={false} required /><small>Paste the address shown in the browser, including its path. This address is stored only after you submit feedback.</small></label>
           <fieldset className="feedback-verdict-fieldset"><legend>Select one response</legend><label className={cx("feedback-verdict-choice", verdict === "CORRECT" && "selected", "correct")}><input type="radio" name={`feedback-verdict-${activity.id}`} checked={verdict === "CORRECT"} onChange={() => selectVerdict("CORRECT")} /><span>Yes, looks right</span></label><label className={cx("feedback-verdict-choice", verdict === "INCORRECT" && "selected", "incorrect")}><input type="radio" name={`feedback-verdict-${activity.id}`} checked={verdict === "INCORRECT"} onChange={() => selectVerdict("INCORRECT")} /><span>No, report correction</span></label><label className={cx("feedback-verdict-choice", verdict === "UNSURE" && "selected")}><input type="radio" name={`feedback-verdict-${activity.id}`} checked={verdict === "UNSURE"} onChange={() => selectVerdict("UNSURE")} /><span>Not sure</span></label></fieldset>
           {verdict === "INCORRECT" && <div className="feedback-correction">
             <fieldset className="report-choice-fieldset"><legend>What best describes the website?</legend><label className={cx("report-choice", classification === "LEGITIMATE" && "selected")}><input type="radio" name={`feedback-classification-${activity.id}`} checked={classification === "LEGITIMATE"} onChange={() => setClassification("LEGITIMATE")} /><span className="report-choice-icon legitimate" aria-hidden="true">✓</span><span><strong>Seems legitimate</strong><small>The warning may have been too cautious.</small></span></label><label className={cx("report-choice", classification === "SUSPICIOUS" && "selected")}><input type="radio" name={`feedback-classification-${activity.id}`} checked={classification === "SUSPICIOUS"} onChange={() => setClassification("SUSPICIOUS")} /><span className="report-choice-icon suspicious" aria-hidden="true">!</span><span><strong>Seems suspicious</strong><small>BantAI may have missed warning signs.</small></span></label></fieldset>
             <label className="feedback-reason"><span>Reason <small>(optional)</small></span><select value={reason} onChange={(event) => setReason(event.target.value as FeedbackReason | "")}><option value="">Select a reason</option><option value="TRUSTED_OR_OFFICIAL">Trusted or official website</option><option value="INCORRECT_WARNING">Incorrect warning</option><option value="MISSED_WARNING">Missed suspicious behavior</option><option value="IMPERSONATION_OR_DECEPTIVE">Impersonation or deceptive domain</option><option value="OTHER">Other</option></select></label>
           </div>}
-          <div className="feedback-actions"><button className="button primary" type="submit" disabled={busy || !verdict || (verdict === "INCORRECT" && !classification)}>{busy ? "Submitting..." : "Submit feedback"}</button>{onClose && <button className="text-button" type="button" onClick={onClose}>Close</button>}</div>
+          <div className="feedback-actions"><button className="button primary" type="submit" disabled={busy || !reportedUrl.trim() || !verdict || (verdict === "INCORRECT" && !classification)}>{busy ? "Submitting..." : "Submit feedback"}</button>{onClose && <button className="text-button" type="button" onClick={onClose}>Close</button>}</div>
         </form>
       </div>
     </section>
@@ -620,7 +710,6 @@ function DashboardPage({ onViewActivity, onPairDevice }: { onViewActivity: () =>
       <ConnectionPanel onPairDevice={onPairDevice} />
       {!data ? <DashboardSkeleton /> : <>
         <div className="latest-grid"><LatestCard type="URL" item={data.last_url} /><LatestCard type="EMAIL" item={data.last_email} /></div>
-        {data.last_url && <DetectionFeedbackCard key={data.last_url.id} activity={data.last_url} onSubmitted={load} />}
         <OutcomeChart distribution={data.distribution} />
         <section className="card recent-card">
           <div className="card-header"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>Your latest checks</h2></div><button className="button ghost" onClick={onViewActivity}>View all activity <span aria-hidden="true">→</span></button></div>
@@ -852,18 +941,18 @@ function UrlReportsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="RESULT FEEDBACK" title="Report a website result" description="Paste a website address when you believe BantAI classified it incorrectly. Only its origin is submitted." />
+      <PageHeader eyebrow="RESULT FEEDBACK" title="Report a website result" description="Paste the complete website address, including its path, when you believe BantAI classified it incorrectly." />
       {error && <Notice type="error">{error}</Notice>}
       {message && <Notice type="success">{message}</Notice>}
       <div className="report-layout">
         <section className="card report-form-card" aria-labelledby="new-url-report-title">
-          <div className="card-header"><div><p className="eyebrow">NEW REPORT</p><h2 id="new-url-report-title">Enter the website address</h2></div><span className="privacy-chip">Origin only</span></div>
+          <div className="card-header"><div><p className="eyebrow">NEW REPORT</p><h2 id="new-url-report-title">Enter the website address</h2></div><span className="privacy-chip">Explicit submission</span></div>
           <form className="report-form" onSubmit={submit}>
             <label>
               <span>Website URL</span>
               <input type="url" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" maxLength={2048} autoCapitalize="none" autoComplete="off" spellCheck={false} aria-describedby="url-report-help" required />
             </label>
-            <p id="url-report-help" className="form-help">Paste the complete address from your browser. BantAI removes its path, query, and fragment before storage.</p>
+            <p id="url-report-help" className="form-help">Paste the complete address from your browser. BantAI retains its path for administrator review and future training-data assessment.</p>
             <label>
               <span>What result did BantAI show?</span>
               <select value={detectorOutcome} onChange={(event) => setDetectorOutcome(event.target.value as Outcome | "")} required>
@@ -890,15 +979,101 @@ function UrlReportsPage() {
         </section>
         <aside className="report-guidance" aria-label="Report privacy information">
           <span aria-hidden="true">◉</span>
-          <div><p className="eyebrow">PRIVACY BOUNDARY</p><h2>Your full browsing address stays private.</h2><p>BantAI sends the administrator only the website origin, your selected classification, and the original detector outcome. Paths, queries, fragments, and your identity are not included in the review queue.</p></div>
+          <div><p className="eyebrow">EXPLICIT REPORT</p><h2>Only addresses you submit are collected in full.</h2><p>The complete address is encrypted and shown to an administrator with your classification and detector outcome. Your identity is not included, and ordinary activity history remains origin-only.</p></div>
         </aside>
       </div>
       <section className="card activity-card report-history-card">
         <div className="card-header"><div><p className="eyebrow">YOUR SUBMISSIONS</p><h2>{data ? `${data.total} website ${data.total === 1 ? "report" : "reports"}` : "Loading reports..."}</h2></div><span className="privacy-chip">90-day retention</span></div>
-        {data && data.items.length > 0 ? <div className="table-scroll"><table className="data-table report-table"><thead><tr><th>Website origin</th><th>Detector result</th><th>Your feedback</th><th>Training review</th><th>Submitted</th></tr></thead><tbody>{data.items.map((report) => <tr key={report.id}><td><strong className="origin-cell">{report.origin}</strong><small className="reviewed-date">{feedbackReasonLabel(report.feedback_reason)}</small></td><td><StatusBadge outcome={report.detector_outcome} /></td><td><span className={cx("report-pill", report.user_classification.toLowerCase())}>{feedbackVerdictLabel(report.feedback_verdict)}</span><small className="reviewed-date">{userClassificationLabel(report.user_classification)}</small></td><td><span className={cx("training-pill", report.training_status.toLowerCase())}>{trainingStatusLabel(report.training_status)}</span>{report.reviewed_at && <small className="reviewed-date">Reviewed {niceDate(report.reviewed_at)}</small>}</td><td>{niceDate(report.submitted_at)}</td></tr>)}</tbody></table></div> : data ? <EmptyState icon="!" title="No website reports" text="Enter a website address above when you believe its detection outcome may be wrong." /> : <DashboardSkeleton />}
+        {data && data.items.length > 0 ? <div className="table-scroll"><table className="data-table report-table"><thead><tr><th>Complete website address</th><th>Detector result</th><th>Your feedback</th><th>Training review</th><th>Submitted</th></tr></thead><tbody>{data.items.map((report) => <tr key={report.id}><td><strong className="origin-cell" title={report.url}>{report.url}</strong><small className="reviewed-date">{feedbackReasonLabel(report.feedback_reason)}</small></td><td><StatusBadge outcome={report.detector_outcome} /></td><td><span className={cx("report-pill", report.user_classification.toLowerCase())}>{feedbackVerdictLabel(report.feedback_verdict)}</span><small className="reviewed-date">{userClassificationLabel(report.user_classification)}</small></td><td><span className={cx("training-pill", report.training_status.toLowerCase())}>{trainingStatusLabel(report.training_status)}</span>{report.reviewed_at && <small className="reviewed-date">Reviewed {niceDate(report.reviewed_at)}</small>}</td><td>{niceDate(report.submitted_at)}</td></tr>)}</tbody></table></div> : data ? <EmptyState icon="!" title="No website reports" text="Enter a website address above when you believe its detection outcome may be wrong." /> : <DashboardSkeleton />}
         {data && data.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.pages}</span><button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
       </section>
       <p className="safe-disclaimer"><strong>Reports are decision-support feedback.</strong> They do not automatically retrain the frozen detector or guarantee that a website is legitimate or malicious.</p>
+    </>
+  );
+}
+
+function EmailReportsPage() {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<{ items: EmailReport[]; page: number; pages: number; total: number } | null>(null);
+  const [provider, setProvider] = useState<"gmail" | "outlook" | "yahoo">("gmail");
+  const [sender, setSender] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [detectorOutcome, setDetectorOutcome] = useState<Outcome | "">("");
+  const [classification, setClassification] = useState<UrlReportClassification>("LEGITIMATE");
+  const [reason, setReason] = useState<FeedbackReason | "">("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(() => api<{ items: EmailReport[]; page: number; pages: number; total: number }>(`/email-reports?page=${page}&page_size=25`)
+    .then(setData)
+    .catch((problem: ApiError) => setError(problem.message || "BantAI could not load email reports.")), [page]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!sender.trim() || !body.trim() || !detectorOutcome || !confirmed) {
+      setError("Complete the required fields and confirm the encrypted training submission.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{ message: string }>("/email-reports", {
+        method: "POST",
+        body: JSON.stringify({ provider, sender: sender.trim(), subject, body, detector_outcome: detectorOutcome, classification, reason: reason || undefined, confirmed: true }),
+      });
+      setSender("");
+      setSubject("");
+      setBody("");
+      setDetectorOutcome("");
+      setReason("");
+      setConfirmed(false);
+      setMessage(result.message);
+      setPage(1);
+      await load();
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : "BantAI could not submit this email report.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <PageHeader eyebrow="RESULT FEEDBACK" title="Submit an email report" description="Provide an email only when you want it considered as an encrypted reference for a future model-training cycle." />
+      {error && <Notice type="error">{error}</Notice>}
+      {message && <Notice type="success">{message}</Notice>}
+      <div className="report-layout email-report-layout">
+        <section className="card report-form-card" aria-labelledby="new-email-report-title">
+          <div className="card-header"><div><p className="eyebrow">NEW EMAIL REPORT</p><h2 id="new-email-report-title">Enter the email details</h2></div><span className="privacy-chip">Explicit submission</span></div>
+          <form className="report-form email-report-form" onSubmit={submit}>
+            <div className="email-report-fields">
+              <label><span>Email provider</span><select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}><option value="gmail">Gmail</option><option value="outlook">Outlook</option><option value="yahoo">Yahoo Mail</option></select></label>
+              <label><span>Sender</span><input value={sender} onChange={(event) => setSender(event.target.value)} maxLength={320} placeholder="Sender name or address" required /></label>
+            </div>
+            <label><span>Subject</span><input value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={500} placeholder="Email subject, if available" /></label>
+            <label><span>Email body</span><textarea value={body} onChange={(event) => setBody(event.target.value)} maxLength={10000} rows={9} placeholder="Paste the email message here" aria-describedby="email-body-help" required /></label>
+            <p id="email-body-help" className="form-help">The body is encrypted before database storage. It cannot be read from the user or administrator interface and is reserved for an approved offline training process.</p>
+            <label><span>What result did BantAI show?</span><select value={detectorOutcome} onChange={(event) => setDetectorOutcome(event.target.value as Outcome | "")} required><option value="">Select the displayed result</option>{OUTCOMES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+            <fieldset className="report-choice-fieldset"><legend>What do you believe about this email?</legend><label className={cx("report-choice", classification === "LEGITIMATE" && "selected")}><input type="radio" name="email-classification" checked={classification === "LEGITIMATE"} onChange={() => setClassification("LEGITIMATE")} /><span className="report-choice-icon legitimate" aria-hidden="true">✓</span><span><strong>Seems legitimate</strong><small>The warning may have been too cautious.</small></span></label><label className={cx("report-choice", classification === "SUSPICIOUS" && "selected")}><input type="radio" name="email-classification" checked={classification === "SUSPICIOUS"} onChange={() => setClassification("SUSPICIOUS")} /><span className="report-choice-icon suspicious" aria-hidden="true">!</span><span><strong>Seems suspicious</strong><small>BantAI may have missed warning signs.</small></span></label></fieldset>
+            <label><span>Reason <small>(optional)</small></span><select value={reason} onChange={(event) => setReason(event.target.value as FeedbackReason | "")}><option value="">Select a reason</option><option value="TRUSTED_OR_OFFICIAL">Trusted or official sender</option><option value="INCORRECT_WARNING">Incorrect warning</option><option value="MISSED_WARNING">Missed suspicious behavior</option><option value="IMPERSONATION_OR_DECEPTIVE">Impersonation or deceptive message</option><option value="OTHER">Other</option></select></label>
+            <label className="training-consent"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>Include this encrypted email in the reporting workflow.</strong><small>I understand that an administrator can see the sender and subject, but cannot read the stored email body.</small></span></label>
+            <button className="button primary report-submit" disabled={busy || !sender.trim() || !body.trim() || !detectorOutcome || !confirmed}>{busy ? "Encrypting and submitting..." : "Submit encrypted report"}</button>
+          </form>
+        </section>
+        <aside className="report-guidance" aria-label="Email training privacy information"><span aria-hidden="true">◉</span><div><p className="eyebrow">ENCRYPTED CONTENT</p><h2>The body is never displayed after submission.</h2><p>Administrators can assess the sender, subject, detector result, and your suggested label. The encrypted body is copied to training inventory only after approval.</p></div></aside>
+      </div>
+      <section className="card activity-card report-history-card">
+        <div className="card-header"><div><p className="eyebrow">YOUR SUBMISSIONS</p><h2>{data ? `${data.total} email ${data.total === 1 ? "report" : "reports"}` : "Loading reports..."}</h2></div><span className="privacy-chip">Body encrypted</span></div>
+        {data && data.items.length > 0 ? <div className="table-scroll"><table className="data-table report-table"><thead><tr><th>Email</th><th>Detector result</th><th>Your label</th><th>Training assessment</th><th>Submitted</th></tr></thead><tbody>{data.items.map((report) => <tr key={report.id}><td><strong className="origin-cell" title={report.subject || "No subject"}>{report.subject || "No subject"}</strong><small className="reviewed-date">{report.sender} · {report.provider.toUpperCase()} · Encrypted body included</small></td><td><StatusBadge outcome={report.detector_outcome} /></td><td><span className={cx("report-pill", report.user_classification.toLowerCase())}>{userClassificationLabel(report.user_classification)}</span></td><td><span className={cx("training-pill", report.training_status.toLowerCase())}>{trainingStatusLabel(report.training_status)}</span></td><td>{niceDate(report.submitted_at)}</td></tr>)}</tbody></table></div> : data ? <EmptyState icon="✉" title="No email reports" text="Submit an email above only when you want it considered for future training." /> : <DashboardSkeleton />}
+        {data && data.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.pages}</span><button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
+      </section>
+      <p className="safe-disclaimer"><strong>Training reference only.</strong> Submission does not retrain XLM-R V1 or guarantee that the email is legitimate or malicious.</p>
     </>
   );
 }
@@ -941,19 +1116,19 @@ function AdminUrlReportsPage() {
     }
   };
 
-  const copyOrigin = async (origin: string) => {
+  const copyUrl = async (url: string) => {
     try {
-      await navigator.clipboard.writeText(origin);
-      setMessage("Website origin copied. Review it using your approved manual process.");
+      await navigator.clipboard.writeText(url);
+      setMessage("Complete website address copied. Review it using your approved manual process.");
     } catch {
-      setError("The website origin could not be copied from this browser.");
+      setError("The website address could not be copied from this browser.");
     }
   };
 
   return (
     <>
-      <PageHeader eyebrow="ADMINISTRATION" title="Review training candidates" description="Validate user feedback before it can enter a future, separately versioned URL-model dataset." />
-      <section className="admin-privacy-banner"><span aria-hidden="true">◉</span><div><strong>Approval does not retrain the live model</strong><p>The queue contains minimized origins from explicit feedback. BantAI never opens or crawls them, and RF V4-B remains frozen.</p></div></section>
+      <PageHeader eyebrow="ADMINISTRATION" title="User reviews" description="View explicit website feedback from users and decide whether each submission belongs in the future URL training inventory." />
+      <section className="admin-privacy-banner"><span aria-hidden="true">◉</span><div><strong>Approval does not retrain the live model</strong><p>The queue contains complete addresses from explicit feedback only. BantAI never opens or crawls them, and RF V4-B remains frozen.</p></div></section>
       {error && <Notice type="error">{error}</Notice>}
       {message && <Notice type="success">{message}</Notice>}
       <section className="card filter-card users-filter">
@@ -961,15 +1136,160 @@ function AdminUrlReportsPage() {
         <label><span>User classification</span><select value={classificationFilter} onChange={(event) => { setPage(1); setClassificationFilter(event.target.value); }}><option value="">All classifications</option><option value="LEGITIMATE">Believes legitimate</option><option value="SUSPICIOUS">Believes suspicious</option><option value="UNSURE">No corrected label</option></select></label>
       </section>
       <section className="card activity-card admin-report-card">
-        <div className="card-header"><div><p className="eyebrow">FEEDBACK REVIEW QUEUE</p><h2>{data ? `${data.total} ${data.total === 1 ? "submission" : "submissions"}` : "Loading submissions..."}</h2></div><span className="privacy-chip">{data ? `${data.training_candidate_total} stored candidates` : "No reporter identity"}</span></div>
+        <div className="card-header"><div><p className="eyebrow">USER REVIEW QUEUE</p><h2>{data ? `${data.total} ${data.total === 1 ? "submission" : "submissions"}` : "Loading submissions..."}</h2></div><span className="privacy-chip">{data ? `${data.training_candidate_total} approved candidates` : "No reporter identity"}</span></div>
         {data && data.items.length > 0 ? <div className="admin-report-list">{data.items.map((report) => <article className="admin-report-item" key={report.id}>
-          <div className="admin-report-origin"><div><p className="eyebrow">WEBSITE ORIGIN</p><h3>{report.origin}</h3><p>{feedbackReasonLabel(report.feedback_reason)} · {report.similar_report_count || 1} similar {report.similar_report_count === 1 ? "report" : "reports"} · {report.detector_model_version} · Submitted {niceDate(report.submitted_at)}</p></div><button className="button ghost" type="button" onClick={() => void copyOrigin(report.origin)}>Copy origin</button></div>
+          <div className="admin-report-origin"><div><p className="eyebrow">COMPLETE WEBSITE ADDRESS</p><h3>{report.url}</h3><p>{feedbackReasonLabel(report.feedback_reason)} · {report.similar_report_count || 1} similar {report.similar_report_count === 1 ? "report" : "reports"} · {report.detector_model_version} · Submitted {niceDate(report.submitted_at)}</p></div><button className="button ghost" type="button" onClick={() => void copyUrl(report.url)}>Copy address</button></div>
           <div className="admin-report-signals"><div><span>Detector result</span><StatusBadge outcome={report.detector_outcome} /></div><div><span>User feedback</span><strong className={cx("report-pill", report.feedback_verdict.toLowerCase())}>{feedbackVerdictLabel(report.feedback_verdict)}</strong></div><div><span>Suggested label</span><strong className={cx("report-pill", report.user_classification.toLowerCase())}>{userClassificationLabel(report.user_classification)}</strong></div><div><span>Training status</span><strong className={cx("training-pill", report.training_status.toLowerCase())}>{trainingStatusLabel(report.training_status)}</strong>{report.admin_assessment && <small className="reviewed-date">{adminAssessmentLabel(report.admin_assessment)}</small>}</div></div>
           {report.training_status === "PENDING" ? <fieldset className="admin-review-actions" disabled={busyId === report.id}><legend>Store for future model training?</legend><button type="button" className="button review-legitimate" onClick={() => void review(report, "APPROVE", "LEGITIMATE")}>Approve legitimate</button><button type="button" className="button review-suspicious" onClick={() => void review(report, "APPROVE", "SUSPICIOUS")}>Approve suspicious</button><button type="button" className="button danger-ghost" onClick={() => void review(report, "REJECT")}>Reject feedback</button><button type="button" className="button ghost" onClick={() => void review(report, "INCONCLUSIVE")}>Inconclusive</button></fieldset> : <div className="admin-review-complete"><strong>Review complete</strong><span>{trainingStatusLabel(report.training_status)} · {report.reviewed_at ? niceDate(report.reviewed_at) : "Review time unavailable"}</span></div>}
         </article>)}</div> : data ? <EmptyState icon="✓" title="No reports in this view" text="New user-submitted website reports will appear here for manual assessment." /> : <DashboardSkeleton />}
         {data && data.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.pages}</span><button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
       </section>
       <p className="safe-disclaimer"><strong>An administrator assessment is not a guarantee.</strong> It remains separate from BantAI’s frozen detection models and does not automatically change future outcomes.</p>
+    </>
+  );
+}
+
+function AdminEmailReportsPage() {
+  const [page, setPage] = useState(1);
+  const [trainingFilter, setTrainingFilter] = useState("");
+  const [classificationFilter, setClassificationFilter] = useState("");
+  const [data, setData] = useState<{ items: EmailReport[]; page: number; pages: number; total: number; training_candidate_total: number; body_access: string } | null>(null);
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(() => {
+    const params = new URLSearchParams({ page: String(page), page_size: "25" });
+    if (trainingFilter) params.set("training_status", trainingFilter);
+    if (classificationFilter) params.set("classification", classificationFilter);
+    return api<{ items: EmailReport[]; page: number; pages: number; total: number; training_candidate_total: number; body_access: string }>(`/admin/email-reports?${params}`)
+      .then(setData)
+      .catch((problem: ApiError) => setError(problem.message || "BantAI could not load email reports."));
+  }, [classificationFilter, page, trainingFilter]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const review = async (report: EmailReport, action: AdminReviewAction, assessment?: AdminUrlAssessment) => {
+    setBusyId(report.id);
+    setError("");
+    setMessage("");
+    try {
+      const result = await api<{ message: string }>(`/admin/email-reports/${report.id}`, { method: "PATCH", body: JSON.stringify({ action, assessment }) });
+      setMessage(result.message);
+      await load();
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : "BantAI could not save this email report.");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  return (
+    <>
+      <PageHeader eyebrow="ADMINISTRATION" title="Email reports" description="Assess explicit email submissions without exposing their encrypted body content." />
+      <section className="admin-privacy-banner"><span aria-hidden="true">◉</span><div><strong>Email bodies cannot be opened from this interface</strong><p>You can review sender, subject, detector outcome, and the user’s suggested label. Approval copies the existing ciphertext into the de-identified training inventory.</p></div></section>
+      {error && <Notice type="error">{error}</Notice>}
+      {message && <Notice type="success">{message}</Notice>}
+      <section className="card filter-card users-filter"><label><span>Training status</span><select value={trainingFilter} onChange={(event) => { setPage(1); setTrainingFilter(event.target.value); }}><option value="">All feedback</option><option value="PENDING">Awaiting review</option><option value="APPROVED">Training candidates</option><option value="REJECTED">Rejected</option><option value="INCONCLUSIVE">Inconclusive</option></select></label><label><span>User classification</span><select value={classificationFilter} onChange={(event) => { setPage(1); setClassificationFilter(event.target.value); }}><option value="">All classifications</option><option value="LEGITIMATE">Believes legitimate</option><option value="SUSPICIOUS">Believes suspicious</option></select></label></section>
+      <section className="card activity-card admin-report-card">
+        <div className="card-header"><div><p className="eyebrow">ENCRYPTED EMAIL REPORT QUEUE</p><h2>{data ? `${data.total} ${data.total === 1 ? "submission" : "submissions"}` : "Loading submissions..."}</h2></div><span className="privacy-chip">{data ? `${data.training_candidate_total} approved candidates` : "Body unavailable"}</span></div>
+        {data && data.items.length > 0 ? <div className="admin-report-list">{data.items.map((report) => <article className="admin-report-item" key={report.id}>
+          <div className="admin-report-origin"><div><p className="eyebrow">{report.provider.toUpperCase()} EMAIL</p><h3>{report.subject || "No subject"}</h3><p>From {report.sender} · {report.body_character_count.toLocaleString()} encrypted characters · {report.similar_report_count || 1} similar {(report.similar_report_count || 1) === 1 ? "submission" : "submissions"} · Submitted {niceDate(report.submitted_at)}</p></div><span className="encrypted-content-chip">Encrypted body</span></div>
+          <div className="admin-report-signals"><div><span>Detector result</span><StatusBadge outcome={report.detector_outcome} /></div><div><span>User label</span><strong className={cx("report-pill", report.user_classification.toLowerCase())}>{userClassificationLabel(report.user_classification)}</strong></div><div><span>Reason</span><strong>{feedbackReasonLabel(report.feedback_reason)}</strong></div><div><span>Training status</span><strong className={cx("training-pill", report.training_status.toLowerCase())}>{trainingStatusLabel(report.training_status)}</strong></div></div>
+          {report.training_status === "PENDING" ? <fieldset className="admin-review-actions" disabled={busyId === report.id}><legend>Store encrypted content for future training?</legend><button type="button" className="button review-legitimate" onClick={() => void review(report, "APPROVE", "LEGITIMATE")}>Approve legitimate</button><button type="button" className="button review-suspicious" onClick={() => void review(report, "APPROVE", "SUSPICIOUS")}>Approve suspicious</button><button type="button" className="button danger-ghost" onClick={() => void review(report, "REJECT")}>Reject feedback</button><button type="button" className="button ghost" onClick={() => void review(report, "INCONCLUSIVE")}>Inconclusive</button></fieldset> : <div className="admin-review-complete"><strong>Review complete</strong><span>{trainingStatusLabel(report.training_status)} · {report.reviewed_at ? niceDate(report.reviewed_at) : "Review time unavailable"}</span></div>}
+        </article>)}</div> : data ? <EmptyState icon="✉" title="No email reports in this view" text="Explicit email submissions will appear here without readable body content." /> : <DashboardSkeleton />}
+        {data && data.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.pages}</span><button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
+      </section>
+      <p className="safe-disclaimer"><strong>Encrypted reports only.</strong> Approval does not expose the email body or retrain the frozen XLM-R V1 model.</p>
+    </>
+  );
+}
+
+function TrainingDataPage() {
+  const [page, setPage] = useState(1);
+  const [labelFilter, setLabelFilter] = useState("");
+  const [data, setData] = useState<TrainingDataInventory | null>(null);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const load = useCallback(() => {
+    const params = new URLSearchParams({ page: String(page), page_size: "25" });
+    if (labelFilter) params.set("approved_label", labelFilter);
+    return api<TrainingDataInventory>(`/admin/training-data?${params}`)
+      .then(setData)
+      .catch((reason: ApiError) => setError(reason.message || "BantAI could not load the training-data inventory."));
+  }, [labelFilter, page]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const copyUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage("Complete website address copied.");
+    } catch {
+      setError("The website address could not be copied from this browser.");
+    }
+  };
+
+  const exportManifest = async () => {
+    setExporting(true);
+    setError("");
+    setMessage("");
+    try {
+      const params = new URLSearchParams();
+      if (labelFilter) params.set("approved_label", labelFilter);
+      const suffix = params.size ? `?${params}` : "";
+      const { blob, filename } = await downloadApiFile(`/admin/training-data/export.csv${suffix}`);
+      const href = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(href);
+      setMessage("Training manifest exported. Email bodies and encrypted body values were not included.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "BantAI could not export the training-data manifest.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <>
+      <PageHeader eyebrow="ADMINISTRATION" title="Training data" description="Inspect the approved, de-identified records currently reserved for a future, separately authorized model-training cycle." actions={<button className="button primary" type="button" onClick={() => void exportManifest()} disabled={exporting || !data || data.urls.candidate_total + data.emails.candidate_total === 0}>{exporting ? "Preparing CSV..." : "Export CSV manifest"}</button>} />
+      <section className="training-summary-grid" aria-label="Training data summary">
+        <article className="card training-summary-card url-summary">
+          <span className="training-summary-icon" aria-hidden="true">◎</span>
+          <div><p className="eyebrow">URL MODEL</p><h2>{data ? data.urls.candidate_total : "—"}</h2><strong>approved URL candidates</strong><p>{data ? `${data.urls.evidence_total} approved user ${data.urls.evidence_total === 1 ? "review" : "reviews"}` : "Loading evidence count..."}</p></div>
+          <span className="model-version-chip">{data?.urls.model_version || "RF V4-B"}</span>
+        </article>
+        <article className="card training-summary-card email-summary">
+          <span className="training-summary-icon" aria-hidden="true">✉</span>
+          <div><p className="eyebrow">EMAIL MODEL</p><h2>{data ? data.emails.candidate_total : "—"}</h2><strong>encrypted email candidates</strong><p>{data ? `${data.emails.evidence_total} approved user ${data.emails.evidence_total === 1 ? "report" : "reports"}` : "Loading collection status..."}</p></div>
+          <span className="model-version-chip muted">{data?.emails.model_version || "XLM-R V1"}</span>
+        </article>
+      </section>
+      <section className="admin-privacy-banner"><span aria-hidden="true">◉</span><div><strong>This inventory does not train the live models</strong><p>Approved URL records and encrypted email content remain de-identified references. Email bodies cannot be opened here, and both frozen models remain unchanged.</p></div></section>
+      {error && <Notice type="error">{error}</Notice>}
+      {message && <Notice type="success">{message}</Notice>}
+      <section className="card filter-card training-filter-card">
+        <label><span>Approved training label</span><select value={labelFilter} onChange={(event) => { setPage(1); setLabelFilter(event.target.value); }}><option value="">All approved labels</option><option value="LEGITIMATE">Legitimate</option><option value="SUSPICIOUS">Suspicious</option></select></label>
+        <div className="training-export-details"><p><strong>CSV manifest only.</strong> Approved labels and review metadata are included. Email bodies are not included and remain encrypted for a future restricted training process.</p>{data && <div className="training-label-totals" aria-label="URL candidate label totals"><span><i className="legend-dot safe" />{data.urls.label_counts.LEGITIMATE} legitimate</span><span><i className="legend-dot suspicious" />{data.urls.label_counts.SUSPICIOUS} suspicious</span></div>}</div>
+      </section>
+      <section className="card activity-card training-dataset-card" aria-labelledby="url-training-title">
+        <div className="card-header"><div><p className="eyebrow">COLLECTED URLS</p><h2 id="url-training-title">Approved URL candidates</h2></div><span className="privacy-chip">No user identity</span></div>
+        {data && data.urls.items.length > 0 ? <div className="table-scroll"><table className="data-table training-table"><thead><tr><th>Complete website address</th><th>Approved label</th><th>Detector result</th><th>Evidence</th><th>Model</th><th>Last approved</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{data.urls.items.map((candidate) => <tr key={candidate.id}><td><strong className="origin-cell" title={candidate.url}>{candidate.url}</strong><small className="reviewed-date">{feedbackSourceLabel(candidate.feedback_source)} · {feedbackReasonLabel(candidate.feedback_reason)}</small></td><td><span className={cx("training-label", candidate.approved_label.toLowerCase())}>{approvedTrainingLabel(candidate.approved_label)}</span></td><td><StatusBadge outcome={candidate.detector_outcome} /></td><td><strong>{candidate.evidence_count}</strong> {candidate.evidence_count === 1 ? "review" : "reviews"}</td><td>{candidate.detector_model_version}</td><td>{niceDate(candidate.last_approved_at)}</td><td><button className="text-button" type="button" onClick={() => void copyUrl(candidate.url)}>Copy address</button></td></tr>)}</tbody></table></div> : data ? <EmptyState icon="◎" title="No approved URL candidates" text="Approve suitable entries from User reviews before they appear in this training inventory." /> : <DashboardSkeleton />}
+        {data && data.urls.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.urls.pages}</span><button disabled={page >= data.urls.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
+      </section>
+      <section className="card activity-card email-training-card" aria-labelledby="email-training-title">
+        <div className="email-training-heading"><span className="email-training-icon" aria-hidden="true">✉</span><div><p className="eyebrow">COLLECTED EMAILS</p><h2 id="email-training-title">Encrypted email candidates</h2></div><span className="collection-status encrypted">Bodies encrypted</span></div>
+        {data && data.emails.items.length > 0 ? <div className="table-scroll"><table className="data-table training-table email-candidate-table"><thead><tr><th>Email reference</th><th>Approved label</th><th>Detector result</th><th>Training content</th><th>Evidence</th><th>Model</th><th>Last approved</th></tr></thead><tbody>{data.emails.items.map((candidate) => <tr key={candidate.id}><td><strong className="origin-cell" title={candidate.subject || "No subject"}>{candidate.subject || "No subject"}</strong><small className="reviewed-date">{candidate.sender} · {candidate.provider.toUpperCase()}</small></td><td><span className={cx("training-label", candidate.approved_label.toLowerCase())}>{approvedTrainingLabel(candidate.approved_label)}</span></td><td><StatusBadge outcome={candidate.detector_outcome} /></td><td><span className="encrypted-content-chip">Encrypted · {candidate.body_character_count.toLocaleString()} chars</span></td><td><strong>{candidate.evidence_count}</strong></td><td>{candidate.detector_model_version}</td><td>{niceDate(candidate.last_approved_at)}</td></tr>)}</tbody></table></div> : data ? <div className="email-training-empty"><strong>No approved encrypted email candidates.</strong><p>{data.emails.privacy_message}</p><p>Users must explicitly submit an email and an administrator must approve it before it appears here.</p></div> : <DashboardSkeleton />}
+        {data && data.emails.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.emails.pages}</span><button disabled={page >= data.emails.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
+      </section>
+      <p className="safe-disclaimer"><strong>Training inventory only.</strong> These records require offline quality checks, dataset versioning, and explicit authorization before any future model work.</p>
     </>
   );
 }
@@ -991,7 +1311,7 @@ function DevicesPage() {
         <div className="card-header"><div><p className="eyebrow">YOUR COMPUTERS</p><h2>{devices.length} paired {devices.length === 1 ? "device" : "devices"}</h2></div></div>
         {!devices.length ? <EmptyState icon="◇" title="No devices paired" text="Generate a one-time code, then enter it in the BantAI extension on your computer." /> : <div className="device-list">{devices.map((device) => <div className="device-row" key={device.id}><span className="device-icon">▱</span><div><strong>{device.label}</strong><p>Paired {niceDate(device.paired_at)} · Last seen {niceDate(device.last_seen_at)}</p></div><span className={cx("device-status", device.status === "REVOKED" && "revoked")}>{device.status === "REVOKED" ? "Revoked" : "Active"}</span>{device.status !== "REVOKED" && <button className="button danger-ghost" onClick={() => revoke(device.id)}>Revoke</button>}</div>)}</div>}
       </section>
-      <section className="privacy-explainer"><span aria-hidden="true">◉</span><div><h3>What leaves your computer?</h3><p>Only the final outcome, website origin, or email provider/sender/subject. Complete URLs, email bodies, and AI payloads are never stored in your dashboard.</p></div></section>
+      <section className="privacy-explainer"><span aria-hidden="true">◉</span><div><h3>What leaves your computer?</h3><p>Routine activity sends only the final outcome, website origin, or email provider/sender/subject. A complete URL leaves the device only when you explicitly submit a report or feedback; email bodies and AI payloads are never stored in your dashboard.</p></div></section>
     </>
   );
 }
@@ -1146,7 +1466,7 @@ function ProfilePage({ user, onUserChanged, onSignOut }: { user: User; onUserCha
 function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserChanged: (user: User) => void; onSignedOut: () => void }) {
   const initialPage = ((typeof window === "undefined" ? "dashboard" : window.location.pathname.split("/")[1]) || "dashboard") as PageName;
   const allowed = useMemo<PageName[]>(
-    () => user.role === "ADMIN" ? ["dashboard", "activity", "reports", "devices", "profile", "admin", "review-reports", "users"] : ["dashboard", "activity", "reports", "devices", "profile"],
+    () => user.role === "ADMIN" ? ["dashboard", "activity", "reports", "email-reports", "devices", "profile", "admin", "review-reports", "admin-email-reports", "training-data", "users"] : ["dashboard", "activity", "reports", "email-reports", "devices", "profile"],
     [user.role],
   );
   const [page, setPage] = useState<PageName>(allowed.includes(initialPage) ? initialPage : "dashboard");
@@ -1166,10 +1486,13 @@ function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserC
       {page === "dashboard" && <DashboardPage onViewActivity={() => navigate("activity")} onPairDevice={() => navigate("devices")} />}
       {page === "activity" && <ActivityPage />}
       {page === "reports" && <UrlReportsPage />}
+      {page === "email-reports" && <EmailReportsPage />}
       {page === "devices" && <DevicesPage />}
       {page === "profile" && <ProfilePage user={user} onUserChanged={onUserChanged} onSignOut={logout} />}
       {page === "admin" && user.role === "ADMIN" && <AdminDashboardPage />}
       {page === "review-reports" && user.role === "ADMIN" && <AdminUrlReportsPage />}
+      {page === "admin-email-reports" && user.role === "ADMIN" && <AdminEmailReportsPage />}
+      {page === "training-data" && user.role === "ADMIN" && <TrainingDataPage />}
       {page === "users" && user.role === "ADMIN" && <UsersPage currentUser={user} />}
     </AppShell>
   );

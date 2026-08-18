@@ -99,6 +99,48 @@
       <p id="emailDecisionMessage" class="explanation">Open an email to begin analysis.</p>
     </section>
 
+    <section id="emailReviewCard" class="review-card hidden" aria-labelledby="emailReviewTitle">
+      <div class="card-heading">
+        <div>
+          <p class="kicker">EMAIL RESULT FEEDBACK</p>
+          <h2 id="emailReviewTitle">Was this email result accurate?</h2>
+        </div>
+        <span class="scope-pill">Optional</span>
+      </div>
+      <p class="explanation">Nothing is submitted until you select an answer, agree to include this email as encrypted training-reference data, and press Submit feedback.</p>
+      <form id="emailReviewForm" class="review-form">
+        <fieldset class="review-options">
+          <legend>Select one response</legend>
+          <label><input type="radio" name="emailReviewVerdict" value="CORRECT"><span>Yes, looks right</span></label>
+          <label><input type="radio" name="emailReviewVerdict" value="INCORRECT"><span>No, correct it</span></label>
+          <label><input type="radio" name="emailReviewVerdict" value="UNSURE"><span>Not sure</span></label>
+        </fieldset>
+        <div id="emailReviewCorrection" class="review-correction hidden">
+          <fieldset class="review-classification">
+            <legend>What best describes this email?</legend>
+            <label><input type="radio" name="emailReviewClassification" value="LEGITIMATE"><span>Seems legitimate</span></label>
+            <label><input type="radio" name="emailReviewClassification" value="SUSPICIOUS"><span>Seems suspicious</span></label>
+          </fieldset>
+          <label class="review-reason" for="emailReviewReason">Reason <span>(optional)</span></label>
+          <select id="emailReviewReason" name="emailReviewReason">
+            <option value="">Select a reason</option>
+            <option value="TRUSTED_OR_OFFICIAL">Trusted or expected email</option>
+            <option value="INCORRECT_WARNING">Incorrect warning</option>
+            <option value="MISSED_WARNING">Missed suspicious behavior</option>
+            <option value="IMPERSONATION_OR_DECEPTIVE">Impersonation or deceptive sender</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+        <label class="email-report-consent"><input id="emailReviewConsent" type="checkbox"><span><strong>Include this email in an encrypted report.</strong><small>The sender, subject, and body will be included for future training reference. Administrators cannot read the stored body.</small></span></label>
+        <button id="emailReviewSubmit" class="review-submit" type="submit" disabled>Submit feedback</button>
+        <p id="emailReviewMessage" class="review-message" role="status" aria-live="polite"></p>
+      </form>
+      <div id="emailReviewComplete" class="review-complete hidden" role="status">
+        <strong>Email report received</strong>
+        <p>An administrator can assess its labels, but cannot read the encrypted body.</p>
+      </div>
+    </section>
+
     <section id="indicatorsCard" class="card compact hidden" aria-labelledby="indicatorsTitle">
       <p class="kicker">WHY BANTAI IS WARNING YOU</p>
       <h2 id="indicatorsTitle">Detected warning signs</h2>

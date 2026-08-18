@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import csv
+import io
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -19,6 +21,8 @@ from shared_platform.app.database import Base, SessionLocal, engine
 from shared_platform.app.main import app, cleanup_expired
 from shared_platform.app.models import (
     ActivityEvent,
+    EmailReport,
+    EmailTrainingCandidate,
     PairedDevice,
     PairingCode,
     UrlReport,
@@ -294,6 +298,10 @@ class PlatformTests(unittest.TestCase):
         )
         self.assertEqual(201, created.status_code, created.text)
         report = created.json()["report"]
+        self.assertEqual(
+            "https://review.example.test/private/path?secret=1#fragment",
+            report["url"],
+        )
         self.assertEqual("https://review.example.test", report["origin"])
         self.assertEqual("NEEDS_CAUTION", report["detector_outcome"])
         self.assertEqual("PENDING", report["status"])
@@ -301,14 +309,14 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual("MANUAL_ENTRY", report["feedback_source"])
         self.assertEqual("PENDING", report["training_status"])
         self.assertEqual("RF V4-B", report["detector_model_version"])
-        self.assertNotIn("private", created.text)
-        self.assertNotIn("secret", created.text)
+        self.assertIn("private/path", created.text)
+        self.assertIn("secret=1", created.text)
 
         duplicate = self.client.post(
             "/api/v1/url-reports",
             headers=self.csrf(),
             json={
-                "url": "https://REVIEW.example.test/different/path",
+                "url": "https://REVIEW.example.test/private/path?secret=1#fragment",
                 "detector_outcome": "SUSPICIOUS_SIGNS_FOUND",
                 "classification": "SUSPICIOUS",
             },
@@ -344,6 +352,10 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("user@example.com", queue.text)
         self.assertNotIn("user_id", queue.text)
         self.assertNotIn("activity_event_id", queue.text)
+        self.assertEqual(
+            "https://review.example.test/private/path?secret=1#fragment",
+            queue.json()["items"][0]["url"],
+        )
         self.assertEqual(1, queue.json()["items"][0]["similar_report_count"])
 
         invalid_approval = admin_client.patch(
@@ -380,7 +392,68 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual("LEGITIMATE", personal.json()["items"][0]["admin_assessment"])
         self.assertEqual("APPROVED", personal.json()["items"][0]["training_status"])
 
-    def test_recent_detection_feedback_is_owned_minimized_and_pending_review(self) -> None:
+        token = self.paired_device_token()
+        email_activity = self.client.post(
+            "/api/v1/activities",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"events": [{
+                "client_event_id": "private-email-activity-0001",
+                "event_type": "EMAIL",
+                "origin": None,
+                "provider": "gmail",
+                "sender": "private.sender@example.test",
+                "subject": "Private training subject",
+                "outcome": "NEEDS_CAUTION",
+                "cloud_status": "COMPLETE",
+                "occurred_at": "2026-08-12T10:00:00+08:00",
+            }]},
+        )
+        self.assertEqual(202, email_activity.status_code, email_activity.text)
+        training_data = admin_client.get("/api/v1/admin/training-data")
+        self.assertEqual(200, training_data.status_code, training_data.text)
+        payload = training_data.json()
+        self.assertEqual(1, payload["urls"]["candidate_total"])
+        self.assertEqual(1, payload["urls"]["evidence_total"])
+        self.assertEqual(1, payload["urls"]["label_counts"]["LEGITIMATE"])
+        self.assertEqual("https://review.example.test", payload["urls"]["items"][0]["origin"])
+        self.assertEqual(
+            "https://review.example.test/private/path?secret=1#fragment",
+            payload["urls"]["items"][0]["url"],
+        )
+        self.assertEqual("RF V4-B", payload["urls"]["model_version"])
+        self.assertEqual(0, payload["emails"]["candidate_total"])
+        self.assertEqual(1, payload["emails"]["observed_activity_total"])
+        self.assertEqual("ENCRYPTED_REVIEW_CONTENT", payload["emails"]["collection_status"])
+        self.assertNotIn("private.sender", training_data.text)
+        self.assertNotIn("Private training subject", training_data.text)
+        self.assertNotIn("origin_fingerprint", training_data.text)
+        self.assertNotIn("user_id", training_data.text)
+        self.assertEqual(
+            422,
+            admin_client.get("/api/v1/admin/training-data?approved_label=INCONCLUSIVE").status_code,
+        )
+        exported = admin_client.get("/api/v1/admin/training-data/export.csv")
+        self.assertEqual(200, exported.status_code, exported.text)
+        self.assertTrue(exported.headers["content-type"].startswith("text/csv"))
+        self.assertIn("attachment; filename=", exported.headers["content-disposition"])
+        self.assertEqual("no-store", exported.headers["cache-control"])
+        export_rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
+        self.assertEqual(1, len(export_rows))
+        self.assertEqual("URL", export_rows[0]["candidate_type"])
+        self.assertEqual(
+            "https://review.example.test/private/path?secret=1#fragment",
+            export_rows[0]["url"],
+        )
+        self.assertEqual("LEGITIMATE", export_rows[0]["approved_label"])
+        self.assertEqual("INCLUDED_IN_MANIFEST", export_rows[0]["content_access"])
+        self.assertNotIn("user_id", exported.text)
+        self.assertNotIn("origin_fingerprint", exported.text)
+        filtered_export = admin_client.get(
+            "/api/v1/admin/training-data/export.csv?approved_label=SUSPICIOUS"
+        )
+        self.assertEqual([], list(csv.DictReader(io.StringIO(filtered_export.content.decode("utf-8-sig")))))
+
+    def test_recent_detection_feedback_keeps_confirmed_full_address_and_owner_scope(self) -> None:
         token = self.paired_device_token()
         ingested = self.client.post(
             "/api/v1/activities",
@@ -420,11 +493,26 @@ class PlatformTests(unittest.TestCase):
         )
         self.assertEqual(422, missing_correction.status_code)
 
+        mismatched_address = self.client.post(
+            "/api/v1/url-reports/from-activity",
+            headers=self.csrf(),
+            json={
+                "activity_event_id": activity["id"],
+                "url": "https://different.example.test/private/path",
+                "verdict": "INCORRECT",
+                "classification": "SUSPICIOUS",
+                "confirmed": True,
+            },
+        )
+        self.assertEqual(422, mismatched_address.status_code)
+        self.assertIn("does not match", mismatched_address.text)
+
         submitted = self.client.post(
             "/api/v1/url-reports/from-activity",
             headers=self.csrf(),
             json={
                 "activity_event_id": activity["id"],
+                "url": "https://feedback.example.test/private/path?secret=1",
                 "verdict": "INCORRECT",
                 "classification": "SUSPICIOUS",
                 "reason": "MISSED_WARNING",
@@ -433,20 +521,26 @@ class PlatformTests(unittest.TestCase):
         )
         self.assertEqual(201, submitted.status_code, submitted.text)
         report = submitted.json()["report"]
+        self.assertEqual("https://feedback.example.test/private/path?secret=1", report["url"])
         self.assertEqual("https://feedback.example.test", report["origin"])
         self.assertEqual("RECENT_DETECTION", report["feedback_source"])
         self.assertEqual("INCORRECT", report["feedback_verdict"])
         self.assertEqual("MISSED_WARNING", report["feedback_reason"])
         self.assertEqual("PENDING", report["training_status"])
-        self.assertNotIn("private", submitted.text)
-        self.assertNotIn("secret", submitted.text)
+        self.assertIn("private/path", submitted.text)
+        self.assertIn("secret=1", submitted.text)
 
         refreshed = self.client.get("/api/v1/dashboard?days=90")
         self.assertTrue(refreshed.json()["last_url"]["feedback_submitted"])
         duplicate = self.client.post(
             "/api/v1/url-reports/from-activity",
             headers=self.csrf(),
-            json={"activity_event_id": activity["id"], "verdict": "CORRECT", "confirmed": True},
+            json={
+                "activity_event_id": activity["id"],
+                "url": "https://feedback.example.test/private/path?secret=1",
+                "verdict": "CORRECT",
+                "confirmed": True,
+            },
         )
         self.assertEqual(409, duplicate.status_code)
 
@@ -459,7 +553,12 @@ class PlatformTests(unittest.TestCase):
         cross_user = admin_client.post(
             "/api/v1/url-reports/from-activity",
             headers={"X-CSRF-Token": admin_client.cookies.get("bantai_csrf")},
-            json={"activity_event_id": activity["id"], "verdict": "CORRECT", "confirmed": True},
+            json={
+                "activity_event_id": activity["id"],
+                "url": "https://feedback.example.test/private/path?secret=1",
+                "verdict": "CORRECT",
+                "confirmed": True,
+            },
         )
         self.assertEqual(404, cross_user.status_code)
 
@@ -499,6 +598,7 @@ class PlatformTests(unittest.TestCase):
             headers=self.csrf(),
             json={
                 "activity_event_id": activity_by_client[events[0]],
+                "url": "https://repeat.example.test/private/path",
                 "verdict": "CORRECT",
                 "confirmed": True,
             },
@@ -519,21 +619,36 @@ class PlatformTests(unittest.TestCase):
             401,
             self.client.post(
                 "/api/v1/url-reports/from-device-activity",
-                json={"client_event_id": events[1], "verdict": "CORRECT", "confirmed": True},
+                json={
+                    "client_event_id": events[1],
+                    "url": "https://repeat.example.test/private/path",
+                    "verdict": "CORRECT",
+                    "confirmed": True,
+                },
             ).status_code,
         )
 
         device_feedback = self.client.post(
             "/api/v1/url-reports/from-device-activity",
             headers={"Authorization": f"Bearer {token}"},
-            json={"client_event_id": events[1], "verdict": "CORRECT", "confirmed": True},
+            json={
+                "client_event_id": events[1],
+                "url": "https://repeat.example.test/private/path",
+                "verdict": "CORRECT",
+                "confirmed": True,
+            },
         )
         self.assertEqual(201, device_feedback.status_code, device_feedback.text)
         self.assertFalse(device_feedback.json()["already_submitted"])
         repeated = self.client.post(
             "/api/v1/url-reports/from-device-activity",
             headers={"Authorization": f"Bearer {token}"},
-            json={"client_event_id": events[1], "verdict": "CORRECT", "confirmed": True},
+            json={
+                "client_event_id": events[1],
+                "url": "https://repeat.example.test/private/path",
+                "verdict": "CORRECT",
+                "confirmed": True,
+            },
         )
         self.assertEqual(201, repeated.status_code, repeated.text)
         self.assertTrue(repeated.json()["already_submitted"])
@@ -544,6 +659,180 @@ class PlatformTests(unittest.TestCase):
         self.login("user@example.com", "correct horse battery staple")
         response = self.client.get("/api/v1/admin/users")
         self.assertEqual(403, response.status_code)
+        self.assertEqual(403, self.client.get("/api/v1/admin/training-data").status_code)
+        self.assertEqual(403, self.client.get("/api/v1/admin/training-data/export.csv").status_code)
+        self.assertEqual(403, self.client.get("/api/v1/admin/email-reports").status_code)
+
+    def test_explicit_email_review_encrypts_body_and_never_exposes_it_to_admin(self) -> None:
+        synthetic_body = "Synthetic training message: confirm the sample invoice using the official portal."
+        self.login("user@example.com", "correct horse battery staple")
+        created = self.client.post(
+            "/api/v1/email-reports",
+            headers=self.csrf(),
+            json={
+                "provider": "gmail",
+                "sender": "Synthetic Billing <billing@example.test>",
+                "subject": "=Synthetic invoice review",
+                "body": synthetic_body,
+                "detector_outcome": "NEEDS_CAUTION",
+                "classification": "LEGITIMATE",
+                "reason": "INCORRECT_WARNING",
+                "confirmed": True,
+            },
+        )
+        self.assertEqual(201, created.status_code, created.text)
+        report = created.json()["report"]
+        self.assertTrue(report["body_included"])
+        self.assertEqual(len(synthetic_body), report["body_character_count"])
+        self.assertNotIn(synthetic_body, created.text)
+        self.assertNotIn("body_ciphertext", created.text)
+        self.assertNotIn("body_fingerprint", created.text)
+
+        duplicate = self.client.post(
+            "/api/v1/email-reports",
+            headers=self.csrf(),
+            json={
+                "provider": "gmail",
+                "sender": "Synthetic Billing <billing@example.test>",
+                "subject": "=Synthetic invoice review",
+                "body": synthetic_body,
+                "detector_outcome": "SUSPICIOUS_SIGNS_FOUND",
+                "classification": "SUSPICIOUS",
+                "confirmed": True,
+            },
+        )
+        self.assertEqual(409, duplicate.status_code)
+
+        with SessionLocal() as db:
+            stored = db.get(EmailReport, report["id"])
+            self.assertIsNotNone(stored)
+            self.assertNotIn(synthetic_body, stored.body_ciphertext)
+            self.assertNotIn(synthetic_body, stored.body_fingerprint)
+
+        personal = self.client.get("/api/v1/email-reports")
+        self.assertEqual(200, personal.status_code)
+        self.assertNotIn(synthetic_body, personal.text)
+        self.assertNotIn("body_ciphertext", personal.text)
+
+        admin_client = TestClient(app)
+        admin_login = admin_client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "admin correct horse battery"},
+        )
+        self.assertEqual(200, admin_login.status_code)
+        queue = admin_client.get("/api/v1/admin/email-reports")
+        self.assertEqual(200, queue.status_code, queue.text)
+        self.assertEqual("ENCRYPTED_NOT_EXPOSED", queue.json()["body_access"])
+        self.assertIn("Synthetic invoice review", queue.text)
+        self.assertNotIn(synthetic_body, queue.text)
+        self.assertNotIn("body_ciphertext", queue.text)
+        self.assertNotIn("user_id", queue.text)
+
+        approved = admin_client.patch(
+            f"/api/v1/admin/email-reports/{report['id']}",
+            headers={"X-CSRF-Token": admin_client.cookies.get("bantai_csrf")},
+            json={"action": "APPROVE", "assessment": "LEGITIMATE"},
+        )
+        self.assertEqual(200, approved.status_code, approved.text)
+        self.assertEqual("APPROVED", approved.json()["report"]["training_status"])
+        self.assertNotIn(synthetic_body, approved.text)
+
+        training_data = admin_client.get("/api/v1/admin/training-data")
+        self.assertEqual(200, training_data.status_code, training_data.text)
+        email_data = training_data.json()["emails"]
+        self.assertEqual(1, email_data["candidate_total"])
+        self.assertEqual("ENCRYPTED_REVIEW_CONTENT", email_data["collection_status"])
+        self.assertTrue(email_data["items"][0]["body_included"])
+        self.assertNotIn(synthetic_body, training_data.text)
+        self.assertNotIn("body_ciphertext", training_data.text)
+        self.assertNotIn("body_fingerprint", training_data.text)
+
+        exported = admin_client.get("/api/v1/admin/training-data/export.csv")
+        self.assertEqual(200, exported.status_code, exported.text)
+        rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
+        self.assertEqual(1, len(rows))
+        self.assertEqual("EMAIL", rows[0]["candidate_type"])
+        self.assertEqual("LEGITIMATE", rows[0]["approved_label"])
+        self.assertEqual("TRUE", rows[0]["body_available"])
+        self.assertEqual(str(len(synthetic_body)), rows[0]["body_character_count"])
+        self.assertEqual("RESTRICTED_TRAINING_PROCESS_ONLY", rows[0]["content_access"])
+        self.assertEqual("'=Synthetic invoice review", rows[0]["subject"])
+        self.assertNotIn(synthetic_body, exported.text)
+        self.assertNotIn("body_ciphertext", exported.text)
+        self.assertNotIn("body_fingerprint", exported.text)
+        self.assertNotIn("user_id", exported.text)
+
+        with SessionLocal() as db:
+            candidate = db.scalar(select(EmailTrainingCandidate))
+            self.assertIsNotNone(candidate)
+            self.assertNotIn(synthetic_body, candidate.body_ciphertext)
+            self.assertFalse(hasattr(candidate, "user_id"))
+
+    def test_device_email_feedback_requires_a_matching_detection_and_encrypts_the_body(self) -> None:
+        token = self.paired_device_token()
+        synthetic_body = "Synthetic opened-email content for explicit extension feedback."
+        ingested = self.client.post(
+            "/api/v1/activities",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"events": [{
+                "client_event_id": "device-email-feedback-0001",
+                "event_type": "EMAIL",
+                "origin": None,
+                "provider": "gmail",
+                "sender": "sender@example.test",
+                "subject": "Synthetic account notice",
+                "outcome": "SUSPICIOUS_SIGNS_FOUND",
+                "cloud_status": "COMPLETE",
+                "occurred_at": "2026-08-12T10:00:00+08:00",
+            }]},
+        )
+        self.assertEqual(202, ingested.status_code, ingested.text)
+
+        payload = {
+            "client_event_id": "device-email-feedback-0001",
+            "provider": "gmail",
+            "sender": "sender@example.test",
+            "subject": "Synthetic account notice",
+            "body": synthetic_body,
+            "verdict": "INCORRECT",
+            "classification": "LEGITIMATE",
+            "reason": "INCORRECT_WARNING",
+            "confirmed": True,
+        }
+        self.assertEqual(
+            401,
+            self.client.post("/api/v1/email-reports/from-device-activity", json=payload).status_code,
+        )
+        mismatched = self.client.post(
+            "/api/v1/email-reports/from-device-activity",
+            headers={"Authorization": f"Bearer {token}"},
+            json={**payload, "subject": "Different email"},
+        )
+        self.assertEqual(422, mismatched.status_code, mismatched.text)
+
+        submitted = self.client.post(
+            "/api/v1/email-reports/from-device-activity",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        self.assertEqual(201, submitted.status_code, submitted.text)
+        self.assertFalse(submitted.json()["already_submitted"])
+        self.assertNotIn(synthetic_body, submitted.text)
+        self.assertNotIn("body_ciphertext", submitted.text)
+
+        repeated = self.client.post(
+            "/api/v1/email-reports/from-device-activity",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+        )
+        self.assertEqual(201, repeated.status_code, repeated.text)
+        self.assertTrue(repeated.json()["already_submitted"])
+        with SessionLocal() as db:
+            stored = db.scalar(select(EmailReport))
+            self.assertIsNotNone(stored)
+            self.assertEqual("LEGITIMATE", stored.user_classification.value)
+            self.assertNotIn(synthetic_body, stored.body_ciphertext)
+            self.assertEqual(1, db.scalar(select(func.count(EmailReport.id))))
 
     def test_suspension_revokes_user_session_and_device(self) -> None:
         token = self.paired_device_token()

@@ -116,6 +116,13 @@ body {
 .review-complete { margin-top: 12px; border-radius: 10px; padding: 11px; color: #12633c; background: #ecf8f1; }
 .review-complete strong { font-size: 12px; }
 .review-complete p { margin: 4px 0 0; color: #44685a; font-size: 10px; line-height: 1.4; }
+.email-report-consent { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; margin-top: 12px; border: 1px solid #d5e5e1; border-radius: 9px; padding: 9px; color: #24465a; background: #f4faf8; cursor: pointer; }
+.email-report-consent input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: #168976; }
+.email-report-consent strong,
+.email-report-consent small { display: block; }
+.email-report-consent strong { font-size: 10px; line-height: 1.35; }
+.email-report-consent small { margin-top: 3px; color: #607386; font-size: 9px; line-height: 1.4; }
+.email-report-consent:has(input:focus-visible) { outline: 3px solid rgba(36, 105, 166, .35); outline-offset: 2px; }
 
 .pairing-card.access-required {
   margin-top: 4px;

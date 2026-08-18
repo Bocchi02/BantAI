@@ -30,6 +30,9 @@
   let scanInProgress =
     false;
 
+  let latestExtractedPayload =
+    null;
+
   const PERIODIC_SCAN_MS =
     1000;
 
@@ -353,6 +356,9 @@
         lastEmailFingerprint =
           null;
 
+        latestExtractedPayload =
+          null;
+
         return;
       }
 
@@ -441,6 +447,9 @@
         payload
       );
 
+    latestExtractedPayload =
+      payload;
+
     if (
       currentFingerprint ===
       lastEmailFingerprint
@@ -471,6 +480,30 @@
       timestamp:
         new Date().
           toISOString()
+    }
+  );
+
+  chrome.runtime.onMessage.addListener(
+    (
+      message,
+      _sender,
+      sendResponse
+    ) => {
+      if (
+        message?.type !==
+          "BANTAI_GMAIL_GET_OPEN_EMAIL"
+      ) {
+        return false;
+      }
+
+      sendResponse(
+        latestExtractedPayload || {
+          status: "NO_OPEN_EMAIL_FOUND",
+          provider: "gmail"
+        }
+      );
+
+      return false;
     }
   );
 

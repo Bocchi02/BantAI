@@ -28,16 +28,19 @@ origins. Route the web app and `/api/v1` through the same public hostname so
 the session and CSRF cookies stay same-origin. Disable query-string access logs
 at the reverse proxy as the application container does.
 
-The service never accepts email bodies on activity endpoints. URL activity is
-normalized to scheme, hostname, and optional port before encryption.
+The service never accepts email bodies on routine activity endpoints. URL
+activity is normalized to scheme, hostname, and optional port before
+encryption. A separate, explicit email-report workflow may accept a body only
+after the user confirms that it may be retained for future training review.
 
 ## Website result reports
 
 Signed-in users can paste a website address and report it as one they believe
-is legitimate or suspicious. The service reduces the address to its origin
-before storing the encrypted value. Reports also keep the displayed detector
-outcome and the user's selected classification. Complete URLs and reporter
-identity are not exposed in the administrator review queue.
+is legitimate or suspicious. An explicit report stores the normalized complete
+address, including its path, query, and fragment, using application-layer
+encryption. Reports also keep the displayed detector outcome and the user's
+selected classification. The reporting user's identity is not exposed in the
+administrator review queue.
 Administrators may record a likely-legitimate, likely-suspicious, or
 inconclusive manual assessment. The dashboard, activity history, and paired
 extension also allow explicit feedback on a retained URL detection: correct,
@@ -52,6 +55,55 @@ That approved candidate survives ordinary report retention so it can be
 reviewed during a future, explicitly authorized offline training cycle. It does
 not retrain or override frozen RF V4-B. User reports are removed after the
 configured activity retention period.
+
+Administrators use the **User reviews** page to inspect the complete addresses
+that users explicitly submitted and record a manual decision. The separate
+**Training data** page lists only approved, de-identified URL candidates,
+including their curated label, detector outcome, evidence count, model version,
+and approval dates. It never exposes the reporting user or an activity ID.
+Administrators can download a UTF-8 CSV manifest containing the same approved
+candidate labels and metadata. Spreadsheet-formula prefixes are neutralized,
+the response is marked `no-store`, and no reporter identifier or internal
+fingerprint is included.
+
+This exception applies only after an explicit submit action. Routine activity
+history and URL cloud review remain origin-only. A full address attached to
+recent-detection feedback must match that detection's stored origin, and the
+service never opens, crawls, or follows a submitted address.
+
+## Email reports
+
+Signed-in users may explicitly submit an email report with its provider,
+sender, subject, body, displayed detector outcome, and their proposed label.
+This is separate from routine email detection and requires a consent checkbox
+and a submit action. The body is encrypted immediately with authenticated
+application-layer encryption; plaintext email bodies are never stored in the
+database, logs, activity history, or cloud-review records.
+
+The manually opened extension popup offers the same explicit result feedback
+for a completed Gmail, Outlook, or Yahoo detection. The extension re-extracts
+the currently opened email only after the user chooses an answer, accepts the
+encrypted-report consent notice, and presses Submit feedback. It verifies that
+the extraction fingerprint matches the displayed detection and does not place
+the body in browser storage.
+
+Administrators use the **Email reports** page to assess labels and may approve,
+reject, or mark a review inconclusive. They can see the provider, sender,
+subject, body character count, detector outcome, proposed label, and review
+status. Neither the administrator UI nor any user/admin API returns or decrypts
+the body, ciphertext, body fingerprint, or reporting user ID.
+
+Approval copies the already encrypted body and curated metadata into a separate
+de-identified email training-candidate table. The **Training data** page shows
+that encrypted content is present but cannot open or display it. A later,
+explicitly authorized offline training pipeline may be given separate key
+access; this MVP does not retrain, replace, or change frozen XLM-R V1. The CSV
+manifest contains the email candidate ID, approved label, sender/subject
+reference, body-present flag, and body character count, but never the body,
+ciphertext, fingerprint, or reporter identity. Candidate IDs are intended for
+a future restricted training process that decrypts approved bodies in memory
+without placing plaintext in the administrator download, logs, or temporary
+files.
 
 ## Account profile
 

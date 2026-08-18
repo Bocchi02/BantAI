@@ -310,6 +310,19 @@ class CompanionManager:
                     break
             return self._request("/url-reports/from-device-activity", feedback)
 
+    def submit_email_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
+        """Flush activity before forwarding an explicitly confirmed email report."""
+
+        with self._lock:
+            state = self._load()
+            if not self._credential(state):
+                raise CompanionError("Pair BantAI before submitting feedback.")
+            for _ in range(5):
+                delivery = self.flush()
+                if not delivery.get("submitted") or not delivery.get("remaining"):
+                    break
+            return self._request("/email-reports/from-device-activity", feedback)
+
     def flush(self) -> dict[str, Any]:
         with self._lock:
             state = self._load()

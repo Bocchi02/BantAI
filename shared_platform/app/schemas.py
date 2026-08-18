@@ -142,8 +142,38 @@ class UrlReportCreateRequest(StrictModel):
         return self
 
 
+class EmailReportCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    provider: Literal["gmail", "outlook", "yahoo"]
+    sender: str = Field(min_length=1, max_length=320)
+    subject: str = Field(default="", max_length=500)
+    body: str = Field(min_length=1, max_length=10_000)
+    detector_outcome: Outcome
+    classification: UrlReportClassification
+    reason: FeedbackReason | None = None
+    confirmed: Literal[True]
+
+    @field_validator("sender")
+    @classmethod
+    def normalize_sender(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Sender is required.")
+        return value
+
+    @model_validator(mode="after")
+    def require_decisive_classification(self) -> "EmailReportCreateRequest":
+        if self.classification == UrlReportClassification.UNSURE:
+            raise ValueError("Email reports require a legitimate or suspicious classification.")
+        if not self.body.strip():
+            raise ValueError("Email body is required.")
+        return self
+
+
 class UrlActivityFeedbackRequest(StrictModel):
     activity_event_id: str = Field(min_length=36, max_length=36)
+    url: str = Field(min_length=8, max_length=2048)
     verdict: FeedbackVerdict
     classification: UrlReportClassification | None = None
     reason: FeedbackReason | None = None
@@ -164,6 +194,7 @@ class UrlActivityFeedbackRequest(StrictModel):
 
 class DeviceUrlActivityFeedbackRequest(StrictModel):
     client_event_id: str = Field(min_length=8, max_length=128)
+    url: str = Field(min_length=8, max_length=2048)
     verdict: FeedbackVerdict
     classification: UrlReportClassification | None = None
     reason: FeedbackReason | None = None
@@ -171,6 +202,34 @@ class DeviceUrlActivityFeedbackRequest(StrictModel):
 
     @model_validator(mode="after")
     def require_correction_for_incorrect_feedback(self) -> "DeviceUrlActivityFeedbackRequest":
+        if self.verdict == FeedbackVerdict.INCORRECT:
+            if self.classification not in {
+                UrlReportClassification.LEGITIMATE,
+                UrlReportClassification.SUSPICIOUS,
+            }:
+                raise ValueError("Incorrect feedback requires a legitimate or suspicious correction.")
+        elif self.classification is not None:
+            raise ValueError("Only incorrect feedback may include a corrected classification.")
+        return self
+
+
+class DeviceEmailActivityFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    provider: Literal["gmail", "outlook", "yahoo"]
+    sender: str = Field(default="", max_length=320)
+    subject: str = Field(default="", max_length=500)
+    body: str = Field(min_length=1, max_length=10_000)
+    verdict: FeedbackVerdict
+    classification: UrlReportClassification | None = None
+    reason: FeedbackReason | None = None
+    confirmed: Literal[True]
+
+    @model_validator(mode="after")
+    def require_explicit_email_feedback(self) -> "DeviceEmailActivityFeedbackRequest":
+        if not self.body.strip():
+            raise ValueError("Email body is required.")
         if self.verdict == FeedbackVerdict.INCORRECT:
             if self.classification not in {
                 UrlReportClassification.LEGITIMATE,

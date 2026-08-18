@@ -69,6 +69,15 @@ const EMAIL_PROVIDERS = [
   }
 ];
 
+const EMAIL_FEEDBACK_REQUEST_TYPES = {
+  gmail:
+    "BANTAI_GMAIL_GET_OPEN_EMAIL",
+  outlook:
+    "BANTAI_OUTLOOK_GET_OPEN_EMAIL",
+  yahoo:
+    "BANTAI_YAHOO_GET_OPEN_EMAIL"
+};
+
 const urlSequences =
   new Map();
 
@@ -1998,6 +2007,258 @@ async function analyzeOpenedEmail(
 }
 
 
+async function extractCurrentEmailForFeedback(
+  tab,
+  provider
+) {
+  const requestType =
+    EMAIL_FEEDBACK_REQUEST_TYPES[
+      provider?.id
+    ];
+
+  if (
+    !requestType ||
+    !Number.isInteger(
+      tab?.id
+    )
+  ) {
+    throw new Error(
+      "Open a supported email before submitting feedback."
+    );
+  }
+
+  await injectProviderScript(
+    tab.id,
+    tab.url
+  );
+
+  const extracted =
+    await chrome.tabs.sendMessage(
+      tab.id,
+      {
+        type:
+          requestType
+      }
+    );
+
+  const payload =
+    extracted?.nlp_payload ||
+    extracted;
+
+  if (
+    !payload ||
+    payload.provider !==
+      provider.id ||
+    !String(
+      payload.body ||
+      ""
+    ).trim()
+  ) {
+    throw new Error(
+      "BantAI could not read the currently opened email. Keep it open and try again."
+    );
+  }
+
+  if (
+    String(
+      payload.body
+    ).length > 10000
+  ) {
+    throw new Error(
+      "This email is too long to include in a report."
+    );
+  }
+
+  return payload;
+}
+
+
+async function submitCurrentEmailFeedback(
+  message
+) {
+  if (
+    message?.confirmed !== true ||
+    ![
+      "CORRECT",
+      "INCORRECT",
+      "UNSURE"
+    ].includes(
+      message?.verdict
+    ) ||
+    (
+      message?.verdict ===
+        "INCORRECT" &&
+      ![
+        "LEGITIMATE",
+        "SUSPICIOUS"
+      ].includes(
+        message?.classification
+      )
+    )
+  ) {
+    throw new Error(
+      "Select your email feedback and confirm the encrypted report first."
+    );
+  }
+
+  if (
+    !await checkDetectionAccess()
+  ) {
+    throw new PairingRequiredError();
+  }
+
+  const tabId =
+    Number(
+      message?.tab_id
+    );
+
+  if (
+    !Number.isInteger(
+      tabId
+    )
+  ) {
+    throw new Error(
+      "The current email tab is unavailable."
+    );
+  }
+
+  const tab =
+    await chrome.tabs.get(
+      tabId
+    );
+
+  const provider =
+    providerForUrl(
+      tab?.url
+    );
+
+  const states =
+    await getTabStates();
+
+  const state =
+    states[
+      String(
+        tabId
+      )
+    ];
+
+  const outcome =
+    String(
+      state?.fusion
+        ?.final_result ||
+      ""
+    ).toUpperCase();
+
+  const clientEventId =
+    state?.hybrid_analysis_id;
+
+  if (
+    !provider ||
+    state?.email_detector
+      ?.state !==
+        "complete" ||
+    !COMPLETE_CLOUD_STATUSES
+      .has(
+        outcome
+      ) ||
+    !clientEventId
+  ) {
+    throw new Error(
+      "Wait for the current email result to finish before submitting feedback."
+    );
+  }
+
+  const payload =
+    await extractCurrentEmailForFeedback(
+      tab,
+      provider
+    );
+
+  if (
+    buildEmailFingerprint(
+      payload
+    ) !==
+      state.email_detector
+        ?.fingerprint
+  ) {
+    throw new Error(
+      "The opened email changed. Review the current result instead."
+    );
+  }
+
+  const response =
+    await fetch(
+      `${API_BASE}/companion/email-feedback`,
+      {
+        method:
+          "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify({
+            client_event_id:
+              clientEventId,
+            provider:
+              provider.id,
+            sender:
+              payload.sender ||
+              "",
+            subject:
+              payload.subject ||
+              "",
+            body:
+              payload.body,
+            verdict:
+              message.verdict,
+            classification:
+              message.verdict ===
+                "INCORRECT"
+                ? message.classification
+                : undefined,
+            reason:
+              message.verdict ===
+                "INCORRECT" &&
+              message.reason
+                ? message.reason
+                : undefined,
+            confirmed:
+              true
+          })
+      }
+    );
+
+  if (
+    !response.ok
+  ) {
+    let detail =
+      "BantAI could not submit this email report.";
+
+    try {
+      const problem =
+        await response.json();
+
+      if (
+        typeof problem?.detail ===
+          "string"
+      ) {
+        detail =
+          problem.detail;
+      }
+    } catch {
+      // Keep the short local error for non-JSON failures.
+    }
+
+    throw new Error(
+      detail
+    );
+  }
+
+  return response.json();
+}
+
+
 async function openFiveSecondPopup(
   tab,
   fingerprint,
@@ -2626,6 +2887,38 @@ chrome.runtime.onMessage
         });
 
         return false;
+      }
+
+      if (
+        message?.type ===
+          "BANTAI_SUBMIT_EMAIL_FEEDBACK"
+      ) {
+        void submitCurrentEmailFeedback(
+          message
+        ).then(
+          (result) => {
+            sendResponse({
+              ok:
+                true,
+              result
+            });
+          }
+        ).catch(
+          (error) => {
+            sendResponse({
+              ok:
+                false,
+              detail:
+                String(
+                  error?.message ||
+                  error ||
+                  "BantAI could not submit this email report."
+                )
+            });
+          }
+        );
+
+        return true;
       }
 
       if (

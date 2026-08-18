@@ -192,6 +192,8 @@ class UrlReport(Base):
         ForeignKey("activity_events.id", ondelete="SET NULL"),
         index=True,
     )
+    # Legacy column names retained for migration compatibility. For explicit
+    # reports these fields contain the normalized full URL and its blind index.
     origin_encrypted: Mapped[str] = mapped_column(Text)
     origin_fingerprint: Mapped[str | None] = mapped_column(String(64))
     detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
@@ -220,12 +222,75 @@ class UrlTrainingCandidate(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
+    # Approved candidates keep the explicitly submitted full URL encrypted.
     origin_encrypted: Mapped[str] = mapped_column(Text)
     origin_fingerprint: Mapped[str] = mapped_column(String(64))
     detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
     approved_label: Mapped[AdminUrlAssessment] = mapped_column(Enum(AdminUrlAssessment))
     feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
     feedback_source: Mapped[FeedbackSource] = mapped_column(Enum(FeedbackSource))
+    detector_model_version: Mapped[str] = mapped_column(String(40))
+    evidence_count: Mapped[int] = mapped_column(Integer, default=1)
+    first_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class EmailReport(Base):
+    __tablename__ = "email_reports"
+    __table_args__ = (
+        UniqueConstraint("user_id", "body_fingerprint", name="uq_email_report_user_body"),
+        CheckConstraint(
+            "(status = 'PENDING' AND admin_assessment IS NULL AND reviewed_at IS NULL) OR "
+            "(status = 'REVIEWED' AND admin_assessment IS NOT NULL AND reviewed_at IS NOT NULL)",
+            name="ck_email_report_review_shape",
+        ),
+        Index("ix_email_reports_status_submitted", "status", "submitted_at"),
+        Index("ix_email_reports_training_status_submitted", "training_status", "submitted_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(20))
+    sender_encrypted: Mapped[str] = mapped_column(Text)
+    subject_encrypted: Mapped[str] = mapped_column(Text)
+    # The application stores only authenticated ciphertext and never returns or
+    # decrypts this field through user or administrator APIs.
+    body_ciphertext: Mapped[str] = mapped_column(Text)
+    body_fingerprint: Mapped[str] = mapped_column(String(64))
+    body_character_count: Mapped[int] = mapped_column(Integer)
+    detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
+    user_classification: Mapped[UrlReportClassification] = mapped_column(Enum(UrlReportClassification))
+    feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
+    training_status: Mapped[TrainingStatus] = mapped_column(Enum(TrainingStatus), default=TrainingStatus.PENDING)
+    detector_model_version: Mapped[str] = mapped_column(String(40), default="XLM-R V1")
+    status: Mapped[UrlReportStatus] = mapped_column(Enum(UrlReportStatus), default=UrlReportStatus.PENDING)
+    admin_assessment: Mapped[AdminUrlAssessment | None] = mapped_column(Enum(AdminUrlAssessment))
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EmailTrainingCandidate(Base):
+    __tablename__ = "email_training_candidates"
+    __table_args__ = (
+        UniqueConstraint("body_fingerprint", "detector_model_version", name="uq_email_candidate_body_model"),
+        CheckConstraint(
+            "approved_label IN ('LEGITIMATE', 'SUSPICIOUS')",
+            name="ck_email_training_candidate_label",
+        ),
+        Index("ix_email_candidate_label_approved", "approved_label", "last_approved_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
+    provider: Mapped[str] = mapped_column(String(20))
+    sender_encrypted: Mapped[str] = mapped_column(Text)
+    subject_encrypted: Mapped[str] = mapped_column(Text)
+    body_ciphertext: Mapped[str] = mapped_column(Text)
+    body_fingerprint: Mapped[str] = mapped_column(String(64))
+    body_character_count: Mapped[int] = mapped_column(Integer)
+    detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
+    approved_label: Mapped[AdminUrlAssessment] = mapped_column(Enum(AdminUrlAssessment))
+    feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
     detector_model_version: Mapped[str] = mapped_column(String(40))
     evidence_count: Mapped[int] = mapped_column(Integer, default=1)
     first_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

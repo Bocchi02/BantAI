@@ -22,9 +22,48 @@ Users may explicitly review a completed URL result from the dashboard,
 activity history, or manually opened extension popup. The interface requires a
 selected response and a separate submit action; it never infers feedback from
 an older report for the same origin. Incorrect feedback requires the user to
-choose a corrected legitimate or suspicious classification. Only the event ID
-and selected structured feedback travel through the Companion; no browsing
-path is added to the report.
+choose a corrected legitimate or suspicious classification. The exact current
+address travels through the Companion only with that explicit feedback action.
+The shared service verifies that its origin matches the referenced detection,
+then encrypts the complete address for administrator review.
+
+Administrators have two related pages:
+
+- **User reviews** displays complete URL addresses that users intentionally
+  submitted, along with the detector result and structured feedback, so an
+  administrator can approve, reject, or mark each review inconclusive.
+- **Training data** inventories approved, de-identified URL candidates for a
+  future offline RF training cycle. It provides label filters, evidence totals,
+  model-version context, and individual addresses without reporter identity.
+  Administrators can export the filtered inventory as a CSV manifest. The
+  manifest includes approved labels and candidate metadata, neutralizes
+  spreadsheet-formula prefixes, and excludes reporter IDs and fingerprints.
+
+Users also have an explicit **Email reports** form. It collects provider,
+sender, subject, body, the displayed detector outcome, the user's proposed
+label, and optional context only after the user checks a consent box and
+submits. This is not triggered automatically by opening or detecting an email.
+The service immediately stores the body as authenticated ciphertext rather
+than plaintext.
+
+The manually opened extension popup also offers email-result feedback for a
+completed supported-email detection. Submission requires an answer and an
+encrypted-report consent checkbox. At submit time the service worker asks the
+provider extractor for the currently opened email, verifies that its local
+fingerprint matches the displayed result, and forwards it through Companion.
+The raw body is never placed in Chrome storage.
+
+The administrator **Email reports** page shows sender and subject metadata,
+labels, body character count, and review status, but it cannot open, return, or
+decrypt the actual email body. Approval moves the already encrypted body and
+curated metadata into a de-identified email candidate inventory with no user
+identifier. The **Training data** page can confirm that encrypted body content
+is present while never displaying it. Its CSV manifest includes a candidate ID
+and body-present metadata, never plaintext/ciphertext body content. A future
+restricted training process may use the candidate ID to decrypt approved body
+content in memory; the administrator download, logs, and temporary files remain
+body-free. These workflows do not re-train, replace, or change either frozen
+production model.
 
 ## Privacy boundary
 
@@ -40,7 +79,11 @@ Dashboard activity contains only:
 
 The shared database encrypts the origin, sender, and subject and removes events
 after 90 days. Admin endpoints return aggregate outcome counts and account data,
-never personal activity.
+never personal activity. Narrowly scoped exceptions are content the user
+explicitly submits for review: a complete URL is visible in the URL-review
+workflow, while an email body is retained only as authenticated ciphertext and
+is never visible through the user or administrator interfaces. Approved
+candidates are stored without reporter identity.
 
 ## Release prerequisites
 

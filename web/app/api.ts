@@ -58,3 +58,36 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
+
+export async function downloadApiFile(path: string): Promise<{ blob: Blob; filename: string }> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30000);
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      credentials: "include",
+      signal: controller.signal,
+    });
+  } catch (reason) {
+    if (reason instanceof DOMException && reason.name === "AbortError") {
+      throw new ApiError("The export took too long. Try again after narrowing the approved-label filter.", 0);
+    }
+    throw new ApiError("BantAI cannot reach the shared service. Make sure Docker is running, then try again.", 0);
+  } finally {
+    window.clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    let detail = "BantAI could not export the training-data manifest.";
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // Keep the privacy-safe generic message.
+    }
+    throw new ApiError(detail, response.status);
+  }
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  const filename = (match?.[1] || "bantai-training-manifest.csv").replace(/[^a-zA-Z0-9._-]/g, "_");
+  return { blob: await response.blob(), filename };
+}

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import math
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from time import monotonic
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +34,8 @@ from .dependencies import (
 from .models import (
     AdminUrlAssessment,
     ActivityEvent,
+    EmailReport,
+    EmailTrainingCandidate,
     EventType,
     FeedbackSource,
     FeedbackVerdict,
@@ -53,8 +57,10 @@ from .schemas import (
     AdminReviewAction,
     ActivityBatchRequest,
     ChangePasswordRequest,
+    DeviceEmailActivityFeedbackRequest,
     DeviceUrlActivityFeedbackRequest,
     EmailCloudReviewRequest,
+    EmailReportCreateRequest,
     EmailRequest,
     LoginRequest,
     PairingConsumeRequest,
@@ -85,6 +91,15 @@ def utc_timestamp(value: datetime | None) -> str | None:
     if value is None:
         return None
     return _aware(value).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def csv_safe_cell(value: object | None) -> str:
+    """Prevent spreadsheet formulas from being executed when a CSV is opened."""
+
+    text = "" if value is None else str(value)
+    if text.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+        return f"'{text}"
+    return text
 
 
 class RateLimitMiddleware:
@@ -126,6 +141,7 @@ def cleanup_expired(db: Session) -> None:
     now = utcnow()
     cutoff = now - timedelta(days=settings.activity_retention_days)
     db.execute(delete(UrlReport).where(UrlReport.submitted_at < cutoff))
+    db.execute(delete(EmailReport).where(EmailReport.submitted_at < cutoff))
     db.execute(delete(ActivityEvent).where(ActivityEvent.occurred_at < cutoff))
     db.execute(delete(PairingCode).where(or_(PairingCode.expires_at < now, PairingCode.consumed_at.is_not(None))))
     db.execute(delete(WebSession).where(or_(WebSession.expires_at < now, WebSession.revoked_at.is_not(None))))
@@ -374,6 +390,23 @@ def normalized_origin(value: str) -> str:
     return f"{parsed.scheme}://{parsed.hostname.lower()}{port}"
 
 
+def normalized_report_url(value: str) -> str:
+    """Normalize an explicitly submitted address while retaining its full location."""
+
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise HTTPException(status_code=422, detail="Website reports require a complete HTTP/HTTPS address.")
+    try:
+        parsed_port = parsed.port
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Website report contains an invalid port.") from exc
+    hostname = parsed.hostname.lower()
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    port = f":{parsed_port}" if parsed_port else ""
+    return urlunsplit((parsed.scheme.lower(), f"{hostname}{port}", parsed.path or "/", parsed.query, parsed.fragment))
+
+
 def event_view(event: ActivityEvent, *, feedback_submitted: bool = False) -> dict:
     return {
         "id": event.id,
@@ -411,9 +444,11 @@ def url_report_view(
     include_activity_reference: bool = True,
     similar_report_count: int | None = None,
 ) -> dict:
+    reported_url = decrypt_text(report.origin_encrypted)
     view = {
         "id": report.id,
-        "origin": decrypt_text(report.origin_encrypted),
+        "url": reported_url,
+        "origin": normalized_origin(reported_url) if reported_url else None,
         "detector_outcome": report.detector_outcome.value,
         "user_classification": report.user_classification.value,
         "feedback_verdict": report.feedback_verdict.value,
@@ -433,10 +468,73 @@ def url_report_view(
     return view
 
 
+def training_candidate_view(candidate: UrlTrainingCandidate) -> dict:
+    reported_url = decrypt_text(candidate.origin_encrypted)
+    return {
+        "id": candidate.id,
+        "url": reported_url,
+        "origin": normalized_origin(reported_url) if reported_url else None,
+        "detector_outcome": candidate.detector_outcome.value,
+        "approved_label": candidate.approved_label.value,
+        "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else None,
+        "feedback_source": candidate.feedback_source.value,
+        "detector_model_version": candidate.detector_model_version,
+        "evidence_count": candidate.evidence_count,
+        "first_approved_at": utc_timestamp(candidate.first_approved_at),
+        "last_approved_at": utc_timestamp(candidate.last_approved_at),
+    }
+
+
+def email_report_view(report: EmailReport, *, similar_report_count: int | None = None) -> dict:
+    """Return review metadata without ever decrypting or returning body content."""
+
+    view = {
+        "id": report.id,
+        "provider": report.provider,
+        "sender": decrypt_text(report.sender_encrypted),
+        "subject": decrypt_text(report.subject_encrypted),
+        "body_included": bool(report.body_ciphertext),
+        "body_character_count": report.body_character_count,
+        "detector_outcome": report.detector_outcome.value,
+        "user_classification": report.user_classification.value,
+        "feedback_reason": report.feedback_reason.value if report.feedback_reason else None,
+        "training_status": report.training_status.value,
+        "detector_model_version": report.detector_model_version,
+        "status": report.status.value,
+        "admin_assessment": report.admin_assessment.value if report.admin_assessment else None,
+        "submitted_at": utc_timestamp(report.submitted_at),
+        "reviewed_at": utc_timestamp(report.reviewed_at),
+    }
+    if similar_report_count is not None:
+        view["similar_report_count"] = similar_report_count
+    return view
+
+
+def email_training_candidate_view(candidate: EmailTrainingCandidate) -> dict:
+    """Expose useful curation metadata while keeping training text ciphertext-only."""
+
+    return {
+        "id": candidate.id,
+        "provider": candidate.provider,
+        "sender": decrypt_text(candidate.sender_encrypted),
+        "subject": decrypt_text(candidate.subject_encrypted),
+        "body_included": bool(candidate.body_ciphertext),
+        "body_character_count": candidate.body_character_count,
+        "detector_outcome": candidate.detector_outcome.value,
+        "approved_label": candidate.approved_label.value,
+        "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else None,
+        "detector_model_version": candidate.detector_model_version,
+        "evidence_count": candidate.evidence_count,
+        "first_approved_at": utc_timestamp(candidate.first_approved_at),
+        "last_approved_at": utc_timestamp(candidate.last_approved_at),
+    }
+
+
 def persist_url_activity_feedback(
     *,
     event: ActivityEvent,
     user_id: str,
+    reported_url: str,
     verdict: FeedbackVerdict,
     classification: UrlReportClassification | None,
     reason,
@@ -445,6 +543,9 @@ def persist_url_activity_feedback(
     origin = decrypt_text(event.origin_encrypted)
     if not origin:
         raise HTTPException(status_code=422, detail="Website activity has no reportable origin.")
+    full_url = normalized_report_url(reported_url)
+    if normalized_origin(full_url) != origin:
+        raise HTTPException(status_code=422, detail="The submitted address does not match this website detection.")
 
     if verdict == FeedbackVerdict.INCORRECT:
         stored_classification = classification
@@ -458,8 +559,8 @@ def persist_url_activity_feedback(
     report = UrlReport(
         user_id=user_id,
         activity_event_id=event.id,
-        origin_encrypted=encrypt_text(origin),
-        origin_fingerprint=blind_index(origin, "url-report-origin-v1"),
+        origin_encrypted=encrypt_text(full_url),
+        origin_fingerprint=blind_index(full_url, "url-report-url-v2"),
         detector_outcome=event.outcome,
         user_classification=stored_classification,
         feedback_verdict=verdict,
@@ -474,6 +575,70 @@ def persist_url_activity_feedback(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Feedback for this website result was already submitted.") from exc
+    db.refresh(report)
+    return report
+
+
+def email_content_fingerprint(*, provider: str, sender: str, subject: str, body: str) -> str:
+    return blind_index(
+        f"{provider}\0{sender.casefold()}\0{subject}\0{body}",
+        "email-training-content-v1",
+    )
+
+
+def persist_email_activity_feedback(
+    *,
+    event: ActivityEvent,
+    user_id: str,
+    provider: str,
+    sender: str,
+    subject: str,
+    body: str,
+    verdict: FeedbackVerdict,
+    classification: UrlReportClassification | None,
+    reason,
+    db: Session,
+) -> EmailReport:
+    stored_sender = decrypt_text(event.sender_encrypted) or ""
+    stored_subject = decrypt_text(event.subject_encrypted) or ""
+    if provider != event.provider or sender != stored_sender or subject != stored_subject:
+        raise HTTPException(status_code=422, detail="The submitted email does not match this detection.")
+
+    body = body.strip()
+    if verdict == FeedbackVerdict.INCORRECT:
+        stored_classification = classification
+    elif verdict == FeedbackVerdict.CORRECT and event.outcome == Outcome.NO_STRONG_WARNING_SIGNS:
+        stored_classification = UrlReportClassification.LEGITIMATE
+    elif verdict == FeedbackVerdict.CORRECT and event.outcome == Outcome.SUSPICIOUS_SIGNS_FOUND:
+        stored_classification = UrlReportClassification.SUSPICIOUS
+    else:
+        stored_classification = UrlReportClassification.UNSURE
+
+    report = EmailReport(
+        user_id=user_id,
+        provider=provider,
+        sender_encrypted=encrypt_text(sender),
+        subject_encrypted=encrypt_text(subject),
+        body_ciphertext=encrypt_text(body),
+        body_fingerprint=email_content_fingerprint(
+            provider=provider,
+            sender=sender,
+            subject=subject,
+            body=body,
+        ),
+        body_character_count=len(body),
+        detector_outcome=event.outcome,
+        user_classification=stored_classification,
+        feedback_reason=reason,
+        training_status=TrainingStatus.PENDING,
+        detector_model_version="XLM-R V1",
+    )
+    db.add(report)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Feedback for this email was already submitted.") from exc
     db.refresh(report)
     return report
 
@@ -550,8 +715,8 @@ def create_url_report(
     current: CurrentWebUser = Depends(csrf_protected),
     db: Session = Depends(get_db),
 ) -> dict:
-    origin = normalized_origin(payload.url)
-    fingerprint = blind_index(origin, "url-report-origin-v1")
+    reported_url = normalized_report_url(payload.url)
+    fingerprint = blind_index(reported_url, "url-report-url-v2")
     existing = db.scalar(
         select(UrlReport.id).where(
             UrlReport.user_id == current.user.id,
@@ -564,7 +729,7 @@ def create_url_report(
     report = UrlReport(
         user_id=current.user.id,
         activity_event_id=None,
-        origin_encrypted=encrypt_text(origin),
+        origin_encrypted=encrypt_text(reported_url),
         origin_fingerprint=fingerprint,
         detector_outcome=payload.detector_outcome,
         user_classification=payload.classification,
@@ -602,6 +767,7 @@ def create_activity_url_feedback(
     report = persist_url_activity_feedback(
         event=event,
         user_id=current.user.id,
+        reported_url=payload.url,
         verdict=payload.verdict,
         classification=payload.classification,
         reason=payload.reason,
@@ -640,6 +806,7 @@ def create_device_activity_url_feedback(
     report = persist_url_activity_feedback(
         event=event,
         user_id=current.user.id,
+        reported_url=payload.url,
         verdict=payload.verdict,
         classification=payload.classification,
         reason=payload.reason,
@@ -649,6 +816,59 @@ def create_device_activity_url_feedback(
         "message": "Thank you. Your feedback is awaiting administrator review.",
         "already_submitted": False,
         "report": url_report_view(report, include_activity_reference=False),
+    }
+
+
+@app.post("/api/v1/email-reports/from-device-activity", status_code=201)
+def create_device_activity_email_feedback(
+    payload: DeviceEmailActivityFeedbackRequest,
+    current: CurrentDevice = Depends(current_device),
+    db: Session = Depends(get_db),
+) -> dict:
+    event = db.scalar(
+        select(ActivityEvent).where(
+            ActivityEvent.device_id == current.device.id,
+            ActivityEvent.client_event_id == payload.client_event_id,
+            ActivityEvent.event_type == EventType.EMAIL,
+        )
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Email activity has not synced yet. Try again shortly.")
+    body = payload.body.strip()
+    fingerprint = email_content_fingerprint(
+        provider=payload.provider,
+        sender=payload.sender,
+        subject=payload.subject,
+        body=body,
+    )
+    existing = db.scalar(
+        select(EmailReport).where(
+            EmailReport.user_id == current.user.id,
+            EmailReport.body_fingerprint == fingerprint,
+        )
+    )
+    if existing is not None:
+        return {
+            "message": "Feedback for this email was already received.",
+            "already_submitted": True,
+            "report": email_report_view(existing),
+        }
+    report = persist_email_activity_feedback(
+        event=event,
+        user_id=current.user.id,
+        provider=payload.provider,
+        sender=payload.sender,
+        subject=payload.subject,
+        body=body,
+        verdict=payload.verdict,
+        classification=payload.classification,
+        reason=payload.reason,
+        db=db,
+    )
+    return {
+        "message": "Thank you. Your email report is awaiting administrator assessment.",
+        "already_submitted": False,
+        "report": email_report_view(report),
     }
 
 
@@ -670,6 +890,79 @@ def personal_url_reports(
     ).all()
     return {
         "items": [url_report_view(row) for row in rows],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": math.ceil(total / page_size) if total else 0,
+    }
+
+
+@app.post("/api/v1/email-reports", status_code=201)
+def create_email_report(
+    payload: EmailReportCreateRequest,
+    current: CurrentWebUser = Depends(csrf_protected),
+    db: Session = Depends(get_db),
+) -> dict:
+    body = payload.body.strip()
+    fingerprint = email_content_fingerprint(
+        provider=payload.provider,
+        sender=payload.sender,
+        subject=payload.subject,
+        body=body,
+    )
+    existing = db.scalar(
+        select(EmailReport.id).where(
+            EmailReport.user_id == current.user.id,
+            EmailReport.body_fingerprint == fingerprint,
+        )
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="This email was already submitted as a report.")
+    report = EmailReport(
+        user_id=current.user.id,
+        provider=payload.provider,
+        sender_encrypted=encrypt_text(payload.sender),
+        subject_encrypted=encrypt_text(payload.subject),
+        body_ciphertext=encrypt_text(body),
+        body_fingerprint=fingerprint,
+        body_character_count=len(body),
+        detector_outcome=payload.detector_outcome,
+        user_classification=payload.classification,
+        feedback_reason=payload.reason,
+        training_status=TrainingStatus.PENDING,
+        detector_model_version="XLM-R V1",
+    )
+    db.add(report)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This email was already submitted as a report.") from exc
+    db.refresh(report)
+    return {
+        "message": "Your encrypted email report was submitted for administrator assessment.",
+        "report": email_report_view(report),
+    }
+
+
+@app.get("/api/v1/email-reports")
+def personal_email_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    current: CurrentWebUser = Depends(current_web_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    filters = [EmailReport.user_id == current.user.id]
+    total = db.scalar(select(func.count(EmailReport.id)).where(*filters)) or 0
+    rows = db.scalars(
+        select(EmailReport)
+        .where(*filters)
+        .order_by(EmailReport.submitted_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "items": [email_report_view(row) for row in rows],
         "page": page,
         "page_size": page_size,
         "total": total,
@@ -722,6 +1015,195 @@ def admin_dashboard(days: int = Query(30, ge=7, le=90), _: CurrentWebUser = Depe
     if days not in {7, 30, 90}:
         raise HTTPException(status_code=422, detail="Dashboard range must be 7, 30, or 90 days.")
     return {"range_days": days, "distribution": outcome_distribution(db, [ActivityEvent.occurred_at >= utcnow() - timedelta(days=days)])}
+
+
+@app.get("/api/v1/admin/training-data")
+def admin_training_data(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    approved_label: AdminUrlAssessment | None = None,
+    _: CurrentWebUser = Depends(admin_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    if approved_label == AdminUrlAssessment.INCONCLUSIVE:
+        raise HTTPException(status_code=422, detail="Training candidates must be legitimate or suspicious.")
+    filters = [UrlTrainingCandidate.approved_label == approved_label] if approved_label else []
+    total = db.scalar(select(func.count(UrlTrainingCandidate.id)).where(*filters)) or 0
+    rows = db.scalars(
+        select(UrlTrainingCandidate)
+        .where(*filters)
+        .order_by(UrlTrainingCandidate.last_approved_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    label_counts = {
+        label.value: count
+        for label, count in db.execute(
+            select(UrlTrainingCandidate.approved_label, func.count(UrlTrainingCandidate.id))
+            .group_by(UrlTrainingCandidate.approved_label)
+        ).all()
+    }
+    evidence_total = db.scalar(select(func.coalesce(func.sum(UrlTrainingCandidate.evidence_count), 0))) or 0
+    email_filters = [EmailTrainingCandidate.approved_label == approved_label] if approved_label else []
+    email_total = db.scalar(select(func.count(EmailTrainingCandidate.id)).where(*email_filters)) or 0
+    email_rows = db.scalars(
+        select(EmailTrainingCandidate)
+        .where(*email_filters)
+        .order_by(EmailTrainingCandidate.last_approved_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    email_label_counts = {
+        label.value: count
+        for label, count in db.execute(
+            select(EmailTrainingCandidate.approved_label, func.count(EmailTrainingCandidate.id))
+            .group_by(EmailTrainingCandidate.approved_label)
+        ).all()
+    }
+    email_evidence_total = db.scalar(
+        select(func.coalesce(func.sum(EmailTrainingCandidate.evidence_count), 0))
+    ) or 0
+    email_activity_total = db.scalar(
+        select(func.count(ActivityEvent.id)).where(ActivityEvent.event_type == EventType.EMAIL)
+    ) or 0
+    return {
+        "urls": {
+            "items": [training_candidate_view(row) for row in rows],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "pages": math.ceil(total / page_size) if total else 0,
+            "candidate_total": db.scalar(select(func.count(UrlTrainingCandidate.id))) or 0,
+            "evidence_total": evidence_total,
+            "label_counts": {
+                "LEGITIMATE": label_counts.get("LEGITIMATE", 0),
+                "SUSPICIOUS": label_counts.get("SUSPICIOUS", 0),
+            },
+            "model_version": "RF V4-B",
+        },
+        "emails": {
+            "items": [email_training_candidate_view(row) for row in email_rows],
+            "page": page,
+            "page_size": page_size,
+            "total": email_total,
+            "pages": math.ceil(email_total / page_size) if email_total else 0,
+            "candidate_total": db.scalar(select(func.count(EmailTrainingCandidate.id))) or 0,
+            "evidence_total": email_evidence_total,
+            "label_counts": {
+                "LEGITIMATE": email_label_counts.get("LEGITIMATE", 0),
+                "SUSPICIOUS": email_label_counts.get("SUSPICIOUS", 0),
+            },
+            "observed_activity_total": email_activity_total,
+            "collection_status": "ENCRYPTED_REVIEW_CONTENT",
+            "model_version": "XLM-R V1",
+            "privacy_message": (
+                "Email bodies are stored only as authenticated ciphertext after explicit submission. "
+                "User and administrator APIs never return or decrypt the body content."
+            ),
+        },
+    }
+
+
+@app.get("/api/v1/admin/training-data/export.csv")
+def export_admin_training_data(
+    approved_label: AdminUrlAssessment | None = None,
+    _: CurrentWebUser = Depends(admin_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Export a de-identified candidate manifest without exposing email bodies."""
+
+    if approved_label == AdminUrlAssessment.INCONCLUSIVE:
+        raise HTTPException(status_code=422, detail="Training candidates must be legitimate or suspicious.")
+
+    url_filters = [UrlTrainingCandidate.approved_label == approved_label] if approved_label else []
+    email_filters = [EmailTrainingCandidate.approved_label == approved_label] if approved_label else []
+    url_rows = db.scalars(
+        select(UrlTrainingCandidate)
+        .where(*url_filters)
+        .order_by(UrlTrainingCandidate.last_approved_at.desc())
+    ).all()
+    email_rows = db.scalars(
+        select(EmailTrainingCandidate)
+        .where(*email_filters)
+        .order_by(EmailTrainingCandidate.last_approved_at.desc())
+    ).all()
+
+    fieldnames = [
+        "candidate_type",
+        "candidate_id",
+        "url",
+        "provider",
+        "sender",
+        "subject",
+        "approved_label",
+        "detector_outcome",
+        "feedback_reason",
+        "feedback_source",
+        "detector_model_version",
+        "evidence_count",
+        "body_available",
+        "body_character_count",
+        "content_access",
+        "first_approved_at_utc",
+        "last_approved_at_utc",
+    ]
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\r\n")
+    writer.writeheader()
+
+    for candidate in url_rows:
+        writer.writerow({
+            "candidate_type": "URL",
+            "candidate_id": candidate.id,
+            "url": csv_safe_cell(decrypt_text(candidate.origin_encrypted)),
+            "provider": "",
+            "sender": "",
+            "subject": "",
+            "approved_label": candidate.approved_label.value,
+            "detector_outcome": candidate.detector_outcome.value,
+            "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else "",
+            "feedback_source": candidate.feedback_source.value,
+            "detector_model_version": csv_safe_cell(candidate.detector_model_version),
+            "evidence_count": candidate.evidence_count,
+            "body_available": "FALSE",
+            "body_character_count": "",
+            "content_access": "INCLUDED_IN_MANIFEST",
+            "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
+            "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
+        })
+
+    for candidate in email_rows:
+        writer.writerow({
+            "candidate_type": "EMAIL",
+            "candidate_id": candidate.id,
+            "url": "",
+            "provider": csv_safe_cell(candidate.provider),
+            "sender": csv_safe_cell(decrypt_text(candidate.sender_encrypted)),
+            "subject": csv_safe_cell(decrypt_text(candidate.subject_encrypted)),
+            "approved_label": candidate.approved_label.value,
+            "detector_outcome": candidate.detector_outcome.value,
+            "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else "",
+            "feedback_source": "EXPLICIT_EMAIL_REPORT",
+            "detector_model_version": csv_safe_cell(candidate.detector_model_version),
+            "evidence_count": candidate.evidence_count,
+            "body_available": "TRUE" if candidate.body_ciphertext else "FALSE",
+            "body_character_count": candidate.body_character_count,
+            "content_access": "RESTRICTED_TRAINING_PROCESS_ONLY",
+            "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
+            "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
+        })
+
+    filename = f"bantai-training-manifest-{utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.get("/api/v1/admin/url-reports")
@@ -839,6 +1321,119 @@ def review_url_report(
         "message": message,
         "report": url_report_view(report, include_activity_reference=False),
     }
+
+
+@app.get("/api/v1/admin/email-reports")
+def admin_email_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    classification: UrlReportClassification | None = None,
+    training_status: TrainingStatus | None = None,
+    _: CurrentWebUser = Depends(admin_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    filters = []
+    if classification:
+        filters.append(EmailReport.user_classification == classification)
+    if training_status:
+        filters.append(EmailReport.training_status == training_status)
+    total = db.scalar(select(func.count(EmailReport.id)).where(*filters)) or 0
+    rows = db.scalars(
+        select(EmailReport)
+        .where(*filters)
+        .order_by(EmailReport.submitted_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    fingerprints = [row.body_fingerprint for row in rows]
+    similar_counts = {
+        fingerprint: count
+        for fingerprint, count in db.execute(
+            select(EmailReport.body_fingerprint, func.count(EmailReport.id))
+            .where(EmailReport.body_fingerprint.in_(fingerprints))
+            .group_by(EmailReport.body_fingerprint)
+        ).all()
+    } if fingerprints else {}
+    return {
+        "items": [
+            email_report_view(row, similar_report_count=similar_counts.get(row.body_fingerprint, 1))
+            for row in rows
+        ],
+        "training_candidate_total": db.scalar(select(func.count(EmailTrainingCandidate.id))) or 0,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "pages": math.ceil(total / page_size) if total else 0,
+        "body_access": "ENCRYPTED_NOT_EXPOSED",
+    }
+
+
+@app.patch("/api/v1/admin/email-reports/{report_id}")
+def review_email_report(
+    report_id: str,
+    payload: UrlReportReviewRequest,
+    current: CurrentWebUser = Depends(admin_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    report = db.get(EmailReport, report_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Email report not found.")
+    if report.user_id == current.user.id:
+        raise HTTPException(status_code=400, detail="Administrators cannot review their own email submission.")
+    if report.status == UrlReportStatus.REVIEWED:
+        raise HTTPException(status_code=409, detail="This email feedback has already been reviewed.")
+    if payload.action == AdminReviewAction.APPROVE:
+        candidate = db.scalar(
+            select(EmailTrainingCandidate).where(
+                EmailTrainingCandidate.body_fingerprint == report.body_fingerprint,
+                EmailTrainingCandidate.detector_model_version == report.detector_model_version,
+            )
+        )
+        if candidate and candidate.approved_label != payload.assessment:
+            raise HTTPException(
+                status_code=409,
+                detail="This encrypted email already has a conflicting approved training label.",
+            )
+        if candidate:
+            candidate.evidence_count += 1
+            candidate.last_approved_at = utcnow()
+        else:
+            db.add(
+                EmailTrainingCandidate(
+                    provider=report.provider,
+                    sender_encrypted=report.sender_encrypted,
+                    subject_encrypted=report.subject_encrypted,
+                    body_ciphertext=report.body_ciphertext,
+                    body_fingerprint=report.body_fingerprint,
+                    body_character_count=report.body_character_count,
+                    detector_outcome=report.detector_outcome,
+                    approved_label=payload.assessment,
+                    feedback_reason=report.feedback_reason,
+                    detector_model_version=report.detector_model_version,
+                    evidence_count=1,
+                )
+            )
+        report.admin_assessment = payload.assessment
+        report.training_status = TrainingStatus.APPROVED
+        message = "The encrypted email feedback was approved as a future training candidate."
+    elif payload.action == AdminReviewAction.REJECT:
+        report.admin_assessment = AdminUrlAssessment.INCONCLUSIVE
+        report.training_status = TrainingStatus.REJECTED
+        message = "The email feedback was rejected and will not be used as a training candidate."
+    else:
+        report.admin_assessment = AdminUrlAssessment.INCONCLUSIVE
+        report.training_status = TrainingStatus.INCONCLUSIVE
+        message = "The email feedback was marked inconclusive."
+    report.status = UrlReportStatus.REVIEWED
+    report.reviewed_by = current.user.id
+    report.reviewed_at = utcnow()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="The email training store changed. Reload and try again.") from exc
+    db.refresh(report)
+    return {"message": message, "report": email_report_view(report)}
 
 
 @app.get("/api/v1/admin/users")

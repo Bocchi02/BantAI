@@ -3,7 +3,8 @@ const STORAGE_KEYS = {
   server: "bantai_v110_server",
   autoPopup: "bantai_v110_auto_popup",
   access: "bantai_v110_access",
-  submittedUrlFeedback: "bantai_v110_submitted_url_feedback"
+  submittedUrlFeedback: "bantai_v110_submitted_url_feedback",
+  submittedEmailFeedback: "bantai_v110_submitted_email_feedback"
 };
 
 const SUPPORTED_EMAIL_PROVIDERS = new Set(["gmail", "outlook", "yahoo"]);
@@ -58,6 +59,9 @@ let automaticPopupActive = false;
 let reviewEventId = null;
 let reviewBusy = false;
 let submittedReviewIds = new Set();
+let emailReviewEventId = null;
+let emailReviewBusy = false;
+let submittedEmailReviewIds = new Set();
 
 const byId = (id) => document.getElementById(id);
 
@@ -80,6 +84,14 @@ const elements = {
   emailSender: byId("emailSender"),
   emailSubject: byId("emailSubject"),
   emailDecisionMessage: byId("emailDecisionMessage"),
+  emailReviewCard: byId("emailReviewCard"),
+  emailReviewForm: byId("emailReviewForm"),
+  emailReviewCorrection: byId("emailReviewCorrection"),
+  emailReviewReason: byId("emailReviewReason"),
+  emailReviewConsent: byId("emailReviewConsent"),
+  emailReviewSubmit: byId("emailReviewSubmit"),
+  emailReviewMessage: byId("emailReviewMessage"),
+  emailReviewComplete: byId("emailReviewComplete"),
   indicatorsCard: byId("indicatorsCard"),
   indicatorList: byId("indicatorList"),
   websiteScore: byId("websiteScore"),
@@ -115,6 +127,7 @@ function setDetectionVisibility(enabled) {
 
   if (!detectionEnabled) {
     elements.reviewCard.classList.add("hidden");
+    elements.emailReviewCard.classList.add("hidden");
     elements.autoPopupBanner.classList.add("hidden");
     const details = byId("moreDetails");
     if (details) details.open = false;
@@ -194,6 +207,27 @@ function selectedReviewValue(name) {
   return elements.reviewForm.querySelector(`input[name="${name}"]:checked`)?.value || "";
 }
 
+function feedbackErrorMessage(problem) {
+  const fallback = "BantAI could not submit feedback. Try again shortly.";
+  const detail = problem && typeof problem === "object" ? problem.detail : null;
+  if (typeof detail === "string" && detail.length > 0 && detail.length <= 180) {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const missingUrl = detail.some((item) =>
+      Array.isArray(item?.loc) && item.loc.includes("url") && item?.type === "missing"
+    );
+    if (missingUrl) {
+      return "Reload the BantAI extension, then submit this feedback again.";
+    }
+    const firstMessage = detail.find((item) => typeof item?.msg === "string" && item.msg.length <= 140)?.msg;
+    if (firstMessage) {
+      return firstMessage;
+    }
+  }
+  return fallback;
+}
+
 function resetReviewForm() {
   elements.reviewForm.reset();
   elements.reviewCorrection.classList.add("hidden");
@@ -220,14 +254,16 @@ function reviewableUrlResult(state) {
   const result = detector.result || {};
   const outcome = String(result.final_result || detector.signal || result.signal || "").toUpperCase();
   const clientEventId = detector.activity_event_id;
+  const url = state?.current_url || result.current_url || "";
   if (
     detector.state !== "complete" ||
     !clientEventId ||
+    !url ||
     !["NO_STRONG_WARNING_SIGNS", "NEEDS_CAUTION", "SUSPICIOUS_SIGNS_FOUND"].includes(outcome)
   ) {
     return null;
   }
-  return {clientEventId, outcome};
+  return {clientEventId, outcome, url};
 }
 
 function renderReview(state) {
@@ -246,10 +282,72 @@ function renderReview(state) {
   elements.reviewComplete.classList.toggle("hidden", !submitted);
 }
 
+function selectedEmailReviewValue(name) {
+  return elements.emailReviewForm.querySelector(`input[name="${name}"]:checked`)?.value || "";
+}
+
+function resetEmailReviewForm() {
+  elements.emailReviewForm.reset();
+  elements.emailReviewCorrection.classList.add("hidden");
+  elements.emailReviewMessage.textContent = "";
+  elements.emailReviewSubmit.disabled = true;
+}
+
+function updateEmailReviewControls() {
+  const verdict = selectedEmailReviewValue("emailReviewVerdict");
+  const classification = selectedEmailReviewValue("emailReviewClassification");
+  const needsCorrection = verdict === "INCORRECT";
+  elements.emailReviewCorrection.classList.toggle("hidden", !needsCorrection);
+  if (!needsCorrection) {
+    for (const input of elements.emailReviewForm.querySelectorAll('input[name="emailReviewClassification"]')) {
+      input.checked = false;
+    }
+    elements.emailReviewReason.value = "";
+  }
+  elements.emailReviewSubmit.disabled = emailReviewBusy || !verdict || !elements.emailReviewConsent.checked || (needsCorrection && !classification);
+}
+
+function reviewableEmailResult(state) {
+  const detector = state?.email_detector || {};
+  const outcome = String(state?.fusion?.final_result || "").toUpperCase();
+  const clientEventId = state?.hybrid_analysis_id;
+  const provider = String(state?.provider || detector.provider || "").toLowerCase();
+  if (
+    detector.state !== "complete" ||
+    !clientEventId ||
+    !SUPPORTED_EMAIL_PROVIDERS.has(provider) ||
+    !["NO_STRONG_WARNING_SIGNS", "NEEDS_CAUTION", "SUSPICIOUS_SIGNS_FOUND"].includes(outcome)
+  ) {
+    return null;
+  }
+  return {clientEventId, outcome, provider};
+}
+
+function renderEmailReview(state) {
+  const review = reviewableEmailResult(state);
+  if (!detectionEnabled || automaticPopupActive || !review) {
+    elements.emailReviewCard.classList.add("hidden");
+    return;
+  }
+  if (emailReviewEventId !== review.clientEventId) {
+    emailReviewEventId = review.clientEventId;
+    resetEmailReviewForm();
+  }
+  const submitted = submittedEmailReviewIds.has(review.clientEventId);
+  elements.emailReviewCard.classList.remove("hidden");
+  elements.emailReviewForm.classList.toggle("hidden", submitted);
+  elements.emailReviewComplete.classList.toggle("hidden", !submitted);
+}
+
 async function loadSubmittedReviews() {
-  const stored = await chrome.storage.local.get(STORAGE_KEYS.submittedUrlFeedback);
+  const stored = await chrome.storage.local.get([
+    STORAGE_KEYS.submittedUrlFeedback,
+    STORAGE_KEYS.submittedEmailFeedback
+  ]);
   const values = stored[STORAGE_KEYS.submittedUrlFeedback];
   submittedReviewIds = new Set(Array.isArray(values) ? values.filter((value) => typeof value === "string") : []);
+  const emailValues = stored[STORAGE_KEYS.submittedEmailFeedback];
+  submittedEmailReviewIds = new Set(Array.isArray(emailValues) ? emailValues.filter((value) => typeof value === "string") : []);
 }
 
 async function rememberSubmittedReview(clientEventId) {
@@ -257,6 +355,13 @@ async function rememberSubmittedReview(clientEventId) {
   const retained = [...submittedReviewIds].slice(-200);
   submittedReviewIds = new Set(retained);
   await chrome.storage.local.set({[STORAGE_KEYS.submittedUrlFeedback]: retained});
+}
+
+async function rememberSubmittedEmailReview(clientEventId) {
+  submittedEmailReviewIds.add(clientEventId);
+  const retained = [...submittedEmailReviewIds].slice(-200);
+  submittedEmailReviewIds = new Set(retained);
+  await chrome.storage.local.set({[STORAGE_KEYS.submittedEmailFeedback]: retained});
 }
 
 function renderIndicators(state, fusionResult) {
@@ -330,6 +435,7 @@ function renderState(state) {
   renderWebsite(latestState);
   renderReview(latestState);
   renderEmail(latestState);
+  renderEmailReview(latestState);
 }
 
 async function loadActiveTab() {
@@ -415,6 +521,7 @@ elements.reviewForm.addEventListener("submit", async (event) => {
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
         client_event_id: review.clientEventId,
+        url: review.url,
         verdict,
         classification: verdict === "INCORRECT" ? classification : undefined,
         reason: verdict === "INCORRECT" && reason ? reason : undefined,
@@ -425,9 +532,7 @@ elements.reviewForm.addEventListener("submit", async (event) => {
       let message = "BantAI could not submit feedback. Try again shortly.";
       try {
         const problem = await response.json();
-        if (typeof problem.detail === "string" && problem.detail.length <= 180) {
-          message = problem.detail;
-        }
+        message = feedbackErrorMessage(problem);
       } catch {
         // Keep the short local error for non-JSON failures.
       }
@@ -436,12 +541,63 @@ elements.reviewForm.addEventListener("submit", async (event) => {
     await rememberSubmittedReview(review.clientEventId);
     renderReview(latestState);
   } catch (error) {
-    elements.reviewMessage.textContent = error instanceof Error
-      ? error.message
-      : "BantAI could not submit feedback. Try again shortly.";
+    elements.reviewMessage.textContent = error instanceof TypeError
+      ? "BantAI Companion is unavailable. Start or restart it, then try again."
+      : error instanceof Error
+        ? error.message
+        : "BantAI could not submit feedback. Try again shortly.";
   } finally {
     reviewBusy = false;
     updateReviewControls();
+  }
+});
+
+elements.emailReviewForm.addEventListener("change", () => {
+  elements.emailReviewMessage.textContent = "";
+  updateEmailReviewControls();
+});
+
+elements.emailReviewForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const review = reviewableEmailResult(latestState);
+  const verdict = selectedEmailReviewValue("emailReviewVerdict");
+  const classification = selectedEmailReviewValue("emailReviewClassification");
+  const reason = elements.emailReviewReason.value;
+  if (!review || review.clientEventId !== emailReviewEventId) {
+    elements.emailReviewMessage.textContent = "This email result changed. Review the current result instead.";
+    renderEmailReview(latestState);
+    return;
+  }
+  if (!verdict || !elements.emailReviewConsent.checked || (verdict === "INCORRECT" && !classification)) {
+    elements.emailReviewMessage.textContent = "Select your feedback and confirm the encrypted email report before submitting.";
+    updateEmailReviewControls();
+    return;
+  }
+
+  emailReviewBusy = true;
+  elements.emailReviewMessage.textContent = "";
+  updateEmailReviewControls();
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "BANTAI_SUBMIT_EMAIL_FEEDBACK",
+      tab_id: activeTabId,
+      verdict,
+      classification: verdict === "INCORRECT" ? classification : undefined,
+      reason: verdict === "INCORRECT" && reason ? reason : undefined,
+      confirmed: true
+    });
+    if (!response?.ok) {
+      throw new Error(response?.detail || "BantAI could not submit this email report.");
+    }
+    await rememberSubmittedEmailReview(review.clientEventId);
+    renderEmailReview(latestState);
+  } catch (error) {
+    elements.emailReviewMessage.textContent = error instanceof Error
+      ? error.message
+      : "BantAI could not submit this email report. Try again shortly.";
+  } finally {
+    emailReviewBusy = false;
+    updateEmailReviewControls();
   }
 });
 
@@ -491,8 +647,13 @@ elements.unpairButton.addEventListener("click", async () => {
     const response = await fetch("http://127.0.0.1:8000/companion/unpair", {method: "POST"});
     if (!response.ok) throw new Error("Disconnect failed");
     submittedReviewIds.clear();
+    submittedEmailReviewIds.clear();
     reviewEventId = null;
-    await chrome.storage.local.remove(STORAGE_KEYS.submittedUrlFeedback);
+    emailReviewEventId = null;
+    await chrome.storage.local.remove([
+      STORAGE_KEYS.submittedUrlFeedback,
+      STORAGE_KEYS.submittedEmailFeedback
+    ]);
     await loadPairingState();
     await chrome.runtime.sendMessage({type: "BANTAI_PAIRING_CHANGED"});
   } catch {

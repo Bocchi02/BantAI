@@ -212,7 +212,7 @@ class ProjectInvariantTests(unittest.TestCase):
         web_app = read("web/app/BantAIApp.tsx")
 
         self.assertIn("def require_detection_access", server)
-        self.assertEqual(server.count("Depends(require_detection_access)"), 4)
+        self.assertEqual(server.count("Depends(require_detection_access)"), 5)
         self.assertIn("def access_status", companion)
         self.assertIn('"detection_enabled": authenticated', companion)
         self.assertIn("async function checkDetectionAccess", worker)
@@ -241,12 +241,72 @@ class ProjectInvariantTests(unittest.TestCase):
             popup.index('elements.pairingForm.addEventListener("submit"')
         ]
         self.assertIn('/companion/url-feedback', submit_handler)
+        self.assertIn('url: review.url', submit_handler)
         self.assertIn('confirmed: true', submit_handler)
+        self.assertIn('BantAI Companion is unavailable', submit_handler)
+        self.assertIn('feedbackErrorMessage(problem)', submit_handler)
         self.assertNotIn('/companion/url-feedback', popup[:popup.index('elements.reviewForm.addEventListener("submit"')])
         self.assertIn('confirmed: Literal[True]', server)
         self.assertIn('/api/v1/url-reports/from-device-activity', platform)
         self.assertIn('confirmed: true', web_app)
         self.assertNotIn('onClick={() => void submit("CORRECT")}', web_app)
+
+    def test_email_training_reports_keep_bodies_encrypted_and_out_of_admin_responses(self) -> None:
+        platform = read("shared_platform/app/main.py")
+        schemas = read("shared_platform/app/schemas.py")
+        web_app = read("web/app/BantAIApp.tsx")
+
+        self.assertIn('confirmed: Literal[True]', schemas)
+        self.assertIn('body_ciphertext=encrypt_text(body)', platform)
+        self.assertNotIn('decrypt_text(report.body_ciphertext)', platform)
+        self.assertNotIn('decrypt_text(candidate.body_ciphertext)', platform)
+        self.assertIn('"body_included": bool(report.body_ciphertext)', platform)
+        self.assertIn('/api/v1/admin/email-reports', platform)
+        export_endpoint = platform[
+            platform.index('@app.get("/api/v1/admin/training-data/export.csv")') :
+            platform.index('@app.get("/api/v1/admin/url-reports")')
+        ]
+        self.assertIn('Depends(admin_user)', export_endpoint)
+        self.assertIn('RESTRICTED_TRAINING_PROCESS_ONLY', export_endpoint)
+        self.assertNotIn('decrypt_text(candidate.body_ciphertext)', export_endpoint)
+        self.assertNotIn('body_fingerprint', export_endpoint)
+        self.assertIn('Submit encrypted report', web_app)
+        self.assertNotIn('body_ciphertext:', web_app)
+        self.assertNotIn('body_fingerprint:', web_app)
+
+    def test_extension_email_feedback_is_explicit_and_uses_the_current_opened_email(self) -> None:
+        server = read("backend/server.py")
+        platform = read("shared_platform/app/main.py")
+        worker = read("extension/background/service-worker.js")
+        popup = read("extension/popup/popup.js")
+        popup_html = read("extension/popup/popup.html")
+        gmail = read("extension/content/gmail-extractor.js")
+
+        self.assertIn('id="emailReviewForm"', popup_html)
+        self.assertIn('id="emailReviewConsent" type="checkbox"', popup_html)
+        self.assertIn('id="emailReviewSubmit" class="review-submit" type="submit" disabled', popup_html)
+        self.assertNotRegex(popup_html, r'name="emailReview(?:Verdict|Classification)"[^>]*\schecked')
+        submit_handler = popup[
+            popup.index('elements.emailReviewForm.addEventListener("submit"') :
+            popup.index('elements.pairingForm.addEventListener("submit"')
+        ]
+        self.assertIn('BANTAI_SUBMIT_EMAIL_FEEDBACK', submit_handler)
+        self.assertIn('confirmed: true', submit_handler)
+        self.assertIn('emailReviewConsent.checked', submit_handler)
+        self.assertNotIn('body:', submit_handler)
+        self.assertIn('async function extractCurrentEmailForFeedback', worker)
+        self.assertIn('buildEmailFingerprint(', worker)
+        self.assertIn('/companion/email-feedback', worker)
+        self.assertIn('body:\n              payload.body', worker)
+        self.assertIn('BANTAI_GMAIL_GET_OPEN_EMAIL', gmail)
+        self.assertIn('/companion/email-feedback', server)
+        self.assertIn('/api/v1/email-reports/from-device-activity', platform)
+
+    def test_dashboard_does_not_show_the_help_improve_card(self) -> None:
+        web_app = read("web/app/BantAIApp.tsx")
+        dashboard = web_app[web_app.index("function DashboardPage") : web_app.index("function ConnectionItem")]
+        self.assertNotIn("DetectionFeedbackCard", dashboard)
+        self.assertNotIn("HELP IMPROVE BANTAI", dashboard)
 
     def test_automatic_email_popup_waits_for_complete_cloud_result(self) -> None:
         worker = read("extension/background/service-worker.js")

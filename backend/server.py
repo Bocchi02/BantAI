@@ -180,6 +180,7 @@ class CompanionUrlFeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     client_event_id: str = Field(min_length=8, max_length=128)
+    url: str = Field(min_length=8, max_length=2048)
     verdict: Literal["CORRECT", "INCORRECT", "UNSURE"]
     classification: Optional[Literal["LEGITIMATE", "SUSPICIOUS"]] = None
     reason: Optional[
@@ -195,6 +196,38 @@ class CompanionUrlFeedbackRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_explicit_correction(self) -> "CompanionUrlFeedbackRequest":
+        if self.verdict == "INCORRECT" and self.classification is None:
+            raise ValueError("Incorrect feedback requires a legitimate or suspicious correction.")
+        if self.verdict != "INCORRECT" and self.classification is not None:
+            raise ValueError("Only incorrect feedback may include a corrected classification.")
+        return self
+
+
+class CompanionEmailFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    provider: Literal["gmail", "outlook", "yahoo"]
+    sender: str = Field(default="", max_length=320)
+    subject: str = Field(default="", max_length=500)
+    body: str = Field(min_length=1, max_length=10_000)
+    verdict: Literal["CORRECT", "INCORRECT", "UNSURE"]
+    classification: Optional[Literal["LEGITIMATE", "SUSPICIOUS"]] = None
+    reason: Optional[
+        Literal[
+            "TRUSTED_OR_OFFICIAL",
+            "INCORRECT_WARNING",
+            "MISSED_WARNING",
+            "IMPERSONATION_OR_DECEPTIVE",
+            "OTHER",
+        ]
+    ] = None
+    confirmed: Literal[True]
+
+    @model_validator(mode="after")
+    def require_explicit_email_feedback(self) -> "CompanionEmailFeedbackRequest":
+        if not self.body.strip():
+            raise ValueError("Email body is required.")
         if self.verdict == "INCORRECT" and self.classification is None:
             raise ValueError("Incorrect feedback requires a legitimate or suspicious correction.")
         if self.verdict != "INCORRECT" and self.classification is not None:
@@ -698,6 +731,19 @@ def submit_companion_url_feedback(request: CompanionUrlFeedbackRequest) -> dict:
 
     try:
         return companion_manager.submit_url_feedback(request.model_dump(exclude_none=True))
+    except CompanionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post(
+    "/companion/email-feedback",
+    dependencies=[Depends(require_detection_access)],
+)
+def submit_companion_email_feedback(request: CompanionEmailFeedbackRequest) -> dict:
+    """Forward an explicitly confirmed report for the currently opened email."""
+
+    try:
+        return companion_manager.submit_email_feedback(request.model_dump(exclude_none=True))
     except CompanionError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
