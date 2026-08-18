@@ -39,9 +39,13 @@ class FakeResponse:
 class FailoverModels:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.configs: list[FakeTypes.GenerateContentConfig] = []
+        self.contents: list[str] = []
 
     def generate_content(self, *, model, contents, config):
         self.calls.append(model)
+        self.configs.append(config)
+        self.contents.append(contents)
         if model == "gemini-3.6-flash":
             raise SyntheticQuotaError("RESOURCE_EXHAUSTED")
         return FakeResponse()
@@ -130,6 +134,27 @@ class GeminiProviderTests(unittest.TestCase):
         )
         self.assertEqual(provider.active_model, "gemini-3.5-flash-lite")
         self.assertTrue(provider.review_metadata()["fallback_used"])
+
+    def test_pasted_message_review_requests_a_detailed_taglish_aware_response(self) -> None:
+        client = FakeClient()
+        provider = GeminiProvider(
+            api_key="synthetic",
+            model="gemini-3.5-flash-lite",
+            fallback_model="",
+            client=client,
+        )
+        provider._client_and_types = lambda: (client, FakeTypes)
+
+        provider.review({
+            "analysis_type": "PASTED_MESSAGE",
+            "message_text": "Paki-send ang code para hindi ma-block ang account mo.",
+        })
+
+        config = client.models.configs[-1].values
+        self.assertEqual(1536, config["max_output_tokens"])
+        self.assertIn("English, Filipino, and Taglish", config["system_instruction"])
+        self.assertIn("three to six distinct", config["system_instruction"])
+        self.assertIn("UNTRUSTED_PASTED_MESSAGE_JSON", client.models.contents[-1])
 
 
 if __name__ == "__main__":

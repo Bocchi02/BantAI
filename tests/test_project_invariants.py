@@ -311,6 +311,31 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertNotIn("DetectionFeedbackCard", dashboard)
         self.assertNotIn("HELP IMPROVE BANTAI", dashboard)
 
+    def test_pasted_message_review_is_explicit_cloud_only_and_not_persisted(self) -> None:
+        cloud = read("shared_platform/app/cloud.py")
+        platform = read("shared_platform/app/main.py")
+        schemas = read("shared_platform/app/schemas.py")
+        web_app = read("web/app/BantAIApp.tsx")
+
+        self.assertIn('PASTED_MESSAGE_MODEL = "gemini-3.5-flash-lite"', cloud)
+        self.assertIn('redact_text(message)', cloud)
+        self.assertIn('fallback_model=""', cloud)
+        endpoint = platform[
+            platform.index('@app.post("/api/v1/message-review")') :
+            platform.index('@app.post("/api/v1/cloud-review/url")')
+        ]
+        self.assertIn('Depends(csrf_protected)', endpoint)
+        self.assertNotIn('db:', endpoint)
+        self.assertNotIn('encrypt_text', endpoint)
+        self.assertIn('confirmed: Literal[True]', schemas)
+        page = web_app[web_app.index('function MessageReviewPage') : web_app.index('function ActivityPage')]
+        self.assertIn('type="checkbox"', page)
+        self.assertIn('confirmed: true', page)
+        self.assertIn('Analyze pasted text', page)
+        self.assertIn('not a final BantAI email result', page)
+        self.assertNotIn('localStorage', page)
+        self.assertNotIn('sessionStorage', page)
+
     def test_automatic_email_popup_waits_for_complete_cloud_result(self) -> None:
         worker = read("extension/background/service-worker.js")
         function = worker[worker.index("async function analyzeOpenedEmail") : worker.index("async function openFiveSecondPopup")]

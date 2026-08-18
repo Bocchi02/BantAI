@@ -61,6 +61,20 @@ class EmailRequest(StrictModel):
     email: EmailStr
 
 
+class PastedMessageReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    message: str = Field(min_length=1, max_length=10_000)
+    confirmed: Literal[True]
+
+    @field_validator("message")
+    @classmethod
+    def require_visible_message_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Message text is required.")
+        return value
+
+
 class ProfileUpdateRequest(StrictModel):
     first_name: str = Field(min_length=1, max_length=80)
     middle_name: str | None = Field(default=None, max_length=80)

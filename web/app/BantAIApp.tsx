@@ -16,6 +16,19 @@ type FeedbackSource = "RECENT_DETECTION" | "MANUAL_ENTRY";
 type TrainingStatus = "PENDING" | "APPROVED" | "REJECTED" | "INCONCLUSIVE";
 type AdminReviewAction = "APPROVE" | "REJECT" | "INCONCLUSIVE";
 
+type PastedMessageReviewResult = {
+  status: "COMPLETE" | "UNAVAILABLE";
+  assessment: Outcome | null;
+  confidence: "LOW" | "MEDIUM" | "HIGH" | null;
+  indicators: { category: string; severity: "CONTEXTUAL" | "STRONG" | "CRITICAL"; evidence: string }[];
+  reasoning_summary: string;
+  recommended_action: string;
+  failure_reason?: string;
+  stored: false;
+  redacted_before_ai: true;
+  analysis_scope: "PASTED_TEXT_ONLY";
+};
+
 type User = {
   id: string;
   email: string;
@@ -170,7 +183,7 @@ type ConnectionStatus = {
 const COMPANION_URL =
   process.env.NEXT_PUBLIC_BANTAI_COMPANION_URL || "http://127.0.0.1:8000";
 
-type PageName = "dashboard" | "activity" | "reports" | "email-reports" | "devices" | "profile" | "admin" | "review-reports" | "admin-email-reports" | "training-data" | "users";
+type PageName = "dashboard" | "activity" | "message-review" | "reports" | "email-reports" | "devices" | "profile" | "admin" | "review-reports" | "admin-email-reports" | "training-data" | "users";
 
 const OUTCOMES: { value: Outcome; label: string; short: string }[] = [
   { value: "NO_STRONG_WARNING_SIGNS", label: "No strong warning signs", short: "No warning signs" },
@@ -484,6 +497,7 @@ function AppShell({ user, page, navigate, children }: { user: User; page: PageNa
   const nav = [
     { id: "dashboard" as const, icon: "⌂", label: "Dashboard" },
     { id: "activity" as const, icon: "≡", label: "Activity" },
+    { id: "message-review" as const, icon: "✦", label: "AI message check" },
     { id: "reports" as const, icon: "!", label: "URL reports" },
     { id: "email-reports" as const, icon: "✉", label: "Email reports" },
     { id: "devices" as const, icon: "◇", label: "Paired devices" },
@@ -857,6 +871,81 @@ function RangePicker({ value, onChange }: { value: number; onChange: (value: num
 
 function DashboardSkeleton() {
   return <div className="skeleton-wrap" aria-busy="true"><div className="skeleton-row"><span /><span /></div><span className="skeleton-large" /><span className="skeleton-large" /></div>;
+}
+
+function MessageReviewPage() {
+  const [message, setMessage] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<PastedMessageReviewResult | null>(null);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!message.trim() || !confirmed) return;
+    setBusy(true);
+    setError("");
+    setResult(null);
+    try {
+      setResult(await api<PastedMessageReviewResult>("/message-review", {
+        method: "POST",
+        body: JSON.stringify({ message, confirmed: true }),
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "BantAI could not review this message.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = () => {
+    setMessage("");
+    setConfirmed(false);
+    setResult(null);
+    setError("");
+  };
+
+  const assessmentTitle = result?.assessment === "SUSPICIOUS_SIGNS_FOUND"
+    ? "AI found suspicious wording"
+    : result?.assessment === "NEEDS_CAUTION"
+      ? "AI review suggests caution"
+      : "No strong warning signs in the pasted text";
+  const confidenceLabel = result?.confidence === "HIGH"
+    ? "High"
+    : result?.confidence === "MEDIUM"
+      ? "Moderate"
+      : "Limited";
+
+  return (
+    <>
+      <PageHeader eyebrow="ON-DEMAND AI REVIEW" title="Check a message" description="Paste an email body, SMS, chat, or other message for a one-time contextual review." />
+      {error && <Notice type="error">{error}</Notice>}
+      <div className="message-review-layout">
+        <section className="card message-review-card" aria-labelledby="message-review-form-title">
+          <div className="card-header"><div><p className="eyebrow">PASTED TEXT</p><h2 id="message-review-form-title">What message would you like to check?</h2></div></div>
+          <form className="message-review-form" onSubmit={submit}>
+            <label><span>Message text</span><textarea value={message} onChange={(event) => { setMessage(event.target.value); setResult(null); }} maxLength={10_000} placeholder="Paste the message here. Remove any details you do not want processed." aria-describedby="message-review-help message-review-count" required /></label>
+            <div className="message-review-meta"><p id="message-review-help">BantAI redacts reasonably detectable OTPs, phone numbers, email addresses, cards, and account identifiers before the AI request.</p><span id="message-review-count">{message.length.toLocaleString()} / 10,000</span></div>
+            <label className="message-review-consent"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span><strong>Review this text with Cloud AI</strong><small>I understand the redacted text will be sent to Cloud AI for this one-time analysis. It will not be saved to activity or training data.</small></span></label>
+            <div className="message-review-actions"><button className="button primary" type="submit" disabled={busy || !message.trim() || !confirmed}>{busy ? "Reviewing message..." : "Analyze pasted text"}</button><button className="button ghost" type="button" onClick={clear} disabled={busy || (!message && !result)}>Clear</button></div>
+          </form>
+        </section>
+        <aside className="message-review-guidance" aria-label="AI message check limitations">
+          <span className="message-review-guidance-icon" aria-hidden="true">✦</span>
+          <div><p className="eyebrow light">CONTEXTUAL SIGNAL ONLY</p><h2>One part of the picture</h2><p>This check analyzes only the wording you paste. It does not inspect the sender, email headers, attachments, websites, or your local XLM-R model.</p><ul><li>English, Filipino, and Taglish scam context is reviewed</li><li>Language or code-switching alone is never a warning sign</li><li>No message is added to history or training data</li><li>No links are opened or followed</li></ul></div>
+        </aside>
+      </div>
+      {result?.status === "UNAVAILABLE" && <section className="card message-review-unavailable" role="status"><span aria-hidden="true">!</span><div><p className="eyebrow">AI REVIEW UNAVAILABLE</p><h2>Message review could not be completed</h2><p>{result.reasoning_summary} {result.recommended_action}</p></div></section>}
+      {result?.status === "COMPLETE" && result.assessment && <section className={cx("card", "message-review-result", `message-result-${result.assessment.toLowerCase()}`)} aria-live="polite">
+        <div className="message-result-heading"><span className="message-result-icon" aria-hidden="true">{result.assessment === "NO_STRONG_WARNING_SIGNS" ? "✓" : "!"}</span><div><p className="eyebrow">CLOUD AI TEXT SIGNAL</p><h2>{assessmentTitle}</h2></div></div>
+        <div className="message-result-summary"><div className="message-result-section-header"><div><p className="eyebrow">DETAILED ASSESSMENT</p><h3>Why BantAI reached this result</h3></div><div className="message-result-confidence"><span>Text-only confidence</span><strong>{confidenceLabel}</strong></div></div><p>{result.reasoning_summary}</p></div>
+        <div className="message-result-section-header indicators-heading"><div><p className="eyebrow">OBSERVED WORDING</p><h3>{result.indicators.length > 0 ? `${result.indicators.length} contextual indicator${result.indicators.length === 1 ? "" : "s"}` : "No specific warning indicators"}</h3></div></div>
+        {result.indicators.length > 0 ? <div className="message-indicators" aria-label="Observed message indicators">{result.indicators.map((indicator, index) => <article key={`${indicator.category}-${index}`}><div className="message-indicator-meta"><span>{indicator.severity.toLowerCase()}</span><em>Signal {index + 1}</em></div><strong>{indicator.category}</strong><p>{indicator.evidence}</p></article>)}</div> : <p className="message-indicators-empty">The pasted wording did not provide a specific scam or social-engineering signal. This does not verify the sender or message.</p>}
+        <div className="message-recommendation"><strong>Safer next steps</strong><p>{result.recommended_action}</p></div>
+        <p className="message-result-disclaimer"><strong>Cloud-only review:</strong> This is not a final BantAI email result and cannot confirm that a message is legitimate or malicious.</p>
+      </section>}
+    </>
+  );
 }
 
 function ActivityPage() {
@@ -1465,7 +1554,7 @@ function ProfilePage({ user, onUserChanged, onSignOut }: { user: User; onUserCha
 function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserChanged: (user: User) => void; onSignedOut: () => void }) {
   const initialPage = ((typeof window === "undefined" ? "dashboard" : window.location.pathname.split("/")[1]) || "dashboard") as PageName;
   const allowed = useMemo<PageName[]>(
-    () => user.role === "ADMIN" ? ["dashboard", "activity", "reports", "email-reports", "devices", "profile", "admin", "review-reports", "admin-email-reports", "training-data", "users"] : ["dashboard", "activity", "reports", "email-reports", "devices", "profile"],
+    () => user.role === "ADMIN" ? ["dashboard", "activity", "message-review", "reports", "email-reports", "devices", "profile", "admin", "review-reports", "admin-email-reports", "training-data", "users"] : ["dashboard", "activity", "message-review", "reports", "email-reports", "devices", "profile"],
     [user.role],
   );
   const [page, setPage] = useState<PageName>(allowed.includes(initialPage) ? initialPage : "dashboard");
@@ -1484,6 +1573,7 @@ function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserC
     <AppShell user={user} page={page} navigate={navigate}>
       {page === "dashboard" && <DashboardPage onViewActivity={() => navigate("activity")} onPairDevice={() => navigate("devices")} />}
       {page === "activity" && <ActivityPage />}
+      {page === "message-review" && <MessageReviewPage />}
       {page === "reports" && <UrlReportsPage />}
       {page === "email-reports" && <EmailReportsPage />}
       {page === "devices" && <DevicesPage />}

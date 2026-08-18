@@ -18,6 +18,17 @@ local RF/XLM-R models, the paired browser extension/device credential, and the
 shared Cloud AI gateway. It checks readiness without sending a test LLM prompt
 or exposing provider credentials.
 
+The authenticated **AI message check** page lets a user paste an email body,
+SMS, chat, or other message for an explicit one-time review with
+`gemini-3.5-flash-lite`. Submission requires visible text, a consent checkbox,
+and a separate button press. The shared platform applies BantAI's existing
+sensitive-data redaction and context limit before it contacts Gemini. The page
+shows the assessment, observable indicators, and suggested action while making
+clear that sender identity, headers, links, attachments, and the local XLM-R
+model were not checked. It never saves the pasted text or outcome to activity,
+reports, browser storage, or training data, and it never presents the
+cloud-only signal as the final hybrid email result.
+
 Users may explicitly review a completed URL result from the dashboard,
 activity history, or manually opened extension popup. The interface requires a
 selected response and a separate submit action; it never infers feedback from

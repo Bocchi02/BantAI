@@ -12,8 +12,10 @@ from pydantic import ValidationError
 
 from .base import LLMProvider, LLMResponseError, LLMUnavailableError
 from .prompt_builder import (
+    PASTED_MESSAGE_SYSTEM_INSTRUCTION,
     SYSTEM_INSTRUCTION,
     URL_SYSTEM_INSTRUCTION,
+    build_pasted_message_review_prompt,
     build_review_prompt,
     build_url_review_prompt,
 )
@@ -195,16 +197,16 @@ class GeminiProvider(LLMProvider):
 
         client, types = self._client_and_types()
         is_url_review = payload.get("analysis_type") == "URL_CONTEXT"
-        prompt = (
-            build_url_review_prompt(payload)
-            if is_url_review
-            else build_review_prompt(payload)
-        )
-        system_instruction = (
-            URL_SYSTEM_INSTRUCTION
-            if is_url_review
-            else SYSTEM_INSTRUCTION
-        )
+        is_pasted_message_review = payload.get("analysis_type") == "PASTED_MESSAGE"
+        if is_url_review:
+            prompt = build_url_review_prompt(payload)
+            system_instruction = URL_SYSTEM_INSTRUCTION
+        elif is_pasted_message_review:
+            prompt = build_pasted_message_review_prompt(payload)
+            system_instruction = PASTED_MESSAGE_SYSTEM_INSTRUCTION
+        else:
+            prompt = build_review_prompt(payload)
+            system_instruction = SYSTEM_INSTRUCTION
         attempt = 0
         while True:
             selected_model = self.active_model
@@ -225,7 +227,13 @@ class GeminiProvider(LLMProvider):
                 response_mime_type="application/json",
                 response_schema=_gemini_response_schema(),
                 thinking_config=thinking_config,
-                max_output_tokens=(512 if is_url_review else 1024),
+                max_output_tokens=(
+                    512
+                    if is_url_review
+                    else 1536
+                    if is_pasted_message_review
+                    else 1024
+                ),
             )
             try:
                 response = client.models.generate_content(

@@ -25,6 +25,12 @@ AUTOMATED / STATIC
 [ ] SAFE webmail URL cannot lower email guidance
 [ ] Duplicate cloud review uses the TTL cache
 [ ] Raw bodies are not logged and no API key exists in extension source
+[ ] Pasted-message API requires a signed-in session, CSRF token, visible text, and explicit consent
+[ ] Pasted-message cloud payload is redacted and limited before provider review
+[ ] Pasted-message review uses exactly gemini-3.5-flash-lite with no fallback model
+[ ] Pasted-message text and result are not persisted to activity, reports, or training data
+[ ] Pasted-message review recognizes contextual Taglish scam requests without flagging language alone
+[ ] Pasted-message response can return detailed reasoning, practical actions, and up to six supported indicators
 
 MANUAL CHROME / EDGE
 --------------------
@@ -83,6 +89,10 @@ MANUAL CHROME / EDGE
 [ ] Raw RF probability, threshold, and signal remain under More details
 [ ] Probabilities and thresholds appear only under More details
 [ ] No email link or webpage is opened automatically
+[ ] AI message check accepts pasted email/SMS/chat text only after consent and button press
+[ ] AI message check clearly states that sender, headers, links, attachments, and XLM-R were not checked
+[ ] AI message check displays Cloud AI failure without echoing or retaining the pasted text
+[ ] AI message check outcome is labeled as a cloud-only text signal, not a final email result
 
 Do not mark browser items complete unless they were actually tested in a supported
 Chromium browser. Do not make a real Gemini call as part of automated testing.

@@ -98,6 +98,64 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("api_key", health.text.lower())
         self.assertNotIn("GEMINI_API_KEY", health.text)
 
+    def test_pasted_message_review_requires_login_csrf_and_explicit_confirmation(self) -> None:
+        synthetic_message = "Synthetic request: send the sample OTP 123456 to billing@example.test."
+        payload = {"message": synthetic_message, "confirmed": True}
+        self.assertEqual(401, self.client.post("/api/v1/message-review", json=payload).status_code)
+
+        self.login("user@example.com", "correct horse battery staple")
+        self.assertEqual(403, self.client.post("/api/v1/message-review", json=payload).status_code)
+        self.assertEqual(
+            422,
+            self.client.post(
+                "/api/v1/message-review",
+                headers=self.csrf(),
+                json={"message": synthetic_message, "confirmed": False},
+            ).status_code,
+        )
+        self.assertEqual(
+            422,
+            self.client.post(
+                "/api/v1/message-review",
+                headers=self.csrf(),
+                json={"message": "   \n", "confirmed": True},
+            ).status_code,
+        )
+
+        synthetic_result = {
+            "status": "COMPLETE",
+            "assessment": "SUSPICIOUS_SIGNS_FOUND",
+            "confidence": "HIGH",
+            "indicators": [{
+                "category": "Credential request",
+                "severity": "CRITICAL",
+                "evidence": "The text asks the recipient to provide an OTP.",
+            }],
+            "reasoning_summary": "The wording requests a sensitive one-time code.",
+            "recommended_action": "Do not share the code; verify the request independently.",
+            "model": "gemini-3.5-flash-lite",
+            "stored": False,
+            "redacted_before_ai": True,
+            "analysis_scope": "PASTED_TEXT_ONLY",
+        }
+        with SessionLocal() as db:
+            activity_before = db.scalar(select(func.count(ActivityEvent.id))) or 0
+            reports_before = db.scalar(select(func.count(EmailReport.id))) or 0
+        with patch("shared_platform.app.main.review_pasted_message", return_value=synthetic_result) as review:
+            response = self.client.post(
+                "/api/v1/message-review",
+                headers=self.csrf(),
+                json=payload,
+            )
+        self.assertEqual(200, response.status_code, response.text)
+        review.assert_called_once_with(synthetic_message)
+        self.assertEqual("gemini-3.5-flash-lite", response.json()["model"])
+        self.assertFalse(response.json()["stored"])
+        self.assertNotIn(synthetic_message, response.text)
+        with SessionLocal() as db:
+            self.assertEqual(activity_before, db.scalar(select(func.count(ActivityEvent.id))) or 0)
+            self.assertEqual(reports_before, db.scalar(select(func.count(EmailReport.id))) or 0)
+
     def test_registration_is_active_immediately_and_email_account_flows_are_absent(self) -> None:
         registration = self.client.post(
             "/api/v1/auth/register",

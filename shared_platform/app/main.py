@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from .cloud import connection_status as cloud_connection_status
 from .cloud import review as cloud_review
+from .cloud import review_pasted_message
 from .config import settings
 from .database import Base, SessionLocal, engine, get_db
 from .dependencies import (
@@ -66,6 +67,7 @@ from .schemas import (
     LoginRequest,
     PairingConsumeRequest,
     PASSWORD_REQUIREMENTS,
+    PastedMessageReviewRequest,
     ProfileUpdateRequest,
     RegisterRequest,
     UrlCloudReviewRequest,
@@ -114,7 +116,8 @@ class RateLimitMiddleware:
             return await self.app(scope, receive, send)
         path = scope.get("path", "")
         is_account_request = path.startswith("/api/v1/auth/") or path == "/api/v1/pairing/consume"
-        is_cloud_request = path.startswith("/api/v1/cloud-review/")
+        is_message_review = path == "/api/v1/message-review"
+        is_cloud_request = path.startswith("/api/v1/cloud-review/") or is_message_review
         if is_account_request or is_cloud_request:
             client = (scope.get("client") or ("unknown",))[0]
             key = f"{client}:{path}"
@@ -123,7 +126,7 @@ class RateLimitMiddleware:
                 bucket = self.buckets[key]
                 while bucket and bucket[0] <= now - 300:
                     bucket.popleft()
-                limit = 20 if is_account_request else 120
+                limit = 20 if is_account_request or is_message_review else 120
                 limited = len(bucket) >= limit
                 if not limited:
                     bucket.append(now)
@@ -999,6 +1002,14 @@ def dashboard(days: int = Query(30, ge=7, le=90), current: CurrentWebUser = Depe
 @app.post("/api/v1/cloud-review/email")
 def email_cloud_review(payload: EmailCloudReviewRequest, _: CurrentDevice = Depends(current_device)) -> dict:
     return cloud_review({"analysis_type": "EMAIL_CONTEXT", "provider": payload.provider, "sender": payload.redacted_sender, "subject": payload.redacted_subject, "email_context": payload.redacted_context, "email_model": payload.email_model, "local_indicators": payload.local_indicators})
+
+
+@app.post("/api/v1/message-review")
+def pasted_message_review(
+    payload: PastedMessageReviewRequest,
+    _: CurrentWebUser = Depends(csrf_protected),
+) -> dict:
+    return review_pasted_message(payload.message)
 
 
 @app.post("/api/v1/cloud-review/url")

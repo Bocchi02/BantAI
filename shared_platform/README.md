@@ -33,6 +33,26 @@ activity is normalized to scheme, hostname, and optional port before
 encryption. A separate, explicit email-report workflow may accept a body only
 after the user confirms that it may be retained for future training review.
 
+## Pasted message AI check
+
+Signed-in users and administrators can open **AI message check**, paste up to
+10,000 characters from an email, SMS, or chat, and explicitly consent to a
+one-time Cloud AI review. `POST /api/v1/message-review` requires the user's
+session and CSRF token, rejects blank text and missing consent, and is
+rate-limited independently from automatic detector traffic.
+
+The service redacts reasonably detectable OTPs, phone numbers, email
+addresses, payment-card values, and account identifiers, then limits the cloud
+payload to compact beginning/ending context. The review uses exactly
+`gemini-3.5-flash-lite`. The pasted text, redacted payload, and result are not
+written to activity history, reports, training candidates, or application
+logs. This cloud-only wording assessment does not run the local XLM-R model and
+is not a final fused BantAI email result. Its language-aware prompt evaluates
+English, Filipino, and Taglish social-engineering context, including contextual
+credential, payment, urgency, account-threat, secrecy, and prize patterns. A
+language choice, code-switching, or isolated Taglish phrase is never treated as
+a warning sign without suspicious intent in the surrounding message.
+
 ## Website result reports
 
 Signed-in users can paste a website address and report it as one they believe
