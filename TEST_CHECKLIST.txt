@@ -68,7 +68,8 @@ MANUAL CHROME / EDGE
 [ ] The admin Email reports page shows sender/subject and body-present metadata but cannot open the body
 [ ] Approval creates a de-identified encrypted email training candidate without a user ID
 [ ] The admin Training data page indicates encrypted body content without displaying it
-[ ] The admin can export the current approved URL/email inventory as a UTF-8 CSV manifest
+[ ] The admin has separate buttons for URL CSV and email CSV exports
+[ ] Each CSV contains only columns for its own candidate type
 [ ] The CSV respects the selected legitimate/suspicious filter and neutralizes spreadsheet formulas
 [ ] The CSV contains no email body plaintext/ciphertext, internal fingerprint, activity ID, or reporter identity
 [ ] Email CSV rows use candidate IDs and mark body access as restricted-training-process only

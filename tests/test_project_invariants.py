@@ -267,6 +267,9 @@ class ProjectInvariantTests(unittest.TestCase):
             platform.index('@app.get("/api/v1/admin/url-reports")')
         ]
         self.assertIn('Depends(admin_user)', export_endpoint)
+        self.assertIn('candidate_type: Literal["URL", "EMAIL"]', export_endpoint)
+        self.assertIn('bantai-url-training-data', export_endpoint)
+        self.assertIn('bantai-email-training-manifest', export_endpoint)
         self.assertIn('RESTRICTED_TRAINING_PROCESS_ONLY', export_endpoint)
         self.assertNotIn('decrypt_text(candidate.body_ciphertext)', export_endpoint)
         self.assertNotIn('body_fingerprint', export_endpoint)

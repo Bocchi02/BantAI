@@ -355,6 +355,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); outline: 
 .training-export-details { display: grid; max-width: 620px; justify-items: end; gap: 9px; }
 .training-export-details > p { max-width: 600px; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; text-align: right; }
 .training-export-details > p strong { color: var(--navy-800); }
+.training-section-actions { z-index: 1; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.training-export-button { min-height: 36px; padding: 0 12px; font-size: 10px; }
 .training-label-totals { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 13px; color: var(--muted); font-size: 9px; }
 .training-label-totals span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #8b989e; }
@@ -456,6 +458,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); outline: 
   .training-export-details { max-width: none; justify-items: start; }
   .training-export-details > p { max-width: none; text-align: left; }
   .training-label-totals { justify-content: flex-start; }
+  .training-section-actions { align-items: flex-end; flex-direction: column; }
 }
 
 @media (max-width: 590px) {
@@ -499,6 +502,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); outline: 
   .model-version-chip { grid-column: 2; justify-self: start; }
   .email-training-heading { grid-template-columns: 43px minmax(0, 1fr); }
   .collection-status { grid-column: 2; justify-self: start; }
+  .email-training-heading .training-section-actions { grid-column: 1 / -1; width: 100%; align-items: stretch; }
+  .training-export-button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

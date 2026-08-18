@@ -1211,7 +1211,7 @@ function TrainingDataPage() {
   const [data, setData] = useState<TrainingDataInventory | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"URL" | "EMAIL" | null>(null);
 
   const load = useCallback(() => {
     const params = new URLSearchParams({ page: String(page), page_size: "25" });
@@ -1232,15 +1232,14 @@ function TrainingDataPage() {
     }
   };
 
-  const exportManifest = async () => {
-    setExporting(true);
+  const exportManifest = async (candidateType: "URL" | "EMAIL") => {
+    setExporting(candidateType);
     setError("");
     setMessage("");
     try {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ candidate_type: candidateType });
       if (labelFilter) params.set("approved_label", labelFilter);
-      const suffix = params.size ? `?${params}` : "";
-      const { blob, filename } = await downloadApiFile(`/admin/training-data/export.csv${suffix}`);
+      const { blob, filename } = await downloadApiFile(`/admin/training-data/export.csv?${params}`);
       const href = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = href;
@@ -1249,17 +1248,17 @@ function TrainingDataPage() {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(href);
-      setMessage("Training manifest exported. Email bodies and encrypted body values were not included.");
+      setMessage(candidateType === "URL" ? "URL training data exported." : "Email training manifest exported. Email bodies and encrypted body values were not included.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "BantAI could not export the training-data manifest.");
+      setError(reason instanceof Error ? reason.message : `BantAI could not export the ${candidateType.toLowerCase()} training data.`);
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
   return (
     <>
-      <PageHeader eyebrow="ADMINISTRATION" title="Training data" description="Inspect the approved, de-identified records currently reserved for a future, separately authorized model-training cycle." actions={<button className="button primary" type="button" onClick={() => void exportManifest()} disabled={exporting || !data || data.urls.candidate_total + data.emails.candidate_total === 0}>{exporting ? "Preparing CSV..." : "Export CSV manifest"}</button>} />
+      <PageHeader eyebrow="ADMINISTRATION" title="Training data" description="Inspect the approved, de-identified records currently reserved for a future, separately authorized model-training cycle." />
       <section className="training-summary-grid" aria-label="Training data summary">
         <article className="card training-summary-card url-summary">
           <span className="training-summary-icon" aria-hidden="true">◎</span>
@@ -1277,15 +1276,15 @@ function TrainingDataPage() {
       {message && <Notice type="success">{message}</Notice>}
       <section className="card filter-card training-filter-card">
         <label><span>Approved training label</span><select value={labelFilter} onChange={(event) => { setPage(1); setLabelFilter(event.target.value); }}><option value="">All approved labels</option><option value="LEGITIMATE">Legitimate</option><option value="SUSPICIOUS">Suspicious</option></select></label>
-        <div className="training-export-details"><p><strong>CSV manifest only.</strong> Approved labels and review metadata are included. Email bodies are not included and remain encrypted for a future restricted training process.</p>{data && <div className="training-label-totals" aria-label="URL candidate label totals"><span><i className="legend-dot safe" />{data.urls.label_counts.LEGITIMATE} legitimate</span><span><i className="legend-dot suspicious" />{data.urls.label_counts.SUSPICIOUS} suspicious</span></div>}</div>
+        <div className="training-export-details"><p><strong>Separate CSV exports.</strong> URL and email candidates download independently. Email bodies are not included and remain encrypted for a future restricted training process.</p>{data && <div className="training-label-totals" aria-label="URL candidate label totals"><span><i className="legend-dot safe" />{data.urls.label_counts.LEGITIMATE} legitimate</span><span><i className="legend-dot suspicious" />{data.urls.label_counts.SUSPICIOUS} suspicious</span></div>}</div>
       </section>
       <section className="card activity-card training-dataset-card" aria-labelledby="url-training-title">
-        <div className="card-header"><div><p className="eyebrow">COLLECTED URLS</p><h2 id="url-training-title">Approved URL candidates</h2></div><span className="privacy-chip">No user identity</span></div>
+        <div className="card-header"><div><p className="eyebrow">COLLECTED URLS</p><h2 id="url-training-title">Approved URL candidates</h2></div><div className="training-section-actions"><span className="privacy-chip">No user identity</span><button className="button primary training-export-button" type="button" onClick={() => void exportManifest("URL")} disabled={exporting !== null || !data || data.urls.candidate_total === 0}>{exporting === "URL" ? "Preparing URL CSV..." : "Export URL CSV"}</button></div></div>
         {data && data.urls.items.length > 0 ? <div className="table-scroll"><table className="data-table training-table"><thead><tr><th>Complete website address</th><th>Approved label</th><th>Detector result</th><th>Evidence</th><th>Model</th><th>Last approved</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{data.urls.items.map((candidate) => <tr key={candidate.id}><td><strong className="origin-cell" title={candidate.url}>{candidate.url}</strong><small className="reviewed-date">{feedbackSourceLabel(candidate.feedback_source)} · {feedbackReasonLabel(candidate.feedback_reason)}</small></td><td><span className={cx("training-label", candidate.approved_label.toLowerCase())}>{approvedTrainingLabel(candidate.approved_label)}</span></td><td><StatusBadge outcome={candidate.detector_outcome} /></td><td><strong>{candidate.evidence_count}</strong> {candidate.evidence_count === 1 ? "review" : "reviews"}</td><td>{candidate.detector_model_version}</td><td>{niceDate(candidate.last_approved_at)}</td><td><button className="text-button" type="button" onClick={() => void copyUrl(candidate.url)}>Copy address</button></td></tr>)}</tbody></table></div> : data ? <EmptyState icon="◎" title="No approved URL candidates" text="Approve suitable entries from User reviews before they appear in this training inventory." /> : <DashboardSkeleton />}
         {data && data.urls.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.urls.pages}</span><button disabled={page >= data.urls.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
       </section>
       <section className="card activity-card email-training-card" aria-labelledby="email-training-title">
-        <div className="email-training-heading"><span className="email-training-icon" aria-hidden="true">✉</span><div><p className="eyebrow">COLLECTED EMAILS</p><h2 id="email-training-title">Encrypted email candidates</h2></div><span className="collection-status encrypted">Bodies encrypted</span></div>
+        <div className="email-training-heading"><span className="email-training-icon" aria-hidden="true">✉</span><div><p className="eyebrow">COLLECTED EMAILS</p><h2 id="email-training-title">Encrypted email candidates</h2></div><div className="training-section-actions"><span className="collection-status encrypted">Bodies encrypted</span><button className="button primary training-export-button" type="button" onClick={() => void exportManifest("EMAIL")} disabled={exporting !== null || !data || data.emails.candidate_total === 0}>{exporting === "EMAIL" ? "Preparing email CSV..." : "Export email CSV"}</button></div></div>
         {data && data.emails.items.length > 0 ? <div className="table-scroll"><table className="data-table training-table email-candidate-table"><thead><tr><th>Email reference</th><th>Approved label</th><th>Detector result</th><th>Training content</th><th>Evidence</th><th>Model</th><th>Last approved</th></tr></thead><tbody>{data.emails.items.map((candidate) => <tr key={candidate.id}><td><strong className="origin-cell" title={candidate.subject || "No subject"}>{candidate.subject || "No subject"}</strong><small className="reviewed-date">{candidate.sender} · {candidate.provider.toUpperCase()}</small></td><td><span className={cx("training-label", candidate.approved_label.toLowerCase())}>{approvedTrainingLabel(candidate.approved_label)}</span></td><td><StatusBadge outcome={candidate.detector_outcome} /></td><td><span className="encrypted-content-chip">Encrypted · {candidate.body_character_count.toLocaleString()} chars</span></td><td><strong>{candidate.evidence_count}</strong></td><td>{candidate.detector_model_version}</td><td>{niceDate(candidate.last_approved_at)}</td></tr>)}</tbody></table></div> : data ? <div className="email-training-empty"><strong>No approved encrypted email candidates.</strong><p>{data.emails.privacy_message}</p><p>Users must explicitly submit an email and an administrator must approve it before it appears here.</p></div> : <DashboardSkeleton />}
         {data && data.emails.pages > 1 && <div className="pagination"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>← Previous</button><span>Page {page} of {data.emails.pages}</span><button disabled={page >= data.emails.pages} onClick={() => setPage((value) => value + 1)}>Next →</button></div>}
       </section>

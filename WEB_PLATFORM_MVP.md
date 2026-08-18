@@ -35,9 +35,10 @@ Administrators have two related pages:
 - **Training data** inventories approved, de-identified URL candidates for a
   future offline RF training cycle. It provides label filters, evidence totals,
   model-version context, and individual addresses without reporter identity.
-  Administrators can export the filtered inventory as a CSV manifest. The
-  manifest includes approved labels and candidate metadata, neutralizes
-  spreadsheet-formula prefixes, and excludes reporter IDs and fingerprints.
+  Administrators have separate URL CSV and email CSV export buttons. Each file
+  contains only its candidate type's columns and respects the approved-label
+  filter. Both exports neutralize spreadsheet-formula prefixes and exclude
+  reporter IDs and fingerprints.
 
 Users also have an explicit **Email reports** form. It collects provider,
 sender, subject, body, the displayed detector outcome, the user's proposed

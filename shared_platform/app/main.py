@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from time import monotonic
+from typing import Literal
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
@@ -1106,94 +1107,84 @@ def admin_training_data(
 
 @app.get("/api/v1/admin/training-data/export.csv")
 def export_admin_training_data(
+    candidate_type: Literal["URL", "EMAIL"] = Query(...),
     approved_label: AdminUrlAssessment | None = None,
     _: CurrentWebUser = Depends(admin_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Export a de-identified candidate manifest without exposing email bodies."""
+    """Export one candidate dataset without exposing email bodies."""
 
     if approved_label == AdminUrlAssessment.INCONCLUSIVE:
         raise HTTPException(status_code=422, detail="Training candidates must be legitimate or suspicious.")
 
-    url_filters = [UrlTrainingCandidate.approved_label == approved_label] if approved_label else []
-    email_filters = [EmailTrainingCandidate.approved_label == approved_label] if approved_label else []
-    url_rows = db.scalars(
-        select(UrlTrainingCandidate)
-        .where(*url_filters)
-        .order_by(UrlTrainingCandidate.last_approved_at.desc())
-    ).all()
-    email_rows = db.scalars(
-        select(EmailTrainingCandidate)
-        .where(*email_filters)
-        .order_by(EmailTrainingCandidate.last_approved_at.desc())
-    ).all()
-
-    fieldnames = [
-        "candidate_type",
-        "candidate_id",
-        "url",
-        "provider",
-        "sender",
-        "subject",
-        "approved_label",
-        "detector_outcome",
-        "feedback_reason",
-        "feedback_source",
-        "detector_model_version",
-        "evidence_count",
-        "body_available",
-        "body_character_count",
-        "content_access",
-        "first_approved_at_utc",
-        "last_approved_at_utc",
-    ]
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\r\n")
-    writer.writeheader()
+    if candidate_type == "URL":
+        fieldnames = [
+            "candidate_id", "url", "approved_label", "detector_outcome",
+            "feedback_reason", "feedback_source", "detector_model_version",
+            "evidence_count", "content_access", "first_approved_at_utc",
+            "last_approved_at_utc",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\r\n")
+        writer.writeheader()
+        filters = [UrlTrainingCandidate.approved_label == approved_label] if approved_label else []
+        candidates = db.scalars(
+            select(UrlTrainingCandidate)
+            .where(*filters)
+            .order_by(UrlTrainingCandidate.last_approved_at.desc())
+        ).all()
+        for candidate in candidates:
+            writer.writerow({
+                "candidate_id": candidate.id,
+                "url": csv_safe_cell(decrypt_text(candidate.origin_encrypted)),
+                "approved_label": candidate.approved_label.value,
+                "detector_outcome": candidate.detector_outcome.value,
+                "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else "",
+                "feedback_source": candidate.feedback_source.value,
+                "detector_model_version": csv_safe_cell(candidate.detector_model_version),
+                "evidence_count": candidate.evidence_count,
+                "content_access": "INCLUDED_IN_URL_EXPORT",
+                "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
+                "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
+            })
+        filename_prefix = "bantai-url-training-data"
+    else:
+        fieldnames = [
+            "candidate_id", "provider", "sender", "subject", "approved_label",
+            "detector_outcome", "feedback_reason", "feedback_source",
+            "detector_model_version", "evidence_count", "body_available",
+            "body_character_count", "content_access", "first_approved_at_utc",
+            "last_approved_at_utc",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\r\n")
+        writer.writeheader()
+        filters = [EmailTrainingCandidate.approved_label == approved_label] if approved_label else []
+        candidates = db.scalars(
+            select(EmailTrainingCandidate)
+            .where(*filters)
+            .order_by(EmailTrainingCandidate.last_approved_at.desc())
+        ).all()
+        for candidate in candidates:
+            writer.writerow({
+                "candidate_id": candidate.id,
+                "provider": csv_safe_cell(candidate.provider),
+                "sender": csv_safe_cell(decrypt_text(candidate.sender_encrypted)),
+                "subject": csv_safe_cell(decrypt_text(candidate.subject_encrypted)),
+                "approved_label": candidate.approved_label.value,
+                "detector_outcome": candidate.detector_outcome.value,
+                "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else "",
+                "feedback_source": "EXPLICIT_EMAIL_REPORT",
+                "detector_model_version": csv_safe_cell(candidate.detector_model_version),
+                "evidence_count": candidate.evidence_count,
+                "body_available": "TRUE" if candidate.body_ciphertext else "FALSE",
+                "body_character_count": candidate.body_character_count,
+                "content_access": "RESTRICTED_TRAINING_PROCESS_ONLY",
+                "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
+                "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
+            })
+        filename_prefix = "bantai-email-training-manifest"
 
-    for candidate in url_rows:
-        writer.writerow({
-            "candidate_type": "URL",
-            "candidate_id": candidate.id,
-            "url": csv_safe_cell(decrypt_text(candidate.origin_encrypted)),
-            "provider": "",
-            "sender": "",
-            "subject": "",
-            "approved_label": candidate.approved_label.value,
-            "detector_outcome": candidate.detector_outcome.value,
-            "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else "",
-            "feedback_source": candidate.feedback_source.value,
-            "detector_model_version": csv_safe_cell(candidate.detector_model_version),
-            "evidence_count": candidate.evidence_count,
-            "body_available": "FALSE",
-            "body_character_count": "",
-            "content_access": "INCLUDED_IN_MANIFEST",
-            "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
-            "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
-        })
-
-    for candidate in email_rows:
-        writer.writerow({
-            "candidate_type": "EMAIL",
-            "candidate_id": candidate.id,
-            "url": "",
-            "provider": csv_safe_cell(candidate.provider),
-            "sender": csv_safe_cell(decrypt_text(candidate.sender_encrypted)),
-            "subject": csv_safe_cell(decrypt_text(candidate.subject_encrypted)),
-            "approved_label": candidate.approved_label.value,
-            "detector_outcome": candidate.detector_outcome.value,
-            "feedback_reason": candidate.feedback_reason.value if candidate.feedback_reason else "",
-            "feedback_source": "EXPLICIT_EMAIL_REPORT",
-            "detector_model_version": csv_safe_cell(candidate.detector_model_version),
-            "evidence_count": candidate.evidence_count,
-            "body_available": "TRUE" if candidate.body_ciphertext else "FALSE",
-            "body_character_count": candidate.body_character_count,
-            "content_access": "RESTRICTED_TRAINING_PROCESS_ONLY",
-            "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
-            "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
-        })
-
-    filename = f"bantai-training-manifest-{utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    filename = f"{filename_prefix}-{utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
         content="\ufeff" + output.getvalue(),
         media_type="text/csv; charset=utf-8",

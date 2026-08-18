@@ -61,10 +61,12 @@ that users explicitly submitted and record a manual decision. The separate
 **Training data** page lists only approved, de-identified URL candidates,
 including their curated label, detector outcome, evidence count, model version,
 and approval dates. It never exposes the reporting user or an activity ID.
-Administrators can download a UTF-8 CSV manifest containing the same approved
-candidate labels and metadata. Spreadsheet-formula prefixes are neutralized,
-the response is marked `no-store`, and no reporter identifier or internal
-fingerprint is included.
+Administrators can download URL and email candidates through separate UTF-8
+CSV buttons. The URL export contains only URL-specific columns, while the email
+export contains email metadata and body-availability fields. The current
+approved-label filter applies to either file. Spreadsheet-formula prefixes are
+neutralized, responses are marked `no-store`, and no reporter identifier or
+internal fingerprint is included.
 
 This exception applies only after an explicit submit action. Routine activity
 history and URL cloud review remain origin-only. A full address attached to

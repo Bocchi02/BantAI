@@ -432,24 +432,26 @@ class PlatformTests(unittest.TestCase):
             422,
             admin_client.get("/api/v1/admin/training-data?approved_label=INCONCLUSIVE").status_code,
         )
-        exported = admin_client.get("/api/v1/admin/training-data/export.csv")
+        self.assertEqual(422, admin_client.get("/api/v1/admin/training-data/export.csv").status_code)
+        exported = admin_client.get("/api/v1/admin/training-data/export.csv?candidate_type=URL")
         self.assertEqual(200, exported.status_code, exported.text)
         self.assertTrue(exported.headers["content-type"].startswith("text/csv"))
-        self.assertIn("attachment; filename=", exported.headers["content-disposition"])
+        self.assertIn('filename="bantai-url-training-data-', exported.headers["content-disposition"])
         self.assertEqual("no-store", exported.headers["cache-control"])
         export_rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
         self.assertEqual(1, len(export_rows))
-        self.assertEqual("URL", export_rows[0]["candidate_type"])
         self.assertEqual(
             "https://review.example.test/private/path?secret=1#fragment",
             export_rows[0]["url"],
         )
         self.assertEqual("LEGITIMATE", export_rows[0]["approved_label"])
-        self.assertEqual("INCLUDED_IN_MANIFEST", export_rows[0]["content_access"])
+        self.assertEqual("INCLUDED_IN_URL_EXPORT", export_rows[0]["content_access"])
+        self.assertNotIn("sender", export_rows[0])
+        self.assertNotIn("body_available", export_rows[0])
         self.assertNotIn("user_id", exported.text)
         self.assertNotIn("origin_fingerprint", exported.text)
         filtered_export = admin_client.get(
-            "/api/v1/admin/training-data/export.csv?approved_label=SUSPICIOUS"
+            "/api/v1/admin/training-data/export.csv?candidate_type=URL&approved_label=SUSPICIOUS"
         )
         self.assertEqual([], list(csv.DictReader(io.StringIO(filtered_export.content.decode("utf-8-sig")))))
 
@@ -660,7 +662,7 @@ class PlatformTests(unittest.TestCase):
         response = self.client.get("/api/v1/admin/users")
         self.assertEqual(403, response.status_code)
         self.assertEqual(403, self.client.get("/api/v1/admin/training-data").status_code)
-        self.assertEqual(403, self.client.get("/api/v1/admin/training-data/export.csv").status_code)
+        self.assertEqual(403, self.client.get("/api/v1/admin/training-data/export.csv?candidate_type=URL").status_code)
         self.assertEqual(403, self.client.get("/api/v1/admin/email-reports").status_code)
 
     def test_explicit_email_review_encrypts_body_and_never_exposes_it_to_admin(self) -> None:
@@ -747,16 +749,17 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("body_ciphertext", training_data.text)
         self.assertNotIn("body_fingerprint", training_data.text)
 
-        exported = admin_client.get("/api/v1/admin/training-data/export.csv")
+        exported = admin_client.get("/api/v1/admin/training-data/export.csv?candidate_type=EMAIL")
         self.assertEqual(200, exported.status_code, exported.text)
+        self.assertIn('filename="bantai-email-training-manifest-', exported.headers["content-disposition"])
         rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
         self.assertEqual(1, len(rows))
-        self.assertEqual("EMAIL", rows[0]["candidate_type"])
         self.assertEqual("LEGITIMATE", rows[0]["approved_label"])
         self.assertEqual("TRUE", rows[0]["body_available"])
         self.assertEqual(str(len(synthetic_body)), rows[0]["body_character_count"])
         self.assertEqual("RESTRICTED_TRAINING_PROCESS_ONLY", rows[0]["content_access"])
         self.assertEqual("'=Synthetic invoice review", rows[0]["subject"])
+        self.assertNotIn("url", rows[0])
         self.assertNotIn(synthetic_body, exported.text)
         self.assertNotIn("body_ciphertext", exported.text)
         self.assertNotIn("body_fingerprint", exported.text)

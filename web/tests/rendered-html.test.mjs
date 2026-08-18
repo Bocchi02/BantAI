@@ -63,7 +63,10 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(source, /\/email-reports/);
   assert.doesNotMatch(source, /candidate\.body_(?:ciphertext|fingerprint)|report\.body_(?:ciphertext|fingerprint)/);
   assert.match(source, /\/admin\/training-data/);
-  assert.match(source, /Export CSV manifest/);
+  assert.match(source, /Export URL CSV/);
+  assert.match(source, /Export email CSV/);
+  assert.match(source, /candidate_type: candidateType/);
+  assert.match(source, /Separate CSV exports/);
   assert.match(source, /\/admin\/training-data\/export\.csv/);
   assert.match(source, /Email bodies are not included/);
   assert.match(source, /future restricted training process/);
