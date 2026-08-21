@@ -13,15 +13,34 @@ async function render(path = "/") {
   );
 }
 
-test("server-renders BantAI account experience", async () => {
+test("server-renders the BantAI public and account experience", async () => {
+  const landingResponse = await render("/");
+  assert.equal(landingResponse.status, 200);
+  const landingHtml = await landingResponse.text();
+  assert.match(landingHtml, /Clear warnings\. Private by design\./i);
+
   const response = await render("/login");
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /BantAI/);
-  assert.match(html, /Decision support for safer browsing/i);
+  assert.match(html, /Privacy-first local website and email detection/i);
   assert.doesNotMatch(html, /Forgot password|email verification|account recovery/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("landing page explains scope, privacy, and non-guarantee outcomes", async () => {
+  const source = await readFile(new URL("../app/BantAIApp.tsx", import.meta.url), "utf8");
+  assert.match(source, /Local AI models/);
+  assert.match(source, /Contextual cloud review/);
+  assert.match(source, /Gmail/);
+  assert.match(source, /Outlook/);
+  assert.match(source, /Yahoo Mail/);
+  assert.match(source, /No strong warning signs/);
+  assert.match(source, /Needs caution/);
+  assert.match(source, /Suspicious signs found/);
+  assert.match(source, /No made-up risk score/);
+  assert.match(source, /not a guarantee/i);
 });
 
 test("keeps sensitive configuration out of rendered HTML", async () => {

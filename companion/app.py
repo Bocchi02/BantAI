@@ -25,6 +25,8 @@ if str(BACKEND) not in sys.path:
 
 os.environ.setdefault("BANTAI_MODEL_DIR", str(ROOT / "models" / "email_text_xlmr_v1" / "checkpoint-15666"))
 os.environ.setdefault("BANTAI_RF_MODEL_PATH", str(ROOT / "models" / "url_random_forest_v4b" / "bantai_rf_url_model_v4b_optimized.joblib"))
+os.environ.setdefault("BANTAI_PLATFORM_API", "http://127.0.0.1:8080")
+os.environ.setdefault("BANTAI_WEB_DASHBOARD", "http://localhost:3000")
 
 import server  # noqa: E402
 

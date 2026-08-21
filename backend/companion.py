@@ -80,7 +80,14 @@ class CompanionManager:
         self._lock = threading.RLock()
 
     def _empty(self) -> dict[str, Any]:
-        return {"device_id": None, "device_token": None, "device_label": None, "user_email": None, "outbox": []}
+        return {
+            "device_id": None,
+            "device_token": None,
+            "device_label": None,
+            "user_email": None,
+            "credential_storage": None,
+            "outbox": [],
+        }
 
     def _load(self) -> dict[str, Any]:
         if not self.state_path.is_file():
@@ -103,7 +110,15 @@ class CompanionManager:
     def _credential(self, state: dict[str, Any]) -> str | None:
         device_id = state.get("device_id")
         if platform.system() == "Windows" and keyring is not None and device_id:
-            return keyring.get_password(CREDENTIAL_SERVICE, str(device_id))
+            try:
+                credential = keyring.get_password(CREDENTIAL_SERVICE, str(device_id))
+                if credential:
+                    return credential
+            except Exception:
+                # Some background Windows logon sessions cannot open Credential
+                # Manager (WinError 1312). In that case the DPAPI-protected
+                # companion state remains the secure local fallback.
+                pass
         return state.get("device_token")
 
     def _request(self, path: str, payload: dict[str, Any], *, authenticated: bool = True) -> dict[str, Any]:
@@ -187,8 +202,6 @@ class CompanionManager:
 
     def pair(self, code: str, device_label: str) -> dict[str, Any]:
         with self._lock:
-            if platform.system() == "Windows" and keyring is None:
-                raise CompanionError("Windows Credential Manager support is not installed.")
             result = self._request(
                 "/pairing/consume",
                 {"code": code.strip().upper(), "device_label": device_label.strip()},
@@ -196,19 +209,37 @@ class CompanionManager:
             )
             state = self._load()
             previous_device_id = state.get("device_id")
+            previous_storage = state.get("credential_storage")
+            stored_in_keyring = False
             if platform.system() == "Windows" and keyring is not None:
-                if previous_device_id:
+                if previous_device_id and previous_storage != "WINDOWS_DPAPI":
                     try:
                         keyring.delete_password(CREDENTIAL_SERVICE, str(previous_device_id))
                     except keyring.errors.PasswordDeleteError:
                         pass
-                keyring.set_password(CREDENTIAL_SERVICE, str(result["device_id"]), result["device_token"])
+                try:
+                    keyring.set_password(CREDENTIAL_SERVICE, str(result["device_id"]), result["device_token"])
+                    stored_in_keyring = True
+                except Exception:
+                    # The state file is itself protected with the current
+                    # Windows user's DPAPI key, so pairing can complete safely
+                    # even when Credential Manager is unavailable to a
+                    # background Companion process.
+                    stored_in_keyring = False
+            windows = platform.system() == "Windows"
             state.update(
                 {
                     "device_id": result["device_id"],
-                    "device_token": result["device_token"] if platform.system() != "Windows" else None,
+                    "device_token": result["device_token"] if not windows or not stored_in_keyring else None,
                     "device_label": device_label.strip(),
                     "user_email": result.get("user_email"),
+                    "credential_storage": (
+                        "WINDOWS_CREDENTIAL_MANAGER"
+                        if windows and stored_in_keyring
+                        else "WINDOWS_DPAPI"
+                        if windows
+                        else "FILESYSTEM_ONLY"
+                    ),
                 }
             )
             self._save(state)
@@ -217,6 +248,16 @@ class CompanionManager:
     def status(self) -> dict[str, Any]:
         with self._lock:
             state = self._load()
+            windows = platform.system() == "Windows"
+            credential_protection = state.get("credential_storage")
+            if not credential_protection:
+                credential_protection = (
+                    "WINDOWS_CREDENTIAL_MANAGER"
+                    if windows and keyring is not None and not state.get("device_token")
+                    else "WINDOWS_DPAPI"
+                    if windows
+                    else "FILESYSTEM_ONLY"
+                )
             return {
                 "paired": bool(state.get("device_id") and self._credential(state)),
                 "device_id": state.get("device_id"),
@@ -224,8 +265,8 @@ class CompanionManager:
                 "user_email": state.get("user_email"),
                 "queued_events": len(state.get("outbox") or []),
                 "platform_configured": bool(self.platform_url),
-                "credential_protection": "WINDOWS_CREDENTIAL_MANAGER" if platform.system() == "Windows" else "FILESYSTEM_ONLY",
-                "outbox_protection": "WINDOWS_DPAPI" if platform.system() == "Windows" else "FILESYSTEM_ONLY",
+                "credential_protection": credential_protection,
+                "outbox_protection": "WINDOWS_DPAPI" if windows else "FILESYSTEM_ONLY",
             }
 
     def access_status(self) -> dict[str, Any]:
@@ -266,7 +307,12 @@ class CompanionManager:
         with self._lock:
             state = self._load()
             device_id = state.get("device_id")
-            if platform.system() == "Windows" and keyring is not None and device_id:
+            if (
+                platform.system() == "Windows"
+                and keyring is not None
+                and device_id
+                and state.get("credential_storage") != "WINDOWS_DPAPI"
+            ):
                 try:
                     keyring.delete_password(CREDENTIAL_SERVICE, str(device_id))
                 except keyring.errors.PasswordDeleteError:

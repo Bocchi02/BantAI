@@ -3,21 +3,21 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-  title: "BantAI — Decision support for safer browsing",
+  title: "BantAI — Clear warnings. Private by design.",
   description:
-    "Review privacy-minimized website and email checks from your BantAI companion.",
+    "Privacy-first local website and email detection with minimized shared insights and clear decision support.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
   openGraph: {
     title: "BantAI — Private by design. Clear when it matters.",
     description: "Privacy-first local detection with clear, minimized shared insights.",
     type: "website",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "BantAI privacy-first decision support" }],
+    images: [{ url: "/og-landing.png", width: 1536, height: 1024, alt: "BantAI — Clear warnings. Private by design." }],
   },
   twitter: {
     card: "summary_large_image",
     title: "BantAI — Private by design. Clear when it matters.",
     description: "Privacy-first local detection with clear, minimized shared insights.",
-    images: ["/og.png"],
+    images: ["/og-landing.png"],
   },
 };
 

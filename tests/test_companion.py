@@ -14,6 +14,41 @@ from companion import CompanionManager
 
 
 class CompanionManagerTests(unittest.TestCase):
+    def test_windows_pairing_falls_back_to_dpapi_when_credential_manager_is_unavailable(self) -> None:
+        pairing_result = {
+            "device_id": "device-win",
+            "device_token": "synthetic-windows-device-token",
+            "user_email": "user@example.test",
+        }
+
+        def protect(value: bytes) -> bytes:
+            return b"dpapi-protected:" + value[::-1]
+
+        def unprotect(value: bytes) -> bytes:
+            self.assertTrue(value.startswith(b"dpapi-protected:"))
+            return value.removeprefix(b"dpapi-protected:")[::-1]
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch("companion.platform.system", return_value="Windows"), patch(
+                "companion._protect", side_effect=protect
+            ), patch("companion._unprotect", side_effect=unprotect), patch(
+                "companion.keyring"
+            ) as windows_keyring:
+                windows_keyring.set_password.side_effect = OSError(1312, "Credential Manager unavailable")
+                windows_keyring.get_password.side_effect = OSError(1312, "Credential Manager unavailable")
+                manager = CompanionManager()
+                manager.platform_url = "https://bantai.example.test"
+                manager.state_path = Path(temporary_directory) / "companion.dat"
+                with patch.object(manager, "_request", return_value=pairing_result):
+                    status = manager.pair("ABCD1234", "Windows computer")
+                state = manager._load()
+                stored_text = manager.state_path.read_text()
+
+        self.assertTrue(status["paired"])
+        self.assertEqual("WINDOWS_DPAPI", status["credential_protection"])
+        self.assertEqual("synthetic-windows-device-token", state["device_token"])
+        self.assertNotIn("synthetic-windows-device-token", stored_text)
+
     def test_detection_access_requires_an_authenticated_paired_device(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             with patch("companion.platform.system", return_value="Linux"):

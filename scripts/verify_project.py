@@ -330,6 +330,11 @@ def check_private_artifacts() -> None:
                 continue
 
             relative = path.relative_to(ROOT)
+            if any(part in {".git", ".venv", "node_modules"} for part in relative.parts):
+                # Dependency environments can contain library test fixtures
+                # that use model-like extensions. They are ignored local
+                # tooling, not BantAI model artifacts.
+                continue
 
             require(
                 relative.parts

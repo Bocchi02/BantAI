@@ -349,6 +349,149 @@ function LoadingPage({ error, onRetry }: { error?: string; onRetry?: () => void 
   );
 }
 
+function LandingPage({
+  authenticated,
+  onNavigate,
+}: {
+  authenticated: boolean;
+  onNavigate: (path: string) => void;
+}) {
+  return (
+    <main className="landing-page">
+      <header className="landing-header">
+        <Logo />
+        <nav className="landing-nav" aria-label="Landing page navigation">
+          <a href="#how-it-works">How it works</a>
+          <a href="#coverage">What it checks</a>
+          <a href="#privacy">Privacy</a>
+        </nav>
+        <div className="landing-header-actions">
+          {!authenticated && <button className="landing-sign-in" onClick={() => onNavigate("/login")}>Sign in</button>}
+          <button className="button primary" onClick={() => onNavigate(authenticated ? "/dashboard" : "/register")}>
+            {authenticated ? "Open dashboard" : "Create account"}
+          </button>
+        </div>
+      </header>
+
+      <section className="landing-hero" aria-labelledby="landing-title">
+        <div className="landing-hero-copy">
+          <p className="eyebrow">LOCAL DETECTION · PRIVACY-MINIMIZED INSIGHTS</p>
+          <h1 id="landing-title">Clear warnings.<br /><span>Private by design.</span></h1>
+          <p className="landing-lead">
+            BantAI checks websites and supported emails with local AI, adds contextual cloud review when needed,
+            and gives you a clear result without claiming certainty.
+          </p>
+          <div className="landing-hero-actions">
+            <button className="button primary landing-primary" onClick={() => onNavigate(authenticated ? "/dashboard" : "/register")}>
+              {authenticated ? "Go to your dashboard" : "Get started with BantAI"}
+              <span aria-hidden="true">→</span>
+            </button>
+            {!authenticated && <button className="button ghost landing-secondary" onClick={() => onNavigate("/login")}>I already have an account</button>}
+          </div>
+          <p className="landing-assurance"><span aria-hidden="true">●</span> Complete URLs and email content stay inside the local detector boundary</p>
+        </div>
+
+        <div className="landing-product" aria-label="Example BantAI website assessment">
+          <div className="landing-browser-bar">
+            <span className="landing-browser-controls" aria-hidden="true">● ● ●</span>
+            <span className="landing-address"><i aria-hidden="true">◇</i> secure-example.ph</span>
+            <span className="landing-ready"><i aria-hidden="true" /> Local models ready</span>
+          </div>
+          <div className="landing-product-body">
+            <div className="landing-result-heading">
+              <span className="landing-result-icon" aria-hidden="true">B</span>
+              <div><small>WEBSITE CHECK</small><strong>Address-bar analysis</strong></div>
+              <span className="landing-result-chip">Needs caution</span>
+            </div>
+            <div className="landing-result-card">
+              <p className="eyebrow">CURRENT WEBSITE</p>
+              <h2>secure-example.ph</h2>
+              <p>The address shows patterns worth checking before you enter passwords, codes, or payment details.</p>
+              <div className="landing-signal-row"><span>Local URL model</span><strong>Warning detected</strong></div>
+              <div className="landing-signal-row"><span>Contextual review</span><strong>Supporting evidence found</strong></div>
+            </div>
+            <p className="landing-result-note">BantAI supports decisions—it does not guarantee that a website is legitimate or malicious.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-trust" aria-label="BantAI protection layers">
+        <div><span aria-hidden="true">01</span><strong>Local AI models</strong><p>Website and email signals are checked on your computer.</p></div>
+        <div><span aria-hidden="true">02</span><strong>Contextual cloud review</strong><p>Only minimized, redacted evidence is reviewed when required.</p></div>
+        <div><span aria-hidden="true">03</span><strong>Clear final guidance</strong><p>Deterministic rules combine evidence into a human-readable outcome.</p></div>
+      </section>
+
+      <section className="landing-section landing-how" id="how-it-works" aria-labelledby="how-title">
+        <div className="landing-section-heading">
+          <p className="eyebrow">HOW BANTAI WORKS</p>
+          <h2 id="how-title">Protection that works quietly in the background.</h2>
+          <p>The Companion and browser extension handle the technical steps. You see the result and the evidence that matters.</p>
+        </div>
+        <div className="landing-steps">
+          <article><span aria-hidden="true">1</span><div><h3>Check locally</h3><p>Frozen URL and email models analyze the active address or supported opened email on your device.</p></div></article>
+          <article><span aria-hidden="true">2</span><div><h3>Add context safely</h3><p>Redacted cloud review adds context while local rules remain responsible for the final result.</p></div></article>
+          <article><span aria-hidden="true">3</span><div><h3>Understand the result</h3><p>Receive clear guidance, then review activity and submit corrections from your private dashboard.</p></div></article>
+        </div>
+      </section>
+
+      <section className="landing-section landing-coverage" id="coverage" aria-labelledby="coverage-title">
+        <div className="landing-coverage-copy">
+          <p className="eyebrow light">FOCUSED BY DESIGN</p>
+          <h2 id="coverage-title">The right signal for the right context.</h2>
+          <p>BantAI keeps website and email checks independent, so an ordinary webmail address never hides warning signs in an opened message.</p>
+          <div className="landing-provider-list" aria-label="Supported email providers">
+            <span>Gmail</span><span>Outlook</span><span>Yahoo Mail</span>
+          </div>
+        </div>
+        <div className="landing-check-grid">
+          <article><span className="landing-check-icon" aria-hidden="true">⌁</span><p className="eyebrow">WEBSITES</p><h3>Address-bar URL checks</h3><p>Analyzes the exact active-tab URL locally. Routine dashboard history stores only the website origin.</p></article>
+          <article><span className="landing-check-icon" aria-hidden="true">✉</span><p className="eyebrow">EMAIL</p><h3>Opened-message checks</h3><p>Supports Gmail, Outlook, and Yahoo Mail. Dashboard history keeps provider, sender, and subject—not the body.</p></article>
+        </div>
+      </section>
+
+      <section className="landing-section landing-outcomes" aria-labelledby="outcomes-title">
+        <div className="landing-section-heading compact">
+          <p className="eyebrow">RESULTS WITHOUT FALSE CERTAINTY</p>
+          <h2 id="outcomes-title">Three clear outcomes. No made-up risk score.</h2>
+        </div>
+        <div className="landing-outcome-grid">
+          <article className="landing-outcome safe"><span aria-hidden="true">✓</span><h3>No strong warning signs</h3><p>No strong warning sign was detected by the completed checks. This is not a guarantee of legitimacy.</p></article>
+          <article className="landing-outcome caution"><span aria-hidden="true">!</span><h3>Needs caution</h3><p>Some evidence deserves a closer look before you share information or continue.</p></article>
+          <article className="landing-outcome suspicious"><span aria-hidden="true">×</span><h3>Suspicious signs found</h3><p>Multiple warning signs were found. Pause and independently verify the website or sender.</p></article>
+        </div>
+      </section>
+
+      <section className="landing-section landing-privacy" id="privacy" aria-labelledby="privacy-title">
+        <div className="landing-privacy-mark" aria-hidden="true"><span>B</span></div>
+        <div className="landing-privacy-copy">
+          <p className="eyebrow light">PRIVACY BOUNDARY</p>
+          <h2 id="privacy-title">Your sensitive content is not dashboard content.</h2>
+          <p>Complete browsing paths and routine email bodies stay outside shared activity history. Cloud evidence is minimized and redacted before it leaves the local detector boundary.</p>
+        </div>
+        <ul>
+          <li><span aria-hidden="true">✓</span> Origin-only routine website history</li>
+          <li><span aria-hidden="true">✓</span> No stored routine email bodies</li>
+          <li><span aria-hidden="true">✓</span> Revocable paired-device access</li>
+          <li><span aria-hidden="true">✓</span> 90-day activity retention</li>
+        </ul>
+      </section>
+
+      <section className="landing-cta" aria-labelledby="landing-cta-title">
+        <div><p className="eyebrow light">READY WHEN YOU ARE</p><h2 id="landing-cta-title">Make the next click a more informed one.</h2><p>Set up your BantAI account, pair your computer, and let the Companion handle detection without a terminal.</p></div>
+        <button className="button light" onClick={() => onNavigate(authenticated ? "/dashboard" : "/register")}>
+          {authenticated ? "Open dashboard" : "Create your BantAI account"}<span aria-hidden="true">→</span>
+        </button>
+      </section>
+
+      <footer className="landing-footer">
+        <Logo />
+        <p>Decision support for safer browsing—not a guarantee that a website or email is legitimate.</p>
+        <span>© {new Date().getFullYear()} BantAI · v1.1</span>
+      </footer>
+    </main>
+  );
+}
+
 function AuthLayout({ children, eyebrow, title, description }: { children: ReactNode; eyebrow: string; title: string; description: string }) {
   return (
     <main className="auth-page">
@@ -1591,6 +1734,12 @@ export function BantAIApp() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [startupError, setStartupError] = useState("");
+  const [path, setPath] = useState(() => typeof window === "undefined" ? "/" : window.location.pathname);
+  const navigatePublic = (next: string) => {
+    history.pushState({}, "", next);
+    setPath(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const loadSession = useCallback(async () => {
     setLoading(true);
     setStartupError("");
@@ -1610,6 +1759,12 @@ export function BantAIApp() {
     const initial = window.setTimeout(() => void loadSession(), 0);
     return () => window.clearTimeout(initial);
   }, [loadSession]);
+  useEffect(() => {
+    const handler = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
+  if (path === "/") return <LandingPage authenticated={Boolean(user)} onNavigate={navigatePublic} />;
   if (loading) return <LoadingPage />;
   if (startupError) return <LoadingPage error={startupError} onRetry={() => void loadSession()} />;
   if (!user) return <AuthScreen onAuthenticated={setUser} />;
