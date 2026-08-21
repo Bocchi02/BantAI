@@ -18,6 +18,7 @@ test("server-renders the BantAI public and account experience", async () => {
   assert.equal(landingResponse.status, 200);
   const landingHtml = await landingResponse.text();
   assert.match(landingHtml, /Clear warnings\. Private by design\./i);
+  assert.match(landingHtml, /Get started with BantAI/i);
 
   const response = await render("/login");
   assert.equal(response.status, 200);
@@ -25,6 +26,7 @@ test("server-renders the BantAI public and account experience", async () => {
   const html = await response.text();
   assert.match(html, /BantAI/);
   assert.match(html, /Privacy-first local website and email detection/i);
+  assert.doesNotMatch(html, /Get started with BantAI/i);
   assert.doesNotMatch(html, /Forgot password|email verification|account recovery/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
@@ -41,6 +43,8 @@ test("landing page explains scope, privacy, and non-guarantee outcomes", async (
   assert.match(source, /Suspicious signs found/);
   assert.match(source, /No made-up risk score/);
   assert.match(source, /not a guarantee/i);
+  assert.doesNotMatch(source, /typeof window[^\n]+window\.location\.pathname/);
+  assert.doesNotMatch(source, /new Date\(\)\.getFullYear\(\)/);
 });
 
 test("keeps sensitive configuration out of rendered HTML", async () => {

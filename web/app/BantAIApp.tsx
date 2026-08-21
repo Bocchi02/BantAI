@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ComponentType, FormEvent, ReactNode, SVGProps, useCallback, useEffect, useMemo, useState } from "react";
 import { api, downloadApiFile, ApiError } from "./api";
 import { Logo } from "./BrandLogo";
 import {
@@ -699,7 +699,7 @@ function LandingPage({
       <footer className="w-full max-w-7xl mx-auto px-6 py-12 mt-auto border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
         <Logo light compact />
         <p className="text-center">Decision support for safer browsing—not a guarantee that a website or email is legitimate.</p>
-        <span>© {new Date().getFullYear()} BantAI · v1.1</span>
+        <span>© 2026 BantAI · v1.1</span>
       </footer>
     </main>
   );
@@ -752,10 +752,8 @@ function AuthLayout({ children, eyebrow, title, description }: { children: React
   );
 }
 
-function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void }) {
-  const [path, setPath] = useState(() => (
-    typeof window !== "undefined" && window.location.pathname === "/register" ? "/register" : "/login"
-  ));
+function AuthScreen({ onAuthenticated, initialPath }: { onAuthenticated: (user: User) => void; initialPath: string }) {
+  const [path, setPath] = useState(initialPath === "/register" ? "/register" : "/login");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -1092,7 +1090,7 @@ function NavButton({
   active,
   onClick,
 }: {
-  item: { id: PageName; icon: (props: any) => any; label: string };
+  item: { id: PageName; icon: ComponentType<SVGProps<SVGSVGElement>>; label: string };
   active: boolean;
   onClick: () => void;
 }) {
@@ -3263,8 +3261,8 @@ function ProfilePage({ user, onUserChanged, onSignOut }: { user: User; onUserCha
   );
 }
 
-function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserChanged: (user: User) => void; onSignedOut: () => void }) {
-  const initialPage = ((typeof window === "undefined" ? "dashboard" : window.location.pathname.split("/")[1]) || "dashboard") as PageName;
+function Application({ user, initialPath, onUserChanged, onSignedOut }: { user: User; initialPath: string; onUserChanged: (user: User) => void; onSignedOut: () => void }) {
+  const initialPage = (initialPath.split("/")[1] || "dashboard") as PageName;
   const allowed = useMemo<PageName[]>(
     () => user.role === "ADMIN" ? ["dashboard", "activity", "message-review", "reports", "email-reports", "devices", "profile", "admin", "review-reports", "admin-email-reports", "training-data", "users"] : ["dashboard", "activity", "message-review", "reports", "email-reports", "devices", "profile"],
     [user.role],
@@ -3299,11 +3297,11 @@ function Application({ user, onUserChanged, onSignedOut }: { user: User; onUserC
   );
 }
 
-export function BantAIApp() {
+export function BantAIApp({ initialPath }: { initialPath: string }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [startupError, setStartupError] = useState("");
-  const [path, setPath] = useState(() => typeof window === "undefined" ? "/" : window.location.pathname);
+  const [path, setPath] = useState(initialPath);
   const navigatePublic = (next: string) => {
     history.pushState({}, "", next);
     setPath(next);
@@ -3336,6 +3334,6 @@ export function BantAIApp() {
   if (path === "/") return <LandingPage authenticated={Boolean(user)} onNavigate={navigatePublic} />;
   if (loading) return <LoadingPage />;
   if (startupError) return <LoadingPage error={startupError} onRetry={() => void loadSession()} />;
-  if (!user) return <AuthScreen onAuthenticated={setUser} />;
-  return <Application user={user} onUserChanged={setUser} onSignedOut={() => setUser(null)} />;
+  if (!user) return <AuthScreen initialPath={path} onAuthenticated={setUser} />;
+  return <Application user={user} initialPath={path} onUserChanged={setUser} onSignedOut={() => setUser(null)} />;
 }

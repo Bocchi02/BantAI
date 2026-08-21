@@ -1,5 +1,5 @@
 import { BantAIApp } from "./BantAIApp";
 
 export default function Home() {
-  return <BantAIApp />;
+  return <BantAIApp initialPath="/" />;
 }
