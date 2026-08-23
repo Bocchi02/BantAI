@@ -14,7 +14,42 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def read_web_interface() -> str:
+    app_root = ROOT / "web" / "app"
+    paths = sorted((*app_root.rglob("*.js"), *app_root.rglob("*.jsx")))
+    return "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+
 class ProjectInvariantTests(unittest.TestCase):
+    def test_web_interface_uses_javascript_and_separate_route_views(self) -> None:
+        web_root = ROOT / "web"
+        typescript_sources = [
+            path
+            for pattern in ("*.ts", "*.tsx")
+            for path in web_root.rglob(pattern)
+            if not any(part in {"node_modules", "dist", ".next"} for part in path.parts)
+        ]
+        self.assertEqual(typescript_sources, [])
+
+        view_root = web_root / "app" / "views"
+        expected_views = {
+            "LandingView.jsx",
+            "AuthView.jsx",
+            "DashboardView.jsx",
+            "ActivityView.jsx",
+            "MessageReviewView.jsx",
+            "UrlReportsView.jsx",
+            "EmailReportsView.jsx",
+            "DevicesView.jsx",
+            "ProfileView.jsx",
+            "AdminOverviewView.jsx",
+            "AdminUrlReportsView.jsx",
+            "AdminEmailReportsView.jsx",
+            "TrainingDataView.jsx",
+            "UsersView.jsx",
+        }
+        self.assertEqual({path.name for path in view_root.glob("*.jsx")}, expected_views)
+
     def test_frozen_model_constants_are_unchanged(self) -> None:
         server = read("backend/server.py")
         self.assertRegex(server, r"EMAIL_THRESHOLD\s*=\s*0\.05\b")
@@ -209,7 +244,7 @@ class ProjectInvariantTests(unittest.TestCase):
         worker = read("extension/background/service-worker.js")
         popup = read("extension/popup/popup.js")
         popup_html = read("extension/popup/popup.html")
-        web_app = read("web/app/BantAIApp.tsx")
+        web_app = read_web_interface()
 
         self.assertIn("def require_detection_access", server)
         self.assertEqual(server.count("Depends(require_detection_access)"), 5)
@@ -231,7 +266,7 @@ class ProjectInvariantTests(unittest.TestCase):
         popup_html = read("extension/popup/popup.html")
         server = read("backend/server.py")
         platform = read("shared_platform/app/main.py")
-        web_app = read("web/app/BantAIApp.tsx")
+        web_app = read_web_interface()
 
         self.assertIn('id="reviewForm"', popup_html)
         self.assertIn('id="reviewSubmit" class="review-submit" type="submit" disabled', popup_html)
@@ -254,7 +289,7 @@ class ProjectInvariantTests(unittest.TestCase):
     def test_email_training_reports_keep_bodies_encrypted_and_out_of_admin_responses(self) -> None:
         platform = read("shared_platform/app/main.py")
         schemas = read("shared_platform/app/schemas.py")
-        web_app = read("web/app/BantAIApp.tsx")
+        web_app = read_web_interface()
 
         self.assertIn('confirmed: Literal[True]', schemas)
         self.assertIn('body_ciphertext=encrypt_text(body)', platform)
@@ -306,8 +341,7 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn('/api/v1/email-reports/from-device-activity', platform)
 
     def test_dashboard_does_not_show_the_help_improve_card(self) -> None:
-        web_app = read("web/app/BantAIApp.tsx")
-        dashboard = web_app[web_app.index("function DashboardPage") : web_app.index("function ConnectionItem")]
+        dashboard = read("web/app/views/DashboardView.jsx")
         self.assertNotIn("DetectionFeedbackCard", dashboard)
         self.assertNotIn("HELP IMPROVE BANTAI", dashboard)
 
@@ -315,7 +349,7 @@ class ProjectInvariantTests(unittest.TestCase):
         cloud = read("shared_platform/app/cloud.py")
         platform = read("shared_platform/app/main.py")
         schemas = read("shared_platform/app/schemas.py")
-        web_app = read("web/app/BantAIApp.tsx")
+        web_app = read("web/app/views/MessageReviewView.jsx")
 
         self.assertIn('PASTED_MESSAGE_MODEL = "gemini-3.5-flash-lite"', cloud)
         self.assertIn('redact_text(message)', cloud)
@@ -328,7 +362,7 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertNotIn('db:', endpoint)
         self.assertNotIn('encrypt_text', endpoint)
         self.assertIn('confirmed: Literal[True]', schemas)
-        page = web_app[web_app.index('function MessageReviewPage') : web_app.index('function ActivityPage')]
+        page = web_app
         self.assertIn('type="checkbox"', page)
         self.assertIn('confirmed: true', page)
         self.assertIn('Analyze pasted text', page)

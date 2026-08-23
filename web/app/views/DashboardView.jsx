@@ -1,0 +1,170 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { api } from "../api";
+import { GlobeIcon, MailIcon, LaptopIcon, RefreshCwIcon, AlertTriangleIcon, ArrowRightIcon } from "../Icons";
+import { cx, niceDate, relativeTime, StatusBadge, Notice, PageHeader, OutcomeChart, ActivityTable, RangePicker, DashboardSkeleton } from "../components/ViewShared";
+
+const COMPANION_URL = process.env.NEXT_PUBLIC_BANTAI_COMPANION_URL || "http://127.0.0.1:8000";
+function LatestCard({ type, item }) {
+    const isUrl = type === "URL";
+    return (<section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm flex gap-4">
+      <div className="w-10 h-10 rounded-xl bg-[#EAF4FF] text-[#087EFF] flex items-center justify-center shrink-0 mt-0.5">
+        {isUrl ? <GlobeIcon className="w-5 h-5"/> : <MailIcon className="w-5 h-5"/>}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-bold text-[#087EFF] tracking-wider uppercase mb-1">LAST {isUrl ? "WEBSITE" : "EMAIL"} CHECKED</p>
+        {item ? (<>
+            <h2 className="text-sm font-bold text-[#04142F] truncate">{isUrl ? item.origin : item.subject || "No subject"}</h2>
+            <p className="text-xs text-slate-500 truncate mt-0.5">{isUrl ? "Address-bar origin only" : `${item.sender || "Sender not shown"} · ${item.provider}`}</p>
+            <div className="flex items-center justify-between gap-2 mt-4 pt-3 border-t border-slate-100">
+              <StatusBadge outcome={item.outcome}/>
+              <time className="text-[11px] text-slate-400" title={niceDate(item.occurred_at)}>{relativeTime(item.occurred_at)}</time>
+            </div>
+          </>) : (<>
+            <h2 className="text-sm font-bold text-slate-700">No {isUrl ? "website" : "email"} checks yet</h2>
+            <p className="text-xs text-slate-400 mt-1">{isUrl ? "Browse to an HTTP or HTTPS website after pairing." : "Open an email in Gmail, Outlook, or Yahoo after pairing."}</p>
+          </>)}
+      </div>
+    </section>);
+}
+function DashboardPage({ onViewActivity, onPairDevice }) {
+    const [days, setDays] = useState(30);
+    const [data, setData] = useState(null);
+    const [error, setError] = useState("");
+    const load = useCallback(() => {
+        return api(`/dashboard?days=${days}`).then(setData).catch((reason) => setError(reason.message));
+    }, [days]);
+    useEffect(() => { void load(); }, [load]);
+    return (<>
+      <PageHeader eyebrow="PERSONAL OVERVIEW" title="Good to see you." description="A clear view of your recent BantAI checks—without storing sensitive content." actions={<RangePicker value={days} onChange={setDays}/>}/>
+      {error && <Notice type="error">{error} <button className="ml-2 font-bold underline" onClick={load}>Try again</button></Notice>}
+      <ConnectionPanel onPairDevice={onPairDevice}/>
+      {!data ? <DashboardSkeleton /> : (<>
+          <div className="grid sm:grid-cols-2 gap-6 mt-6">
+            <LatestCard type="URL" item={data.last_url}/>
+            <LatestCard type="EMAIL" item={data.last_email}/>
+          </div>
+          <OutcomeChart distribution={data.distribution}/>
+          <section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm mt-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-[10px] font-bold text-[#087EFF] tracking-wider uppercase">RECENT ACTIVITY</p>
+                <h2 className="text-base font-bold text-[#04142F]">Your latest checks</h2>
+              </div>
+              <button className="flex items-center gap-1 text-xs font-bold text-[#087EFF] hover:underline" onClick={onViewActivity}>
+                <span>View all activity</span>
+                <ArrowRightIcon className="w-3.5 h-3.5"/>
+              </button>
+            </div>
+            <ActivityTable items={data.recent} compact/>
+          </section>
+          <p className="text-[11px] text-slate-400 text-center max-w-2xl mx-auto mt-6 leading-relaxed">
+            <strong>Remember:</strong> “No strong warning signs” means BantAI did not detect strong warning signs in the checked module. It is not a guarantee that an email or website is legitimate.
+          </p>
+        </>)}
+    </>);
+}
+function ConnectionItem({ title, label, message, state, detail, }) {
+    return (<article className={cx("p-5 rounded-xl border flex flex-col justify-between transition", state === "connected" ? "bg-emerald-50/40 border-emerald-200" : state === "waiting" ? "bg-amber-50/40 border-amber-200" : "bg-slate-50 border-slate-200")}>
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div>
+          {detail && <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{detail}</p>}
+          <h3 className="text-sm font-bold text-[#04142F]">{title}</h3>
+        </div>
+        <span className={cx("text-[10px] font-bold px-2 py-0.5 rounded-full", state === "connected" ? "bg-emerald-100 text-emerald-800" : state === "waiting" ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-700")}>
+          {label}
+        </span>
+      </div>
+      <p className="text-xs text-slate-500 leading-snug">{message}</p>
+    </article>);
+}
+function ConnectionPanel({ onPairDevice }) {
+    const [status, setStatus] = useState(null);
+    const [error, setError] = useState("");
+    const [refreshing, setRefreshing] = useState(false);
+    const load = useCallback(async () => {
+        setRefreshing(true);
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 5000);
+        try {
+            const response = await fetch(`${COMPANION_URL}/connection-status`, {
+                cache: "no-store",
+                headers: { Accept: "application/json" },
+                signal: controller.signal,
+            });
+            if (!response.ok)
+                throw new Error("Companion status is unavailable.");
+            setStatus((await response.json()));
+            setError("");
+        }
+        catch {
+            setStatus(null);
+            setError("BantAI Companion could not be reached. Start or restart it to check protection connections.");
+        }
+        finally {
+            window.clearTimeout(timeout);
+            setRefreshing(false);
+        }
+    }, []);
+    useEffect(() => {
+        const initial = window.setTimeout(() => void load(), 0);
+        const poll = window.setInterval(() => void load(), 15000);
+        return () => {
+            window.clearTimeout(initial);
+            window.clearInterval(poll);
+        };
+    }, [load]);
+    const localState = status?.local_models.connected ? "connected" : "waiting";
+    const cloudState = status?.cloud_ai.connected
+        ? "connected"
+        : status?.cloud_ai.platform_reachable
+            ? "waiting"
+            : "unavailable";
+    return (<section className="mb-6 p-6 rounded-2xl bg-white border border-slate-200 shadow-sm" aria-labelledby="connections-title" aria-live="polite">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 pb-3 border-b border-slate-100">
+        <div>
+          <p className="text-[10px] font-bold text-[#087EFF] tracking-wider uppercase">LIVE PROTECTION STATUS</p>
+          <h2 id="connections-title" className="text-base font-bold text-[#04142F]">Protection connections</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          {status && <time className="text-xs text-slate-400" title={niceDate(status.checked_at)}>Checked {relativeTime(status.checked_at)}</time>}
+          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition" onClick={() => void load()} disabled={refreshing}>
+            <RefreshCwIcon className={cx("w-3.5 h-3.5", refreshing && "animate-spin text-[#087EFF]")}/>
+            <span>{refreshing ? "Checking..." : "Refresh status"}</span>
+          </button>
+        </div>
+      </div>
+
+      {error ? (<div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-3 text-xs text-amber-900" role="status">
+          <AlertTriangleIcon className="w-5 h-5 text-amber-600 shrink-0"/>
+          <div>
+            <strong className="block font-bold">Companion unavailable</strong>
+            <span>{error}</span>
+          </div>
+        </div>) : status && !status.extension.connected ? (<div className="p-6 rounded-xl bg-blue-50/60 border border-blue-200 flex flex-col sm:flex-row items-center justify-between gap-4" role="status">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-[#EAF4FF] text-[#087EFF] flex items-center justify-center shrink-0">
+              <LaptopIcon className="w-5 h-5"/>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-[#087EFF] uppercase tracking-wider">ACCOUNT CONNECTION REQUIRED</p>
+              <h3 className="text-sm font-bold text-[#071E4A]">Detection is off</h3>
+              <p className="text-xs text-slate-600 mt-0.5 max-w-xl">Pair this computer with your BantAI account to enable website and email checks. Detection details remain hidden until pairing is verified.</p>
+            </div>
+          </div>
+          <button className="px-4 py-2 rounded-xl bg-[#087EFF] hover:bg-[#071E4A] text-white text-xs font-bold transition shadow-sm shrink-0" onClick={onPairDevice}>
+            Pair this device
+          </button>
+        </div>) : status ? (<div className="grid md:grid-cols-3 gap-4">
+          <ConnectionItem icon="◉" title="Local models" label={status.local_models.connected ? "Connected" : "Loading"} state={localState} detail="RF URL + XLM-R email" message={status.local_models.message}/>
+          <ConnectionItem icon="☁" title="Cloud AI" label={status.cloud_ai.connected ? "Connected" : status.cloud_ai.configured ? "Unavailable" : "Setup needed"} state={cloudState} detail="Privacy-minimized review" message={status.cloud_ai.message}/>
+          <ConnectionItem icon="◇" title="Browser extension" label="Paired" state="connected" detail={status.extension.device_label || "This computer"} message={status.extension.message}/>
+        </div>) : (<div className="grid md:grid-cols-3 gap-4" aria-busy="true">
+          <div className="h-24 rounded-xl bg-slate-100 animate-shimmer"/>
+          <div className="h-24 rounded-xl bg-slate-100 animate-shimmer"/>
+          <div className="h-24 rounded-xl bg-slate-100 animate-shimmer"/>
+        </div>)}
+    </section>);
+}
+
+export default DashboardPage;

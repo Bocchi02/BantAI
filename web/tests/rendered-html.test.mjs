@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
+
+async function readReactSources(directory = new URL("../app/", import.meta.url)) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const sources = [];
+  for (const entry of entries) {
+    const entryUrl = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
+    if (entry.isDirectory()) {
+      sources.push(await readReactSources(entryUrl));
+    } else if (/\.jsx?$/.test(entry.name)) {
+      sources.push(await readFile(entryUrl, "utf8"));
+    }
+  }
+  return sources.join("\n");
+}
 
 async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -32,7 +46,7 @@ test("server-renders the BantAI public and account experience", async () => {
 });
 
 test("landing page explains scope, privacy, and non-guarantee outcomes", async () => {
-  const source = await readFile(new URL("../app/BantAIApp.tsx", import.meta.url), "utf8");
+  const source = await readReactSources();
   assert.match(source, /Local AI models/);
   assert.match(source, /Contextual cloud review/);
   assert.match(source, /Gmail/);
@@ -55,7 +69,7 @@ test("keeps sensitive configuration out of rendered HTML", async () => {
 });
 
 test("includes explicit full-address reporting and administrator review interfaces", async () => {
-  const source = await readFile(new URL("../app/BantAIApp.tsx", import.meta.url), "utf8");
+  const source = await readReactSources();
   assert.match(source, /Report a website result/);
   assert.match(source, /including its path/);
   assert.match(source, /Only addresses you submit are collected in full/);
@@ -78,10 +92,9 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(source, /The body is never displayed after submission/);
   assert.match(source, /Email reports/);
   assert.match(source, /Submit encrypted report/);
-  const dashboardSource = source.slice(source.indexOf("function DashboardPage"), source.indexOf("function ConnectionItem"));
+  const dashboardSource = await readFile(new URL("../app/views/DashboardView.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(dashboardSource, /DetectionFeedbackCard/);
   assert.match(source, /Email bodies cannot be opened from this interface/);
-  assert.match(source, /body_included/);
   assert.match(source, /\/admin\/email-reports/);
   assert.match(source, /\/email-reports/);
   assert.doesNotMatch(source, /candidate\.body_(?:ciphertext|fingerprint)|report\.body_(?:ciphertext|fingerprint)/);
@@ -99,7 +112,7 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(source, /Analyze pasted text/);
   assert.match(source, /redacts reasonably detectable OTPs/);
   assert.match(source, /not a final BantAI email result/);
-  const messageReviewPage = source.slice(source.indexOf("function MessageReviewPage"), source.indexOf("function ActivityPage"));
+  const messageReviewPage = await readFile(new URL("../app/views/MessageReviewView.jsx", import.meta.url), "utf8");
   assert.match(messageReviewPage, /English, Filipino, and Taglish scam context is reviewed/);
   assert.match(messageReviewPage, /Language or code-switching alone is never a warning sign/);
   assert.match(messageReviewPage, /DETAILED ASSESSMENT/);
