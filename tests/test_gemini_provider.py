@@ -156,6 +156,33 @@ class GeminiProviderTests(unittest.TestCase):
         self.assertIn("three to six distinct", config["system_instruction"])
         self.assertIn("UNTRUSTED_PASTED_MESSAGE_JSON", client.models.contents[-1])
 
+    def test_activity_explanation_is_outcome_bound_and_taglish_aware(self) -> None:
+        client = FakeClient()
+        provider = GeminiProvider(
+            api_key="synthetic",
+            model="gemini-3.6-flash",
+            fallback_model="",
+            client=client,
+        )
+        provider._client_and_types = lambda: (client, FakeTypes)
+
+        provider.review({
+            "analysis_type": "ACTIVITY_EXPLANATION",
+            "event_type": "EMAIL",
+            "recorded_outcome": "SUSPICIOUS_SIGNS_FOUND",
+            "content_scope": "EMAIL_PROVIDER_SENDER_SUBJECT_BODY",
+            "subject": "Paki-send ang OTP ngayon",
+            "email_body": "Send mo ang verification code ngayon para hindi ma-block.",
+        })
+
+        config = client.models.configs[-1].values
+        self.assertEqual(1536, config["max_output_tokens"])
+        self.assertIn("recorded final outcome is authoritative", config["system_instruction"])
+        self.assertIn("Taglish clarification", config["system_instruction"])
+        self.assertIn("Tagalog or Taglish language is never suspicious by itself", config["system_instruction"])
+        self.assertIn("UNTRUSTED_ACTIVITY_CONTEXT_JSON", client.models.contents[-1])
+        self.assertIn("verification code", client.models.contents[-1])
+
 
 if __name__ == "__main__":
     unittest.main()

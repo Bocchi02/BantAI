@@ -33,6 +33,20 @@ activity is normalized to scheme, hostname, and optional port before
 encryption. A separate, explicit email-report workflow may accept a body only
 after the user confirms that it may be retained for future training review.
 
+The dashboard's **More details** action is a separate no-storage exception.
+The extension keeps a small, bounded set of recently completed full URLs and
+email bodies in BantAI Companion memory only. When the signed-in user requests
+an explanation, Companion sends the matching full URL or email
+provider/sender/subject/body to the device-authenticated explanation endpoint.
+The service verifies the activity, user, and paired device; email content is
+privacy-redacted and size-limited before the Cloud AI provider call. Neither
+the source content nor the generated explanation is added to activity history,
+the retry outbox, training data, application logs, or database storage. If the
+memory-only context expires or Companion restarts, **More details** falls back
+to the user's stored origin or provider/sender/subject metadata. The modal
+labels this reduced scope instead of failing or implying that missing content
+was reviewed.
+
 ## Pasted message AI check
 
 Signed-in users and administrators can open **AI message check**, paste up to

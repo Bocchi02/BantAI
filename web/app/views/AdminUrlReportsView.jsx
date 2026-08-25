@@ -71,9 +71,9 @@ function AdminUrlReportsPage() {
       </div>
       {error && <Notice type="error">{error}</Notice>}
       {message && <Notice type="success">{message}</Notice>}
-      <section className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6 grid sm:grid-cols-2 gap-3 text-xs">
+      <section className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6 grid sm:grid-cols-2 gap-3 text-xs">
         <label className="flex flex-col gap-1">
-          <span className="font-semibold text-slate-600">Training status</span>
+          <span className="font-semibold text-slate-600 text-xs">Training status</span>
           <select value={trainingFilter} onChange={(event) => { setPage(1); setTrainingFilter(event.target.value); }} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
             <option value="">All feedback</option>
             <option value="PENDING">Awaiting review</option>
@@ -83,7 +83,7 @@ function AdminUrlReportsPage() {
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="font-semibold text-slate-600">User classification</span>
+          <span className="font-semibold text-slate-600 text-xs">User classification</span>
           <select value={classificationFilter} onChange={(event) => { setPage(1); setClassificationFilter(event.target.value); }} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
             <option value="">All classifications</option>
             <option value="LEGITIMATE">Believes legitimate</option>
@@ -93,20 +93,20 @@ function AdminUrlReportsPage() {
         </label>
       </section>
 
-      <section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
+      <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
           <div>
-            <p className="text-[10px] font-bold text-[#087EFF] uppercase tracking-wider">USER REVIEW QUEUE</p>
+            <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider">USER REVIEW QUEUE</p>
             <h2 className="text-base font-bold text-[#04142F]">{data ? `${data.total} ${data.total === 1 ? "submission" : "submissions"}` : "Loading submissions..."}</h2>
           </div>
-          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{data ? `${data.training_candidate_total} approved candidates` : "No reporter identity"}</span>
+          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{data ? `${data.training_candidate_total} approved candidates` : "No reporter identity"}</span>
         </div>
 
         {data && data.items.length > 0 ? (<div className="space-y-4">
-            {data.items.map((report) => (<article className="p-5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-4" key={report.id}>
+            {data.items.map((report) => (<article className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-4" key={report.id}>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/60">
-                  <div>
-                    <p className="text-[9px] font-bold text-[#087EFF] uppercase tracking-wider">COMPLETE WEBSITE ADDRESS</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold text-[#087EFF] uppercase tracking-wider">COMPLETE WEBSITE ADDRESS</p>
                     <h3 className="text-sm font-bold text-slate-900 break-all">{report.url}</h3>
                     <p className="text-xs text-slate-400 mt-0.5">{feedbackReasonLabel(report.feedback_reason)} · {report.similar_report_count || 1} similar {report.similar_report_count === 1 ? "report" : "reports"} · {report.detector_model_version} · Submitted {niceDate(report.submitted_at)}</p>
                   </div>
@@ -115,35 +115,61 @@ function AdminUrlReportsPage() {
                     <span>Copy address</span>
                   </button>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Detector result</span>
-                    <StatusBadge outcome={report.detector_outcome}/>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start text-xs">
+                  {/* Left Column: Evidence Details (col-span-5) */}
+                  <div className="lg:col-span-5 space-y-2 p-3 rounded-lg bg-white border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Submission Evidence</span>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Reason:</span>
+                        <strong className="text-slate-800">{feedbackReasonLabel(report.feedback_reason)}</strong>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Model version:</span>
+                        <span className="text-slate-600 font-mono text-[11px]">{report.detector_model_version}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Similar reports:</span>
+                        <span className="text-slate-700 font-semibold">{report.similar_report_count || 1}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">User feedback</span>
-                    <strong className="text-xs font-bold text-slate-800">{feedbackVerdictLabel(report.feedback_verdict)}</strong>
+
+                  {/* Center Column: Assessment & Feedback (col-span-3) */}
+                  <div className="lg:col-span-3 space-y-2.5 p-3 rounded-lg bg-white border border-slate-200/80">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Detector result</span>
+                      <StatusBadge outcome={report.detector_outcome}/>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">User feedback</span>
+                      <strong className="text-xs font-bold text-slate-800 block">{feedbackVerdictLabel(report.feedback_verdict)}</strong>
+                      <small className="text-xs text-slate-500">{userClassificationLabel(report.user_classification)}</small>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Suggested label</span>
-                    <strong className="text-xs font-bold text-slate-800">{userClassificationLabel(report.user_classification)}</strong>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Training status</span>
-                    <strong className="text-xs font-bold text-[#087EFF]">{trainingStatusLabel(report.training_status)}</strong>
-                    {report.admin_assessment && <small className="text-slate-400 block">{adminAssessmentLabel(report.admin_assessment)}</small>}
+
+                  {/* Right Column: Admin Actions & Status (col-span-4) */}
+                  <div className="lg:col-span-4 p-3 rounded-lg bg-white border border-slate-200/80 flex flex-col justify-between h-full">
+                    <div className="mb-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Training status</span>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-xs font-bold text-[#087EFF]">{trainingStatusLabel(report.training_status)}</strong>
+                        {report.admin_assessment && <span className="text-xs text-slate-500 font-medium">({adminAssessmentLabel(report.admin_assessment)})</span>}
+                      </div>
+                    </div>
+                    {report.training_status === "PENDING" ? (<fieldset className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5" disabled={busyId === report.id}>
+                        <legend className="sr-only">Store for future model training?</legend>
+                        <button type="button" className="px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-bold" onClick={() => void review(report, "APPROVE", "LEGITIMATE")}>Approve legitimate</button>
+                        <button type="button" className="px-2.5 py-1.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-bold" onClick={() => void review(report, "APPROVE", "SUSPICIOUS")}>Approve suspicious</button>
+                        <button type="button" className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold" onClick={() => void review(report, "REJECT")}>Reject feedback</button>
+                        <button type="button" className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold" onClick={() => void review(report, "INCONCLUSIVE")}>Inconclusive</button>
+                      </fieldset>) : (<div className="pt-2 border-t border-slate-100 text-xs text-slate-500">
+                        <strong className="text-slate-800 block">Review complete</strong>
+                        <span className="text-[11px] text-slate-400">{report.reviewed_at ? niceDate(report.reviewed_at) : "Review time unavailable"}</span>
+                      </div>)}
                   </div>
                 </div>
-                {report.training_status === "PENDING" ? (<fieldset className="pt-3 border-t border-slate-200/60 flex flex-wrap items-center gap-2" disabled={busyId === report.id}>
-                    <legend className="text-xs font-semibold text-slate-700 mr-2">Store for future model training?</legend>
-                    <button type="button" className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-bold" onClick={() => void review(report, "APPROVE", "LEGITIMATE")}>Approve legitimate</button>
-                    <button type="button" className="px-3 py-1.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-bold" onClick={() => void review(report, "APPROVE", "SUSPICIOUS")}>Approve suspicious</button>
-                    <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold" onClick={() => void review(report, "REJECT")}>Reject feedback</button>
-                    <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold" onClick={() => void review(report, "INCONCLUSIVE")}>Inconclusive</button>
-                  </fieldset>) : (<div className="pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
-                    <strong className="text-slate-800">Review complete</strong>
-                    <span>{trainingStatusLabel(report.training_status)} · {report.reviewed_at ? niceDate(report.reviewed_at) : "Review time unavailable"}</span>
-                  </div>)}
               </article>))}
           </div>) : data ? (<EmptyState icon="✓" title="No reports in this view" text="New user-submitted website reports will appear here for manual assessment."/>) : (<DashboardSkeleton />)}
 
@@ -153,7 +179,7 @@ function AdminUrlReportsPage() {
             <button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 font-semibold hover:bg-slate-50 disabled:opacity-40">Next →</button>
           </div>)}
       </section>
-      <p className="text-[11px] text-slate-400 text-center max-w-2xl mx-auto mt-6 leading-relaxed"><strong>An administrator assessment is not a guarantee.</strong> It remains separate from BantAI’s frozen detection models and does not automatically change future outcomes.</p>
+      <p className="text-xs text-slate-400 text-center max-w-2xl mx-auto mt-6 leading-relaxed"><strong>An administrator assessment is not a guarantee.</strong> It remains separate from BantAI’s frozen detection models and does not automatically change future outcomes.</p>
     </>);
 }
 

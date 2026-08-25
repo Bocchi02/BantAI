@@ -51,11 +51,11 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
         }
     };
     if (submitted) {
-        return (<section className="p-6 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-sm flex items-center justify-between gap-4 my-4" aria-live="polite">
+        return (<section className="p-5 sm:p-6 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-sm flex items-center justify-between gap-4 my-4" aria-live="polite">
         <div className="flex items-center gap-3">
           <CheckCircle2Icon className="w-6 h-6 text-emerald-600 shrink-0"/>
           <div>
-            <p className="text-[10px] font-bold text-emerald-700 uppercase">FEEDBACK RECEIVED</p>
+            <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">FEEDBACK RECEIVED</p>
             <h2 className="text-sm font-bold text-emerald-950">Thank you for helping improve BantAI.</h2>
             <p className="text-xs text-emerald-800/80 mt-0.5">An administrator will review the complete address you explicitly submitted before it can become a future training candidate.</p>
           </div>
@@ -65,13 +65,13 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
           </button>)}
       </section>);
     }
-    return (<section className="p-6 rounded-2xl bg-white border border-blue-200 shadow-sm my-4" aria-labelledby={`feedback-title-${activity.id}`}>
+    return (<section className="p-5 sm:p-6 rounded-2xl bg-white border border-blue-200 shadow-sm my-4" aria-labelledby={`feedback-title-${activity.id}`}>
       <div className="flex items-start gap-4">
         <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#087EFF] flex items-center justify-center shrink-0">
           <HelpCircleIcon className="w-5 h-5"/>
         </div>
         <div className="flex-1">
-          <p className="text-[10px] font-bold text-[#087EFF] tracking-wider uppercase mb-1">HELP IMPROVE BANTAI</p>
+          <p className="text-xs font-semibold text-[#087EFF] tracking-wider uppercase mb-1">HELP IMPROVE BANTAI</p>
           <h2 id={`feedback-title-${activity.id}`} className="text-base font-bold text-[#04142F]">Do you think BantAI got this result right?</h2>
           <p className="text-xs text-slate-500 mt-1"><strong>{activity.origin}</strong> was shown as “{outcomeInfo(activity.outcome).label}.”</p>
           {error && <Notice type="error">{error}</Notice>}
@@ -79,7 +79,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
             <label className="flex flex-col gap-1">
               <span className="text-xs font-semibold text-slate-700">Complete website address</span>
               <input type="url" inputMode="url" value={reportedUrl} onChange={(event) => setReportedUrl(event.target.value)} placeholder={`${activity.origin || "https://example.com"}/page`} maxLength={2048} autoCapitalize="none" autoComplete="off" spellCheck={false} required className="h-10 px-3 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-[#087EFF] outline-none"/>
-              <small className="text-[11px] text-slate-400">Paste the address shown in the browser, including its path. This address is stored only after you submit feedback.</small>
+              <small className="text-xs text-slate-400">Paste the address shown in the browser, including its path. This address is stored only after you submit feedback.</small>
             </label>
 
             <fieldset className="space-y-1 border-0 p-0 m-0">
@@ -109,7 +109,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
                       <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">✓</span>
                       <div>
                         <strong className="text-xs font-bold block">Seems legitimate</strong>
-                        <small className="text-[10px] text-slate-500">The warning may have been too cautious.</small>
+                        <small className="text-xs text-slate-500">The warning may have been too cautious.</small>
                       </div>
                     </label>
                     <label className={cx("p-3 rounded-xl border cursor-pointer flex gap-2.5 items-start transition", classification === "SUSPICIOUS" ? "bg-rose-50 border-rose-300 text-rose-950 ring-2 ring-rose-200" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50")}>
@@ -117,7 +117,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
                       <span className="w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center text-xs font-bold shrink-0">!</span>
                       <div>
                         <strong className="text-xs font-bold block">Seems suspicious</strong>
-                        <small className="text-[10px] text-slate-500">BantAI may have missed warning signs.</small>
+                        <small className="text-xs text-slate-500">BantAI may have missed warning signs.</small>
                       </div>
                     </label>
                   </div>
@@ -164,10 +164,10 @@ function ActivityPage() {
     const change = (key, value) => { setPage(1); setFilters((current) => ({ ...current, [key]: value })); };
     return (<>
       <PageHeader eyebrow="PRIVACY-MINIMIZED HISTORY" title="Activity" description="Review your retained website origins and email metadata. Records are removed after 90 days."/>
-      <section className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6">
+      <section className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
           <label className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">Type</span>
+            <span className="font-semibold text-slate-600 text-xs">Type</span>
             <select value={filters.event_type} onChange={(event) => change("event_type", event.target.value)} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
               <option value="">All activity</option>
               <option value="URL">Websites</option>
@@ -175,14 +175,14 @@ function ActivityPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">Outcome</span>
+            <span className="font-semibold text-slate-600 text-xs">Outcome</span>
             <select value={filters.outcome} onChange={(event) => change("outcome", event.target.value)} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
               <option value="">All outcomes</option>
               {OUTCOMES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">Email provider</span>
+            <span className="font-semibold text-slate-600 text-xs">Email provider</span>
             <select value={filters.provider} onChange={(event) => change("provider", event.target.value)} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
               <option value="">All providers</option>
               <option value="gmail">Gmail</option>
@@ -191,24 +191,24 @@ function ActivityPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">From</span>
+            <span className="font-semibold text-slate-600 text-xs">From</span>
             <input type="date" value={filters.date_from} onChange={(event) => change("date_from", event.target.value)} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs"/>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="font-semibold text-slate-600">To</span>
+            <span className="font-semibold text-slate-600 text-xs">To</span>
             <input type="date" value={filters.date_to} onChange={(event) => change("date_to", event.target.value)} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs"/>
           </label>
         </div>
       </section>
       {error && <Notice type="error">{error}</Notice>}
       {feedbackActivity && <DetectionFeedbackCard key={feedbackActivity.id} activity={feedbackActivity} onSubmitted={load} onClose={() => setFeedbackActivity(null)}/>}
-      <section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
+      <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
           <div>
-            <p className="text-[10px] font-bold text-[#087EFF] uppercase tracking-wider">ALL CHECKS</p>
+            <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider">ALL CHECKS</p>
             <h2 className="text-base font-bold text-[#04142F]">{data ? `${data.total} retained ${data.total === 1 ? "record" : "records"}` : "Loading activity…"}</h2>
           </div>
-          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">90-day retention</span>
+          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">90-day retention</span>
         </div>
         {data ? <ActivityTable items={data.items} onFeedback={setFeedbackActivity}/> : <DashboardSkeleton />}
         {data && data.pages > 1 && (<div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100 text-xs text-slate-500">

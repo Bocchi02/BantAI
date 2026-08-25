@@ -176,6 +176,39 @@ class CompanionActivityRequest(BaseModel):
     occurred_at: str = Field(min_length=20, max_length=40)
 
 
+class CompanionDetailContextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    event_type: Literal["URL", "EMAIL"]
+    outcome: Literal[
+        "NO_STRONG_WARNING_SIGNS",
+        "NEEDS_CAUTION",
+        "SUSPICIOUS_SIGNS_FOUND",
+    ]
+    url: Optional[str] = Field(default=None, min_length=8, max_length=8192)
+    provider: Optional[Literal["gmail", "outlook", "yahoo"]] = None
+    sender: Optional[str] = Field(default=None, max_length=320)
+    subject: Optional[str] = Field(default=None, max_length=500)
+    body: Optional[str] = Field(default=None, max_length=50_000)
+
+    @model_validator(mode="after")
+    def require_matching_detail_content(self) -> "CompanionDetailContextRequest":
+        if self.event_type == "URL":
+            if not self.url or self.provider or self.sender is not None or self.subject is not None or self.body is not None:
+                raise ValueError("Website details require only the full URL.")
+        elif self.url is not None or not self.provider or not self.body or not self.body.strip():
+            raise ValueError("Email details require provider and email body content without a URL.")
+        return self
+
+
+class CompanionActivityExplanationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    activity_id: str = Field(min_length=36, max_length=36)
+    client_event_id: str = Field(min_length=8, max_length=128)
+
+
 class CompanionUrlFeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -539,8 +572,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=sorted(configured_web_origins),
     allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["Accept"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type"],
 )
 
 
@@ -747,6 +780,36 @@ def submit_companion_activity(request: CompanionActivityRequest) -> dict:
         raise HTTPException(status_code=400, detail="Activity has an invalid type.")
 
     return companion_manager.submit_activity(event)
+
+
+@app.post(
+    "/companion/detail-context",
+    dependencies=[Depends(require_detection_access)],
+)
+def remember_companion_detail_context(request: CompanionDetailContextRequest) -> dict:
+    """Keep sensitive explanation context in local memory, never on disk."""
+
+    if request.event_type == "URL":
+        try:
+            parsed = urlsplit(request.url or "")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Website details contain an invalid address.") from exc
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise HTTPException(status_code=400, detail="Website details contain an invalid address.")
+    return companion_manager.remember_detail_context(request.model_dump(exclude_none=True))
+
+
+@app.post(
+    "/companion/activity-explanation",
+    dependencies=[Depends(require_detection_access)],
+)
+def explain_companion_activity(request: CompanionActivityExplanationRequest) -> dict:
+    """Request an on-demand explanation using memory-only full context."""
+
+    try:
+        return companion_manager.explain_activity(request.activity_id, request.client_event_id)
+    except CompanionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post(

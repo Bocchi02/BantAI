@@ -324,3 +324,31 @@ class UrlCloudReviewRequest(StrictModel):
     origin: str = Field(min_length=8, max_length=512)
     hostname: str = Field(min_length=1, max_length=253)
     url_model: dict
+
+
+class ActivityExplanationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    activity_id: str = Field(min_length=36, max_length=36)
+    client_event_id: str = Field(min_length=8, max_length=128)
+    event_type: EventType
+    outcome: Outcome
+    url: str | None = Field(default=None, min_length=8, max_length=8192)
+    provider: Literal["gmail", "outlook", "yahoo"] | None = None
+    sender: str | None = Field(default=None, max_length=320)
+    subject: str | None = Field(default=None, max_length=500)
+    body: str | None = Field(default=None, max_length=50_000)
+
+    @model_validator(mode="after")
+    def require_matching_explanation_content(self) -> "ActivityExplanationRequest":
+        if self.event_type == EventType.URL:
+            if not self.url or self.provider or self.sender is not None or self.subject is not None or self.body is not None:
+                raise ValueError("Website explanations require only the full URL.")
+        elif self.url is not None or not self.provider or not self.body or not self.body.strip():
+            raise ValueError("Email explanations require provider and email body content without a URL.")
+        return self
+
+
+class ActivityExplanationFallbackRequest(StrictModel):
+    activity_id: str = Field(min_length=36, max_length=36)
+    client_event_id: str = Field(min_length=8, max_length=128)

@@ -14,16 +14,17 @@ export function ShieldLogoMark(props) {
       <path d="M24 32L30 24L24 38L18 24L24 32Z" fill="#EAF4FF"/>
     </svg>);
 }
-export function Logo({ compact = false, light = false, className = "", }) {
-    return (<div className={`flex items-center gap-3 select-none ${className}`}>
-      <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#071E4A] to-[#04142F] p-1.5 shadow-md shadow-[#04142F]/20 border border-slate-700/30 shrink-0">
+export function Logo({ compact = false, light = false, size = "md", className = "", }) {
+    const isSm = size === "sm";
+    return (<div className={`flex items-center ${isSm ? "gap-2.5" : "gap-3"} select-none ${className}`}>
+      <div className={`relative flex items-center justify-center ${isSm ? "w-8 h-8 rounded-lg p-1" : "w-9 h-9 sm:w-10 sm:h-10 rounded-xl p-1.5"} bg-gradient-to-br from-[#071E4A] to-[#04142F] shadow-md shadow-[#04142F]/20 border border-slate-700/30 shrink-0`}>
         <ShieldLogoMark className="w-full h-full"/>
       </div>
       {!compact && (<div className="flex flex-col">
-          <span className={`text-xl font-bold tracking-tight leading-none ${light ? "text-white" : "text-[#04142F]"}`}>
+          <span className={`${isSm ? "text-base sm:text-[17px]" : "text-xl"} font-bold tracking-tight leading-none ${light ? "text-white" : "text-[#04142F]"}`}>
             BantAI
           </span>
-          <span className={`text-[10px] font-medium tracking-wide uppercase mt-1 ${light ? "text-slate-300" : "text-slate-500"}`}>
+          <span className={`text-[10px] sm:text-[11px] font-medium tracking-wide uppercase mt-0.5 ${light ? "text-slate-300" : "text-slate-500"}`}>
             Intelligent Threat Protection
           </span>
         </div>)}

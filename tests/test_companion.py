@@ -295,6 +295,75 @@ class CompanionManagerTests(unittest.TestCase):
         request.assert_called_once_with("/email-reports/from-device-activity", feedback)
         self.assertFalse(result["already_submitted"])
 
+    def test_activity_explanation_context_is_memory_only_and_forwarded_on_demand(self) -> None:
+        context = {
+            "client_event_id": "email:1:details:123456",
+            "event_type": "EMAIL",
+            "provider": "gmail",
+            "sender": "sender@example.test",
+            "subject": "Synthetic security notice",
+            "body": "Paki-send ang OTP ngayon.",
+            "outcome": "SUSPICIOUS_SIGNS_FOUND",
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with patch("companion.platform.system", return_value="Linux"):
+                manager = CompanionManager()
+                manager.platform_url = "https://bantai.example.test"
+                manager.state_path = Path(temporary_directory) / "companion.dat"
+                manager._save(
+                    {
+                        "device_id": "device-1",
+                        "device_token": "synthetic-device-token",
+                        "device_label": "Test computer",
+                        "user_email": "user@example.test",
+                        "outbox": [],
+                    }
+                )
+                remembered = manager.remember_detail_context(context)
+                self.assertTrue(remembered["remembered"])
+                self.assertFalse(remembered["stored"])
+                self.assertNotIn("Paki-send", manager.state_path.read_text())
+
+                with patch.object(
+                    manager,
+                    "_request",
+                    return_value={"status": "COMPLETE", "stored": False},
+                ) as request:
+                    result = manager.explain_activity(
+                        "00000000-0000-0000-0000-000000000001",
+                        context["client_event_id"],
+                    )
+
+        self.assertEqual("COMPLETE", result["status"])
+        forwarded = request.call_args.args[1]
+        self.assertEqual("/cloud-review/activity-explanation", request.call_args.args[0])
+        self.assertEqual(context["body"], forwarded["body"])
+        self.assertEqual("00000000-0000-0000-0000-000000000001", forwarded["activity_id"])
+
+    def test_activity_explanation_falls_back_when_context_is_lost_after_restart(self) -> None:
+        manager = CompanionManager()
+        with patch.object(
+            manager,
+            "_request",
+            return_value={
+                "status": "COMPLETE",
+                "analysis_scope": "WEBSITE_ORIGIN_ONLY",
+                "full_context_available": False,
+            },
+        ) as request:
+            result = manager.explain_activity(
+                "00000000-0000-0000-0000-000000000001",
+                "missing-context-123456",
+            )
+        request.assert_called_once_with(
+            "/cloud-review/activity-explanation-fallback",
+            {
+                "activity_id": "00000000-0000-0000-0000-000000000001",
+                "client_event_id": "missing-context-123456",
+            },
+        )
+        self.assertFalse(result["full_context_available"])
+
 
 if __name__ == "__main__":
     unittest.main()

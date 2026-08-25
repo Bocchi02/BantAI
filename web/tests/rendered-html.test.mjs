@@ -94,6 +94,18 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(source, /Submit encrypted report/);
   const dashboardSource = await readFile(new URL("../app/views/DashboardView.jsx", import.meta.url), "utf8");
   assert.doesNotMatch(dashboardSource, /DetectionFeedbackCard/);
+  assert.match(dashboardSource, /More details/);
+  assert.match(dashboardSource, /\/companion\/activity-explanation/);
+  assert.match(dashboardSource, /client_event_id: item\.detail_reference/);
+  const detailsModal = await readFile(new URL("../app/components/DetectionDetailsModal.jsx", import.meta.url), "utf8");
+  assert.match(detailsModal, /role="dialog"/);
+  assert.match(detailsModal, /aria-modal="true"/);
+  assert.match(detailsModal, /Why this needs attention/);
+  assert.match(detailsModal, /complete website address/);
+  assert.match(detailsModal, /email provider, sender, subject, and message body/);
+  assert.match(detailsModal, /complete address was no longer in Companion memory/);
+  assert.match(detailsModal, /email body was no longer in Companion memory/);
+  assert.match(detailsModal, /not added to dashboard history or stored by this feature/);
   assert.match(source, /Email bodies cannot be opened from this interface/);
   assert.match(source, /\/admin\/email-reports/);
   assert.match(source, /\/email-reports/);

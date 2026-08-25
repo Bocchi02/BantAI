@@ -434,6 +434,147 @@ class PlatformTests(unittest.TestCase):
         self.assertNotIn("private", str(item))
         self.assertNotIn("secret", str(item))
 
+    def test_activity_explanations_are_device_scoped_and_use_explicit_full_context(self) -> None:
+        token = self.paired_device_token()
+        device_headers = {"Authorization": f"Bearer {token}"}
+        ingested = self.client.post(
+            "/api/v1/activities",
+            headers=device_headers,
+            json={"events": [
+                {
+                    "client_event_id": "explain-url-0001",
+                    "event_type": "URL",
+                    "origin": "https://explain.example.test/private/path?secret=1",
+                    "provider": None,
+                    "sender": None,
+                    "subject": None,
+                    "outcome": "NO_STRONG_WARNING_SIGNS",
+                    "cloud_status": "COMPLETE",
+                    "occurred_at": "2026-08-25T08:00:00+08:00",
+                },
+                {
+                    "client_event_id": "explain-email-0001",
+                    "event_type": "EMAIL",
+                    "origin": None,
+                    "provider": "gmail",
+                    "sender": "synthetic.sender@example.test",
+                    "subject": "Paki-send ang OTP ngayon",
+                    "outcome": "SUSPICIOUS_SIGNS_FOUND",
+                    "cloud_status": "COMPLETE",
+                    "occurred_at": "2026-08-25T08:01:00+08:00",
+                },
+            ]},
+        )
+        self.assertEqual(202, ingested.status_code, ingested.text)
+
+        self.login("user@example.com", "correct horse battery staple")
+        dashboard = self.client.get("/api/v1/dashboard?days=90").json()
+        url_id = dashboard["last_url"]["id"]
+        email_id = dashboard["last_email"]["id"]
+        self.assertEqual(
+            "explain-url-0001",
+            dashboard["last_url"]["detail_reference"],
+        )
+        self.assertEqual("explain-email-0001", dashboard["last_email"]["detail_reference"])
+
+        safe_result = {
+            "status": "COMPLETE",
+            "assessment": "NO_STRONG_WARNING_SIGNS",
+            "confidence": "HIGH",
+            "indicators": [],
+            "reasoning_summary": "No strong warning signs were detected in the supplied address.",
+            "recommended_action": "Continue carefully because this is not a guarantee.",
+            "stored": False,
+            "analysis_scope": "FULL_URL",
+        }
+        suspicious_result = {
+            **safe_result,
+            "assessment": "SUSPICIOUS_SIGNS_FOUND",
+            "reasoning_summary": "This result needs attention. Huwag mag-share ng OTP or password.",
+            "recommended_action": "Verify the sender independently and do not send sensitive information.",
+            "analysis_scope": "EMAIL_PROVIDER_SENDER_SUBJECT_BODY",
+        }
+        with patch(
+            "shared_platform.app.main.explain_activity",
+            side_effect=[safe_result, suspicious_result],
+        ) as explain:
+            url_response = self.client.post(
+                "/api/v1/cloud-review/activity-explanation",
+                headers=device_headers,
+                json={
+                    "activity_id": url_id,
+                    "client_event_id": "explain-url-0001",
+                    "event_type": "URL",
+                    "outcome": "NO_STRONG_WARNING_SIGNS",
+                    "url": "https://explain.example.test/private/path?secret=1#fragment",
+                },
+            )
+            email_response = self.client.post(
+                "/api/v1/cloud-review/activity-explanation",
+                headers=device_headers,
+                json={
+                    "activity_id": email_id,
+                    "client_event_id": "explain-email-0001",
+                    "event_type": "EMAIL",
+                    "outcome": "SUSPICIOUS_SIGNS_FOUND",
+                    "provider": "gmail",
+                    "sender": "synthetic.sender@example.test",
+                    "subject": "Paki-send ang OTP ngayon",
+                    "body": "Paki-send ang OTP ngayon para hindi ma-block ang account mo.",
+                },
+            )
+
+        self.assertEqual(200, url_response.status_code, url_response.text)
+        self.assertEqual(200, email_response.status_code, email_response.text)
+        url_payload = explain.call_args_list[0].args[0]
+        self.assertEqual(
+            "https://explain.example.test/private/path?secret=1#fragment",
+            url_payload["full_url"],
+        )
+        email_payload = explain.call_args_list[1].args[0]
+        self.assertEqual("EMAIL_PROVIDER_SENDER_SUBJECT_BODY", email_payload["content_scope"])
+        self.assertIn("Paki-send", email_payload["subject"])
+        self.assertIn("OTP ngayon", email_payload["email_body"])
+
+        fallback_result = {
+            **safe_result,
+            "analysis_scope": "WEBSITE_ORIGIN_ONLY",
+            "full_context_available": False,
+        }
+        with patch(
+            "shared_platform.app.main.explain_activity",
+            return_value=fallback_result,
+        ) as explain_fallback:
+            fallback_response = self.client.post(
+                "/api/v1/cloud-review/activity-explanation-fallback",
+                headers=device_headers,
+                json={
+                    "activity_id": url_id,
+                    "client_event_id": "explain-url-0001",
+                },
+            )
+        self.assertEqual(200, fallback_response.status_code, fallback_response.text)
+        fallback_payload = explain_fallback.call_args.args[0]
+        self.assertEqual("WEBSITE_ORIGIN_ONLY", fallback_payload["content_scope"])
+        self.assertEqual("https://explain.example.test", fallback_payload["url_origin"])
+        self.assertNotIn("private", str(fallback_payload))
+        self.assertNotIn("secret", str(fallback_payload))
+
+        self.assertEqual(
+            404,
+            self.client.post(
+                "/api/v1/cloud-review/activity-explanation",
+                headers=device_headers,
+                json={
+                    "activity_id": url_id,
+                    "client_event_id": "wrong-event-reference",
+                    "event_type": "URL",
+                    "outcome": "NO_STRONG_WARNING_SIGNS",
+                    "url": "https://explain.example.test/private/path?secret=1#fragment",
+                },
+            ).status_code,
+        )
+
     def test_admin_is_aggregate_only_and_cannot_suspend_self(self) -> None:
         self.login("admin@example.com", "admin correct horse battery")
         overview = self.client.get("/api/v1/admin/dashboard?days=30")

@@ -11,6 +11,7 @@ import secrets
 import threading
 import urllib.error
 import urllib.request
+from collections import OrderedDict
 from ctypes import wintypes
 from pathlib import Path
 from time import monotonic
@@ -72,6 +73,7 @@ def _unprotect(data: bytes) -> bytes:
 
 class CompanionManager:
     max_outbox_entries = 500
+    max_detail_contexts = 20
 
     def __init__(self) -> None:
         local_data = os.getenv("LOCALAPPDATA") or str(Path.home())
@@ -81,6 +83,10 @@ class CompanionManager:
         self.platform_url = os.getenv("BANTAI_PLATFORM_API", "").rstrip("/")
         self._lock = threading.RLock()
         self._training_consent_cache = {"expires_at": 0.0, "enabled": False, "sample_rate_percent": 0}
+        # Full addresses and email bodies are deliberately memory-only. They
+        # are available for an explicit dashboard explanation, but never enter
+        # the encrypted activity outbox or the Companion state file.
+        self._detail_contexts: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
     def _empty(self) -> dict[str, Any]:
         return {
@@ -347,6 +353,7 @@ class CompanionManager:
                         "Windows could not remove the BantAI device credential."
                     ) from exc
             self._save(self._empty())
+            self._detail_contexts.clear()
             return self.status()
 
     @property
@@ -367,6 +374,37 @@ class CompanionManager:
             state["outbox"] = pending[-self.max_outbox_entries :]
             self._save(state)
             return self.flush()
+
+    def remember_detail_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        """Keep one completed detection's sensitive context in RAM only."""
+
+        with self._lock:
+            client_event_id = str(context["client_event_id"])
+            self._detail_contexts.pop(client_event_id, None)
+            self._detail_contexts[client_event_id] = dict(context)
+            while len(self._detail_contexts) > self.max_detail_contexts:
+                self._detail_contexts.popitem(last=False)
+            return {"remembered": True, "stored": False}
+
+    def explain_activity(self, activity_id: str, client_event_id: str) -> dict[str, Any]:
+        """Forward explicit full context for an owner-checked activity."""
+
+        with self._lock:
+            context = self._detail_contexts.get(client_event_id)
+            if context is None:
+                return self._request(
+                    "/cloud-review/activity-explanation-fallback",
+                    {
+                        "activity_id": activity_id,
+                        "client_event_id": client_event_id,
+                    },
+                )
+            payload = {
+                **context,
+                "activity_id": activity_id,
+                "client_event_id": client_event_id,
+            }
+            return self._request("/cloud-review/activity-explanation", payload)
 
     def submit_url_feedback(self, feedback: dict[str, Any]) -> dict[str, Any]:
         """Flush the matching minimized activity before forwarding explicit feedback."""

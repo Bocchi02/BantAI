@@ -106,8 +106,8 @@ function Notice({ type = "info", children }) {
     </div>);
 }
 function EmptyState({ icon, title, text }) {
-    return (<div className="flex flex-col items-center justify-center py-12 px-4 text-center rounded-xl bg-slate-50/50 border border-dashed border-slate-200 my-2">
-      <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#087EFF] text-xl font-bold mb-3 shadow-2xs">
+    return (<div className="flex flex-col items-center justify-center py-10 px-4 text-center rounded-xl bg-slate-50/50 border border-dashed border-slate-200 my-2">
+      <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#087EFF] text-lg font-bold mb-3 shadow-2xs">
         {icon}
       </div>
       <strong className="text-sm font-semibold text-[#04142F]">{title}</strong>
@@ -135,11 +135,11 @@ function LoadingPage({ error, onRetry }) {
     </main>);
 }
 function PageHeader({ eyebrow, title, description, actions, }) {
-    return (<div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+    return (<div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
       <div>
-        <p className="text-[10px] font-bold text-[#087EFF] tracking-wider uppercase mb-1">{eyebrow}</p>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#04142F] tracking-tight">{title}</h1>
-        <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">{description}</p>
+        <p className="text-xs font-semibold text-[#087EFF] tracking-wider uppercase mb-1">{eyebrow}</p>
+        <h1 className="text-2xl lg:text-[28px] font-bold text-[#04142F] tracking-tight">{title}</h1>
+        <p className="text-sm text-slate-500 mt-1 max-w-2xl leading-relaxed">{description}</p>
       </div>
       {actions && <div className="shrink-0">{actions}</div>}
     </div>);
@@ -160,13 +160,13 @@ function doughnutGradient(row) {
     return `conic-gradient(from -90deg, ${segments.join(", ")})`;
 }
 function OutcomeChart({ distribution }) {
-    return (<section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm mt-6" aria-labelledby="outcome-chart-title">
-      <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+    return (<section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm mt-6" aria-labelledby="outcome-chart-title">
+      <div className="flex items-center justify-between mb-5 pb-3.5 border-b border-slate-100">
         <div>
-          <p className="text-[10px] font-bold text-[#087EFF] tracking-wider uppercase">DETECTION OUTCOMES</p>
+          <p className="text-xs font-semibold text-[#087EFF] tracking-wider uppercase">DETECTION OUTCOMES</p>
           <h2 id="outcome-chart-title" className="text-base font-bold text-[#04142F]">What BantAI found</h2>
         </div>
-        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">Percent of checks</span>
+        <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">Percent of checks</span>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -176,7 +176,7 @@ function OutcomeChart({ distribution }) {
                 {row.event_type === "URL" ? <GlobeIcon className="w-4 h-4"/> : <MailIcon className="w-4 h-4"/>}
               </div>
               <div>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{row.event_type === "URL" ? "WEBSITE DETECTIONS" : "EMAIL DETECTIONS"}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{row.event_type === "URL" ? "WEBSITE DETECTIONS" : "EMAIL DETECTIONS"}</p>
                 <h3 className="text-xs font-bold text-[#04142F]">{row.event_type === "URL" ? "Website addresses" : "Opened emails"}</h3>
               </div>
             </div>
@@ -202,10 +202,10 @@ function OutcomeChart({ distribution }) {
             })}
               </dl>
             </div>
-            {!row.total && <p className="text-[11px] text-slate-400 text-center mt-3">No checks in this period</p>}
+            {!row.total && <p className="text-xs text-slate-400 text-center mt-3">No checks in this period</p>}
           </article>))}
       </div>
-      <p className="text-[11px] text-slate-400 mt-6 pt-4 border-t border-slate-100">These percentages summarize categorical outcomes. BantAI does not calculate an overall risk score.</p>
+      <p className="text-xs text-slate-400 mt-6 pt-4 border-t border-slate-100">These percentages summarize categorical outcomes. BantAI does not calculate an overall risk score.</p>
     </section>);
 }
 function ActivityTable({ items, compact = false, onFeedback }) {
@@ -213,39 +213,39 @@ function ActivityTable({ items, compact = false, onFeedback }) {
         return <EmptyState icon="↗" title="No activity to show" text="Pair BantAI and complete a check. Privacy-minimized results will appear here."/>;
     return (<div className="overflow-x-auto">
       <table className="w-full text-left text-xs text-slate-600">
-        <thead className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+        <thead className="text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-100">
           <tr>
-            <th className="pb-3 px-3">Activity</th>
-            <th className="pb-3 px-3">Details</th>
-            <th className="pb-3 px-3">Outcome</th>
-            <th className="pb-3 px-3">Detected</th>
-            {onFeedback && <th className="pb-3 px-3">Feedback</th>}
+            <th className="pb-3 px-3.5">Activity</th>
+            <th className="pb-3 px-3.5">Details</th>
+            <th className="pb-3 px-3.5">Outcome</th>
+            <th className="pb-3 px-3.5">Detected</th>
+            {onFeedback && <th className="pb-3 px-3.5">Feedback</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {items.map((item) => (<tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-              <td className="py-3.5 px-3">
+              <td className="py-3.5 px-3.5">
                 <div className="flex items-center gap-2.5">
                   <span className="w-7 h-7 rounded-lg bg-blue-50 text-[#087EFF] flex items-center justify-center shrink-0">
                     {item.event_type === "URL" ? <GlobeIcon className="w-3.5 h-3.5"/> : <MailIcon className="w-3.5 h-3.5"/>}
                   </span>
                   <div>
-                    <strong className="text-slate-900 block font-semibold">{item.event_type === "URL" ? "Website" : "Email"}</strong>
-                    <small className="text-slate-400 capitalize block">{item.event_type === "EMAIL" ? item.provider : "Address bar"}</small>
+                    <strong className="text-slate-900 block font-semibold text-sm">{item.event_type === "URL" ? "Website" : "Email"}</strong>
+                    <small className="text-slate-400 capitalize block text-xs">{item.event_type === "EMAIL" ? item.provider : "Address bar"}</small>
                   </div>
                 </div>
               </td>
-              <td className="py-3.5 px-3 max-w-xs">
-                <strong className="text-slate-900 block truncate font-medium">{item.event_type === "URL" ? item.origin : item.subject || "No subject"}</strong>
-                {item.event_type === "EMAIL" && <small className="text-slate-400 block truncate">{item.sender || "Sender not shown"}</small>}
+              <td className="py-3.5 px-3.5 max-w-sm">
+                <strong className="text-slate-900 block truncate font-medium text-sm">{item.event_type === "URL" ? item.origin : item.subject || "No subject"}</strong>
+                {item.event_type === "EMAIL" && <small className="text-slate-400 block truncate text-xs">{item.sender || "Sender not shown"}</small>}
               </td>
-              <td className="py-3.5 px-3">
+              <td className="py-3.5 px-3.5">
                 <StatusBadge outcome={item.outcome}/>
               </td>
-              <td className="py-3.5 px-3 whitespace-nowrap text-slate-400">
+              <td className="py-3.5 px-3.5 whitespace-nowrap text-slate-400 text-xs">
                 <time title={niceDate(item.occurred_at)}>{compact ? relativeTime(item.occurred_at) : niceDate(item.occurred_at)}</time>
               </td>
-              {onFeedback && (<td className="py-3.5 px-3">
+              {onFeedback && (<td className="py-3.5 px-3.5">
                   {item.event_type === "URL" ? (item.feedback_submitted ? (<span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">Submitted</span>) : (<button className="text-xs font-bold text-[#087EFF] hover:underline" type="button" onClick={() => onFeedback(item)}>
                         Give feedback
                       </button>)) : (<span className="text-slate-300" aria-hidden="true">—</span>)}
@@ -256,8 +256,8 @@ function ActivityTable({ items, compact = false, onFeedback }) {
     </div>);
 }
 function RangePicker({ value, onChange }) {
-    return (<div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs font-semibold" aria-label="Date range">
-      {[7, 30, 90].map((days) => (<button key={days} className={cx("px-3 py-1.5 rounded-lg transition-all", value === days ? "bg-white text-[#04142F] shadow-2xs font-bold" : "text-slate-500 hover:text-slate-900")} onClick={() => onChange(days)}>
+    return (<div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200 text-xs font-medium" aria-label="Date range">
+      {[7, 30, 90].map((days) => (<button key={days} className={cx("px-3 py-1.5 rounded-lg transition-all font-semibold", value === days ? "bg-white text-[#04142F] shadow-2xs font-bold" : "text-slate-500 hover:text-slate-900")} onClick={() => onChange(days)}>
           {days} days
         </button>))}
     </div>);

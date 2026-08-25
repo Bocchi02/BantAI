@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .cloud import connection_status as cloud_connection_status
+from .cloud import explain_activity
 from .cloud import review as cloud_review
 from .cloud import review_pasted_message
 from .config import settings
@@ -58,6 +59,8 @@ from .models import (
 )
 from .schemas import (
     AdminReviewAction,
+    ActivityExplanationFallbackRequest,
+    ActivityExplanationRequest,
     ActivityBatchRequest,
     AutomaticTrainingSampleRequest,
     ChangePasswordRequest,
@@ -122,16 +125,21 @@ class RateLimitMiddleware:
         path = scope.get("path", "")
         is_account_request = path.startswith("/api/v1/auth/") or path == "/api/v1/pairing/consume"
         is_message_review = path == "/api/v1/message-review"
-        is_cloud_request = path.startswith("/api/v1/cloud-review/") or is_message_review
+        is_activity_explanation = path == "/api/v1/cloud-review/activity-explanation"
+        is_cloud_request = (
+            path.startswith("/api/v1/cloud-review/")
+            or is_message_review
+        )
         if is_account_request or is_cloud_request:
             client = (scope.get("client") or ("unknown",))[0]
-            key = f"{client}:{path}"
+            rate_path = path
+            key = f"{client}:{rate_path}"
             now = monotonic()
             with self.lock:
                 bucket = self.buckets[key]
                 while bucket and bucket[0] <= now - 300:
                     bucket.popleft()
-                limit = 20 if is_account_request or is_message_review else 120
+                limit = 20 if is_account_request or is_message_review or is_activity_explanation else 120
                 limited = len(bucket) >= limit
                 if not limited:
                     bucket.append(now)
@@ -486,6 +494,7 @@ def normalized_report_url(value: str) -> str:
 def event_view(event: ActivityEvent, *, feedback_submitted: bool = False) -> dict:
     return {
         "id": event.id,
+        "detail_reference": event.client_event_id,
         "event_type": event.event_type.value,
         "origin": decrypt_text(event.origin_encrypted),
         "provider": event.provider,
@@ -1152,6 +1161,95 @@ def dashboard(days: int = Query(30, ge=7, le=90), current: CurrentWebUser = Depe
 @app.post("/api/v1/cloud-review/email")
 def email_cloud_review(payload: EmailCloudReviewRequest, _: CurrentDevice = Depends(current_device)) -> dict:
     return cloud_review({"analysis_type": "EMAIL_CONTEXT", "provider": payload.provider, "sender": payload.redacted_sender, "subject": payload.redacted_subject, "email_context": payload.redacted_context, "email_model": payload.email_model, "local_indicators": payload.local_indicators})
+
+
+@app.post("/api/v1/cloud-review/activity-explanation")
+def activity_explanation(
+    payload: ActivityExplanationRequest,
+    current: CurrentDevice = Depends(current_device),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Explain explicit full context only for this device's matching activity."""
+
+    event = db.scalar(
+        select(ActivityEvent).where(
+            ActivityEvent.id == payload.activity_id,
+            ActivityEvent.client_event_id == payload.client_event_id,
+            ActivityEvent.user_id == current.user.id,
+            ActivityEvent.device_id == current.device.id,
+            ActivityEvent.event_type == payload.event_type,
+            ActivityEvent.outcome == payload.outcome,
+        )
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Matching activity not found for this device.")
+
+    if payload.event_type == EventType.URL:
+        full_url = normalized_report_url(payload.url or "")
+        if normalized_origin(full_url) != decrypt_text(event.origin_encrypted):
+            raise HTTPException(status_code=422, detail="Website details do not match the recorded activity.")
+        explanation_payload = {
+            "event_type": "URL",
+            "recorded_outcome": event.outcome.value,
+            "full_url": full_url,
+            "content_scope": "FULL_URL",
+        }
+    else:
+        sender = (payload.sender or "").strip()
+        subject = (payload.subject or "").strip()
+        if (
+            payload.provider != event.provider
+            or sender != (decrypt_text(event.sender_encrypted) or "")
+            or subject != (decrypt_text(event.subject_encrypted) or "")
+        ):
+            raise HTTPException(status_code=422, detail="Email details do not match the recorded activity.")
+        explanation_payload = {
+            "event_type": "EMAIL",
+            "recorded_outcome": event.outcome.value,
+            "provider": payload.provider,
+            "sender": sender,
+            "subject": subject,
+            "email_body": payload.body or "",
+            "content_scope": "EMAIL_PROVIDER_SENDER_SUBJECT_BODY",
+        }
+    return explain_activity(explanation_payload)
+
+
+@app.post("/api/v1/cloud-review/activity-explanation-fallback")
+def activity_explanation_fallback(
+    payload: ActivityExplanationFallbackRequest,
+    current: CurrentDevice = Depends(current_device),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Use the user's stored minimized metadata when memory-only context expired."""
+
+    event = db.scalar(
+        select(ActivityEvent).where(
+            ActivityEvent.id == payload.activity_id,
+            ActivityEvent.client_event_id == payload.client_event_id,
+            ActivityEvent.user_id == current.user.id,
+        )
+    )
+    if event is None:
+        raise HTTPException(status_code=404, detail="Activity not found for this account.")
+
+    if event.event_type == EventType.URL:
+        explanation_payload = {
+            "event_type": "URL",
+            "recorded_outcome": event.outcome.value,
+            "url_origin": decrypt_text(event.origin_encrypted),
+            "content_scope": "WEBSITE_ORIGIN_ONLY",
+        }
+    else:
+        explanation_payload = {
+            "event_type": "EMAIL",
+            "recorded_outcome": event.outcome.value,
+            "provider": event.provider,
+            "sender": decrypt_text(event.sender_encrypted),
+            "subject": decrypt_text(event.subject_encrypted),
+            "content_scope": "EMAIL_PROVIDER_SENDER_SUBJECT_ONLY",
+        }
+    return explain_activity(explanation_payload)
 
 
 @app.post("/api/v1/message-review")

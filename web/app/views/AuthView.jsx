@@ -36,11 +36,11 @@ function AuthLayout({ children, eyebrow, title, description }) {
 
       {/* Right Form Panel */}
       <section className="lg:col-span-7 flex items-center justify-center p-6 sm:p-12 bg-slate-50/50">
-        <div className="w-full max-w-md bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="w-full max-w-md bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
           <div className="lg:hidden mb-6 flex justify-center">
             <Logo />
           </div>
-          <p className="text-[10px] font-bold text-[#087EFF] tracking-wider uppercase mb-1">{eyebrow}</p>
+          <p className="text-xs font-semibold text-[#087EFF] tracking-wider uppercase mb-1">{eyebrow}</p>
           <h2 className="text-2xl font-bold text-[#04142F] tracking-tight">{title}</h2>
           <p className="text-xs text-slate-500 mt-1 mb-6 leading-relaxed">{description}</p>
           {children}

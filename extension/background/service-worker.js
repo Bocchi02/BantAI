@@ -696,6 +696,31 @@ async function submitCompanionActivity(
 }
 
 
+async function rememberCompanionDetailContext(
+  context
+) {
+  try {
+    await fetch(
+      `${API_BASE}/companion/detail-context`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify(
+            context
+          )
+      }
+    );
+  } catch {
+    // Full URLs and email bodies are intentionally memory-only and are never
+    // placed in a retry queue or written to extension storage.
+  }
+}
+
+
 async function submitAutomaticTrainingSample(
   sample
 ) {
@@ -1165,6 +1190,17 @@ async function scanCurrentTabUrl(
 
       await checkServer();
 
+      await rememberCompanionDetailContext({
+        client_event_id:
+          activityEventId,
+        event_type:
+          "URL",
+        url:
+          currentUrl,
+        outcome:
+          result.final_result
+      });
+
       await submitCompanionActivity({
         client_event_id:
           activityEventId,
@@ -1367,6 +1403,19 @@ async function scanCurrentTabUrl(
       state?.url_detector
         ?.result ||
       result;
+
+    await rememberCompanionDetailContext({
+      client_event_id:
+        activityEventId,
+      event_type:
+        "URL",
+      url:
+        currentUrl,
+      outcome:
+        finalUrlResult
+          ?.final_result ||
+        "SUSPICIOUS_SIGNS_FOUND"
+    });
 
     await submitCompanionActivity({
       client_event_id:
@@ -1894,6 +1943,29 @@ async function analyzeOpenedEmail(
         "email_review_complete"
       );
     }
+
+    await rememberCompanionDetailContext({
+      client_event_id:
+        hybridResult
+          .analysis_id,
+      event_type:
+        "EMAIL",
+      provider:
+        provider.id,
+      sender:
+        payload?.sender ||
+        "",
+      subject:
+        payload?.subject ||
+        "",
+      body:
+        String(
+          payload?.body ||
+          ""
+        ).slice(0, 50000),
+      outcome:
+        finalEmailOutcome
+    });
 
     await submitCompanionActivity({
       client_event_id:
