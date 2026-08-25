@@ -126,4 +126,12 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(source, /does not automatically change future outcomes/);
   assert.doesNotMatch(source, /href=\{report\.origin\}|window\.open\(report\.origin/);
   assert.doesNotMatch(source, /Select a recent website/);
+  assert.match(source, /Automatic training-data contribution/);
+  assert.match(source, /I agree to automatic random training-data collection/);
+  assert.match(source, /Stop collection and delete samples/);
+  assert.match(source, /Automatic URL samples/);
+  assert.match(source, /Automatic email samples/);
+  assert.match(source, /Export URL samples/);
+  assert.match(source, /Export email samples/);
+  assert.match(source, /not confirmed labels/);
 });

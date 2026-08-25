@@ -143,6 +143,42 @@ class ActivityBatchRequest(StrictModel):
     events: list[ActivityInput] = Field(min_length=1, max_length=100)
 
 
+class TrainingConsentUpdateRequest(StrictModel):
+    enabled: bool
+    confirmed: bool = False
+
+    @model_validator(mode="after")
+    def require_confirmation_to_enable(self) -> "TrainingConsentUpdateRequest":
+        if self.enabled and not self.confirmed:
+            raise ValueError("You must confirm the training-data collection agreement.")
+        return self
+
+
+class AutomaticTrainingSampleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    event_type: EventType
+    url: str | None = Field(default=None, max_length=2048)
+    provider: Literal["gmail", "outlook", "yahoo"] | None = None
+    sender: str | None = Field(default=None, max_length=320)
+    subject: str | None = Field(default=None, max_length=500)
+    body: str | None = Field(default=None, max_length=10_000)
+    outcome: Outcome
+    occurred_at: datetime
+
+    @model_validator(mode="after")
+    def require_matching_sample_content(self) -> "AutomaticTrainingSampleRequest":
+        if self.occurred_at.tzinfo is None:
+            raise ValueError("occurred_at must include a timezone")
+        if self.event_type == EventType.URL:
+            if not self.url or self.provider or self.sender is not None or self.subject is not None or self.body is not None:
+                raise ValueError("URL samples require only the complete URL.")
+        elif not self.provider or self.url is not None or not self.body or not self.body.strip():
+            raise ValueError("Email samples require provider and body content without a URL.")
+        return self
+
+
 class UrlReportCreateRequest(StrictModel):
     url: str = Field(min_length=8, max_length=2048)
     detector_outcome: Outcome

@@ -14,6 +14,34 @@ from companion import CompanionManager
 
 
 class CompanionManagerTests(unittest.TestCase):
+    def test_automatic_training_sampling_only_forwards_randomly_selected_content(self) -> None:
+        sample = {
+            "client_event_id": "automatic-url-sample-0001",
+            "event_type": "URL",
+            "url": "https://example.test/complete/path",
+            "outcome": "NEEDS_CAUTION",
+            "occurred_at": "2026-08-25T10:00:00+08:00",
+        }
+        manager = CompanionManager()
+        manager._training_consent_cache = {
+            "expires_at": float("inf"),
+            "enabled": True,
+            "sample_rate_percent": 10,
+        }
+        with patch("companion.secrets.randbelow", return_value=999), patch.object(
+            manager, "_request", return_value={"accepted": True, "duplicate": False}
+        ) as request:
+            selected = manager.submit_automatic_training_sample(sample)
+        self.assertTrue(selected["selected"])
+        self.assertTrue(selected["submitted"])
+        request.assert_called_once_with("/training-samples", sample)
+
+        with patch("companion.secrets.randbelow", return_value=1000), patch.object(manager, "_request") as request:
+            skipped = manager.submit_automatic_training_sample(sample)
+        self.assertFalse(skipped["selected"])
+        self.assertEqual("NOT_SELECTED", skipped["reason"])
+        request.assert_not_called()
+
     def test_windows_pairing_falls_back_to_dpapi_when_credential_manager_is_unavailable(self) -> None:
         pairing_result = {
             "device_id": "device-win",

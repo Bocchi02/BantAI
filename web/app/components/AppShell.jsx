@@ -24,16 +24,16 @@ function AppShell({ user, page, navigate, children }) {
   const nav = [
     { id: "dashboard", icon: LayoutDashboardIcon, label: "Dashboard" },
     { id: "activity", icon: ActivityIcon, label: "Activity" },
-    { id: "message-review", icon: SparklesIcon, label: "AI message check" },
-    { id: "reports", icon: GlobeIcon, label: "URL reports" },
-    { id: "email-reports", icon: MailIcon, label: "Email reports" },
-    { id: "devices", icon: LaptopIcon, label: "Paired devices" },
+    { id: "message-review", icon: SparklesIcon, label: "AI Message Check" },
+    { id: "reports", icon: GlobeIcon, label: "URL Reports" },
+    { id: "email-reports", icon: MailIcon, label: "Email Reports" },
+    { id: "devices", icon: LaptopIcon, label: "Paired Devices" },
   ];
   const adminNav = [
-    { id: "admin", icon: ShieldIcon, label: "Admin overview" },
-    { id: "review-reports", icon: FileCheckIcon, label: "User reviews" },
-    { id: "admin-email-reports", icon: MailIcon, label: "Email reports" },
-    { id: "training-data", icon: DatabaseIcon, label: "Training data" },
+    { id: "admin", icon: ShieldIcon, label: "Admin Overview" },
+    { id: "review-reports", icon: FileCheckIcon, label: "User Reviews" },
+    { id: "admin-email-reports", icon: MailIcon, label: "Email Reports" },
+    { id: "training-data", icon: DatabaseIcon, label: "Training Data" },
     { id: "users", icon: UsersIcon, label: "Users" },
   ];
   return (

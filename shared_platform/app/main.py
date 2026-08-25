@@ -36,6 +36,7 @@ from .dependencies import (
 from .models import (
     AdminUrlAssessment,
     ActivityEvent,
+    AutomaticTrainingSample,
     EmailReport,
     EmailTrainingCandidate,
     EventType,
@@ -58,6 +59,7 @@ from .models import (
 from .schemas import (
     AdminReviewAction,
     ActivityBatchRequest,
+    AutomaticTrainingSampleRequest,
     ChangePasswordRequest,
     DeviceEmailActivityFeedbackRequest,
     DeviceUrlActivityFeedbackRequest,
@@ -70,6 +72,7 @@ from .schemas import (
     PastedMessageReviewRequest,
     ProfileUpdateRequest,
     RegisterRequest,
+    TrainingConsentUpdateRequest,
     UrlCloudReviewRequest,
     UrlActivityFeedbackRequest,
     UrlReportCreateRequest,
@@ -82,6 +85,8 @@ from .security import blind_index, decrypt_text, encrypt_text, hash_password, pa
 
 EMAIL_IN_USE_MESSAGE = "This email is already in use."
 OUTCOME_VALUES = [item.value for item in Outcome]
+TRAINING_CONSENT_VERSION = "2026-08-v1"
+AUTOMATIC_SAMPLE_RATE_PERCENT = 10
 
 
 def _aware(value: datetime) -> datetime:
@@ -146,6 +151,7 @@ def cleanup_expired(db: Session) -> None:
     cutoff = now - timedelta(days=settings.activity_retention_days)
     db.execute(delete(UrlReport).where(UrlReport.submitted_at < cutoff))
     db.execute(delete(EmailReport).where(EmailReport.submitted_at < cutoff))
+    db.execute(delete(AutomaticTrainingSample).where(AutomaticTrainingSample.created_at < cutoff))
     db.execute(delete(ActivityEvent).where(ActivityEvent.occurred_at < cutoff))
     db.execute(delete(PairingCode).where(or_(PairingCode.expires_at < now, PairingCode.consumed_at.is_not(None))))
     db.execute(delete(WebSession).where(or_(WebSession.expires_at < now, WebSession.revoked_at.is_not(None))))
@@ -329,6 +335,61 @@ def change_password(
     return {"message": "Your password was changed. Other signed-in sessions were closed."}
 
 
+def training_consent_view(user: User, db: Session) -> dict:
+    sample_count = db.scalar(
+        select(func.count(AutomaticTrainingSample.id)).where(AutomaticTrainingSample.user_id == user.id)
+    ) or 0
+    last_collected = db.scalar(
+        select(AutomaticTrainingSample.created_at)
+        .where(AutomaticTrainingSample.user_id == user.id)
+        .order_by(AutomaticTrainingSample.created_at.desc())
+        .limit(1)
+    )
+    return {
+        "enabled": bool(user.training_collection_enabled),
+        "consent_version": user.training_consent_version,
+        "consented_at": utc_timestamp(user.training_consent_at),
+        "sample_rate_percent": AUTOMATIC_SAMPLE_RATE_PERCENT,
+        "collected_sample_count": sample_count,
+        "last_collected_at": utc_timestamp(last_collected),
+    }
+
+
+@app.get("/api/v1/training-consent")
+def get_training_consent(
+    current: CurrentWebUser = Depends(current_web_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    return training_consent_view(current.user, db)
+
+
+@app.patch("/api/v1/training-consent")
+def update_training_consent(
+    payload: TrainingConsentUpdateRequest,
+    current: CurrentWebUser = Depends(csrf_protected),
+    db: Session = Depends(get_db),
+) -> dict:
+    current.user.training_collection_enabled = payload.enabled
+    current.user.training_consent_at = utcnow() if payload.enabled else None
+    current.user.training_consent_version = TRAINING_CONSENT_VERSION if payload.enabled else None
+    deleted_samples = 0
+    if not payload.enabled:
+        result = db.execute(
+            delete(AutomaticTrainingSample).where(AutomaticTrainingSample.user_id == current.user.id)
+        )
+        deleted_samples = result.rowcount or 0
+    db.commit()
+    return {
+        **training_consent_view(current.user, db),
+        "deleted_samples": deleted_samples,
+        "message": (
+            "Automatic training-data collection is enabled."
+            if payload.enabled
+            else "Automatic collection is disabled and your automatic samples were deleted."
+        ),
+    }
+
+
 @app.post("/api/v1/pairing", status_code=201)
 def create_pairing(current: CurrentWebUser = Depends(csrf_protected), db: Session = Depends(get_db)) -> dict:
     raw = pairing_code()
@@ -369,6 +430,17 @@ def device_status(current: CurrentDevice = Depends(current_device)) -> dict:
         "connected": True,
         "device_id": current.device.id,
         "cloud_ai": cloud_connection_status(),
+    }
+
+
+@app.get("/api/v1/training-consent/device")
+def device_training_consent(
+    current: CurrentDevice = Depends(current_device),
+) -> dict:
+    return {
+        "enabled": bool(current.user.training_collection_enabled),
+        "consent_version": current.user.training_consent_version,
+        "sample_rate_percent": AUTOMATIC_SAMPLE_RATE_PERCENT,
     }
 
 
@@ -534,6 +606,27 @@ def email_training_candidate_view(candidate: EmailTrainingCandidate) -> dict:
     }
 
 
+def automatic_training_sample_view(sample: AutomaticTrainingSample) -> dict:
+    view = {
+        "id": sample.id,
+        "event_type": sample.event_type.value,
+        "provider": sample.provider,
+        "detector_outcome": sample.detector_outcome.value,
+        "detector_model_version": sample.detector_model_version,
+        "body_included": bool(sample.body_ciphertext),
+        "body_character_count": sample.body_character_count,
+        "occurred_at": utc_timestamp(sample.occurred_at),
+        "collected_at": utc_timestamp(sample.created_at),
+        "source": "AUTOMATIC_OPT_IN_SAMPLE",
+    }
+    if sample.event_type == EventType.URL:
+        view["url"] = decrypt_text(sample.url_ciphertext)
+    else:
+        view["sender"] = decrypt_text(sample.sender_encrypted)
+        view["subject"] = decrypt_text(sample.subject_encrypted)
+    return view
+
+
 def persist_url_activity_feedback(
     *,
     event: ActivityEvent,
@@ -682,6 +775,63 @@ def ingest_activities(payload: ActivityBatchRequest, current: CurrentDevice = De
             duplicates += 1
     db.commit()
     return {"accepted": accepted, "duplicates": duplicates}
+
+
+@app.post("/api/v1/training-samples", status_code=202)
+def ingest_automatic_training_sample(
+    payload: AutomaticTrainingSampleRequest,
+    current: CurrentDevice = Depends(current_device),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not current.user.training_collection_enabled:
+        raise HTTPException(status_code=403, detail="Automatic training-data collection is not enabled for this account.")
+    if current.user.training_consent_version != TRAINING_CONSENT_VERSION:
+        raise HTTPException(status_code=409, detail="The training-data agreement must be reviewed again.")
+
+    if payload.event_type == EventType.URL:
+        normalized_content = normalized_report_url(payload.url or "")
+        sample = AutomaticTrainingSample(
+            user_id=current.user.id,
+            device_id=current.device.id,
+            client_event_id=payload.client_event_id,
+            event_type=payload.event_type,
+            url_ciphertext=encrypt_text(normalized_content),
+            content_fingerprint=blind_index(normalized_content, "automatic-url-sample-v1"),
+            detector_outcome=payload.outcome,
+            detector_model_version="RF V4-B",
+            consent_version=TRAINING_CONSENT_VERSION,
+            occurred_at=payload.occurred_at.astimezone(timezone.utc),
+        )
+    else:
+        body = (payload.body or "").strip()
+        sample = AutomaticTrainingSample(
+            user_id=current.user.id,
+            device_id=current.device.id,
+            client_event_id=payload.client_event_id,
+            event_type=payload.event_type,
+            provider=payload.provider,
+            sender_encrypted=encrypt_text(payload.sender or ""),
+            subject_encrypted=encrypt_text(payload.subject or ""),
+            body_ciphertext=encrypt_text(body),
+            content_fingerprint=email_content_fingerprint(
+                provider=payload.provider or "",
+                sender=payload.sender or "",
+                subject=payload.subject or "",
+                body=body,
+            ),
+            body_character_count=len(body),
+            detector_outcome=payload.outcome,
+            detector_model_version="XLM-R V1",
+            consent_version=TRAINING_CONSENT_VERSION,
+            occurred_at=payload.occurred_at.astimezone(timezone.utc),
+        )
+    db.add(sample)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return {"accepted": False, "duplicate": True}
+    return {"accepted": True, "duplicate": False}
 
 
 @app.get("/api/v1/activities")
@@ -1078,6 +1228,30 @@ def admin_training_data(
     email_activity_total = db.scalar(
         select(func.count(ActivityEvent.id)).where(ActivityEvent.event_type == EventType.EMAIL)
     ) or 0
+    automatic_url_total = db.scalar(
+        select(func.count(AutomaticTrainingSample.id)).where(
+            AutomaticTrainingSample.event_type == EventType.URL
+        )
+    ) or 0
+    automatic_url_rows = db.scalars(
+        select(AutomaticTrainingSample)
+        .where(AutomaticTrainingSample.event_type == EventType.URL)
+        .order_by(AutomaticTrainingSample.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    automatic_email_total = db.scalar(
+        select(func.count(AutomaticTrainingSample.id)).where(
+            AutomaticTrainingSample.event_type == EventType.EMAIL
+        )
+    ) or 0
+    automatic_email_rows = db.scalars(
+        select(AutomaticTrainingSample)
+        .where(AutomaticTrainingSample.event_type == EventType.EMAIL)
+        .order_by(AutomaticTrainingSample.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
     return {
         "urls": {
             "items": [training_candidate_view(row) for row in rows],
@@ -1111,6 +1285,29 @@ def admin_training_data(
             "privacy_message": (
                 "Email bodies are stored only as authenticated ciphertext after explicit submission. "
                 "User and administrator APIs never return or decrypt the body content."
+            ),
+        },
+        "automatic_samples": {
+            "urls": {
+                "items": [automatic_training_sample_view(row) for row in automatic_url_rows],
+                "page": page,
+                "page_size": page_size,
+                "total": automatic_url_total,
+                "pages": math.ceil(automatic_url_total / page_size) if automatic_url_total else 0,
+            },
+            "emails": {
+                "items": [automatic_training_sample_view(row) for row in automatic_email_rows],
+                "page": page,
+                "page_size": page_size,
+                "total": automatic_email_total,
+                "pages": math.ceil(automatic_email_total / page_size) if automatic_email_total else 0,
+            },
+            "url_total": automatic_url_total,
+            "email_total": automatic_email_total,
+            "sample_rate_percent": AUTOMATIC_SAMPLE_RATE_PERCENT,
+            "privacy_message": (
+                "Complete URL samples and email content are stored with authenticated encryption. "
+                "Email bodies are never returned by administrator APIs."
             ),
         },
     }
@@ -1194,6 +1391,77 @@ def export_admin_training_data(
                 "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
             })
         filename_prefix = "bantai-email-training-manifest"
+
+    filename = f"{filename_prefix}-{utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    return Response(
+        content="\ufeff" + output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.get("/api/v1/admin/training-data/automatic-export.csv")
+def export_automatic_training_samples(
+    sample_type: Literal["URL", "EMAIL"] = Query(...),
+    _: CurrentWebUser = Depends(admin_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Export one automatic sample type without disclosing stored email bodies."""
+
+    event_type = EventType.URL if sample_type == "URL" else EventType.EMAIL
+    samples = db.scalars(
+        select(AutomaticTrainingSample)
+        .where(AutomaticTrainingSample.event_type == event_type)
+        .order_by(AutomaticTrainingSample.created_at.desc())
+    ).all()
+    output = io.StringIO(newline="")
+    if event_type == EventType.URL:
+        fieldnames = [
+            "sample_id", "url", "detector_outcome", "detector_model_version",
+            "source", "occurred_at_utc", "collected_at_utc",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\r\n")
+        writer.writeheader()
+        for sample in samples:
+            writer.writerow({
+                "sample_id": sample.id,
+                "url": csv_safe_cell(decrypt_text(sample.url_ciphertext)),
+                "detector_outcome": sample.detector_outcome.value,
+                "detector_model_version": csv_safe_cell(sample.detector_model_version),
+                "source": "AUTOMATIC_OPT_IN_SAMPLE",
+                "occurred_at_utc": utc_timestamp(sample.occurred_at),
+                "collected_at_utc": utc_timestamp(sample.created_at),
+            })
+        filename_prefix = "bantai-automatic-url-samples"
+    else:
+        fieldnames = [
+            "sample_id", "provider", "sender", "subject", "detector_outcome",
+            "detector_model_version", "body_available", "body_character_count",
+            "content_access", "source", "occurred_at_utc", "collected_at_utc",
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\r\n")
+        writer.writeheader()
+        for sample in samples:
+            writer.writerow({
+                "sample_id": sample.id,
+                "provider": csv_safe_cell(sample.provider),
+                "sender": csv_safe_cell(decrypt_text(sample.sender_encrypted)),
+                "subject": csv_safe_cell(decrypt_text(sample.subject_encrypted)),
+                "detector_outcome": sample.detector_outcome.value,
+                "detector_model_version": csv_safe_cell(sample.detector_model_version),
+                "body_available": "TRUE" if sample.body_ciphertext else "FALSE",
+                "body_character_count": sample.body_character_count,
+                "content_access": "RESTRICTED_TRAINING_PROCESS_ONLY",
+                "source": "AUTOMATIC_OPT_IN_SAMPLE",
+                "occurred_at_utc": utc_timestamp(sample.occurred_at),
+                "collected_at_utc": utc_timestamp(sample.created_at),
+            })
+        filename_prefix = "bantai-automatic-email-sample-manifest"
 
     filename = f"{filename_prefix}-{utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(

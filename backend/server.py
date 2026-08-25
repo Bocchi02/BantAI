@@ -235,6 +235,33 @@ class CompanionEmailFeedbackRequest(BaseModel):
         return self
 
 
+class CompanionTrainingSampleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    event_type: Literal["URL", "EMAIL"]
+    url: Optional[str] = Field(default=None, max_length=2048)
+    provider: Optional[Literal["gmail", "outlook", "yahoo"]] = None
+    sender: Optional[str] = Field(default=None, max_length=320)
+    subject: Optional[str] = Field(default=None, max_length=500)
+    body: Optional[str] = Field(default=None, max_length=10_000)
+    outcome: Literal[
+        "NO_STRONG_WARNING_SIGNS",
+        "NEEDS_CAUTION",
+        "SUSPICIOUS_SIGNS_FOUND",
+    ]
+    occurred_at: str = Field(min_length=20, max_length=40)
+
+    @model_validator(mode="after")
+    def require_matching_training_content(self) -> "CompanionTrainingSampleRequest":
+        if self.event_type == "URL":
+            if not self.url or self.provider or self.sender is not None or self.subject is not None or self.body is not None:
+                raise ValueError("URL samples require only the complete URL.")
+        elif not self.provider or self.url is not None or not self.body or not self.body.strip():
+            raise ValueError("Email samples require provider and body content without a URL.")
+        return self
+
+
 def require_detection_access() -> None:
     """Disable all model inference until this device is paired and authenticated."""
 
@@ -749,6 +776,19 @@ def submit_companion_email_feedback(request: CompanionEmailFeedbackRequest) -> d
 
 
 @app.post(
+    "/companion/training-sample",
+    dependencies=[Depends(require_detection_access)],
+)
+def submit_companion_training_sample(request: CompanionTrainingSampleRequest) -> dict:
+    """Let the local Companion select and forward an explicitly opted-in sample."""
+
+    try:
+        return companion_manager.submit_automatic_training_sample(request.model_dump(exclude_none=True))
+    except CompanionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post(
     "/analyze-url",
     response_model=
         UrlAnalysisResponse,
@@ -1137,7 +1177,10 @@ def analyze_hybrid_email(
         UrlAnalysisRequest(url=request.current_url)
     )
 
-    if request.cloud_ai_review:
+    if (
+        request.cloud_ai_review
+        and email_model.signal == "SUSPICIOUS"
+    ):
         llm_review = llm_coordinator.review_email(
             provider=provider,
             sender=request.sender,
@@ -1153,6 +1196,12 @@ def analyze_hybrid_email(
         llm_review.update(llm_coordinator.configuration())
         llm_review["enabled"] = False
         llm_review["status"] = "OFF"
+        llm_review["reasoning_summary"] = (
+            "Cloud Email Review runs automatically after this local email warning "
+            "when requested by the extension."
+            if email_model.signal == "SUSPICIOUS"
+            else "Cloud Email Review was not needed because the local email model did not warn."
+        )
 
     fusion = fuse_email_signals(
         email_signal=email_model.signal,

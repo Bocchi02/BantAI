@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -100,6 +100,9 @@ class User(Base):
     status: Mapped[UserStatus] = mapped_column(Enum(UserStatus), default=UserStatus.ACTIVE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    training_collection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    training_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    training_consent_version: Mapped[str | None] = mapped_column(String(20))
 
     sessions: Mapped[list[WebSession]] = relationship(back_populates="user", cascade="all, delete-orphan")
     devices: Mapped[list[PairedDevice]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -169,6 +172,40 @@ class ActivityEvent(Base):
     subject_encrypted: Mapped[str | None] = mapped_column(Text)
     outcome: Mapped[Outcome] = mapped_column(Enum(Outcome), index=True)
     cloud_status: Mapped[CloudStatus] = mapped_column(Enum(CloudStatus))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AutomaticTrainingSample(Base):
+    __tablename__ = "automatic_training_samples"
+    __table_args__ = (
+        UniqueConstraint("device_id", "client_event_id", name="uq_auto_sample_device_event"),
+        CheckConstraint(
+            "(event_type = 'URL' AND url_ciphertext IS NOT NULL AND provider IS NULL "
+            "AND sender_encrypted IS NULL AND subject_encrypted IS NULL AND body_ciphertext IS NULL) OR "
+            "(event_type = 'EMAIL' AND url_ciphertext IS NULL AND provider IS NOT NULL "
+            "AND body_ciphertext IS NOT NULL)",
+            name="ck_auto_sample_content_shape",
+        ),
+        Index("ix_auto_sample_type_created", "event_type", "created_at"),
+        Index("ix_auto_sample_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    device_id: Mapped[str] = mapped_column(ForeignKey("paired_devices.id", ondelete="CASCADE"), index=True)
+    client_event_id: Mapped[str] = mapped_column(String(128))
+    event_type: Mapped[EventType] = mapped_column(Enum(EventType))
+    url_ciphertext: Mapped[str | None] = mapped_column(Text)
+    provider: Mapped[str | None] = mapped_column(String(20))
+    sender_encrypted: Mapped[str | None] = mapped_column(Text)
+    subject_encrypted: Mapped[str | None] = mapped_column(Text)
+    body_ciphertext: Mapped[str | None] = mapped_column(Text)
+    content_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    body_character_count: Mapped[int | None] = mapped_column(Integer)
+    detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
+    detector_model_version: Mapped[str] = mapped_column(String(40))
+    consent_version: Mapped[str] = mapped_column(String(20))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

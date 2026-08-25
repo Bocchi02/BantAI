@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { PASSWORD_REQUIREMENTS, passwordValidationMessage, userName, Notice, PageHeader } from "../components/ViewShared";
 
@@ -10,6 +10,15 @@ function ProfilePage({ user, onUserChanged, onSignOut }) {
     const [nameMessage, setNameMessage] = useState("");
     const [passwordMessage, setPasswordMessage] = useState("");
     const [error, setError] = useState("");
+    const [trainingConsent, setTrainingConsent] = useState(null);
+    const [trainingAgreement, setTrainingAgreement] = useState(false);
+    const [trainingBusy, setTrainingBusy] = useState(false);
+    const [trainingMessage, setTrainingMessage] = useState("");
+    useEffect(() => {
+        api("/training-consent")
+            .then(setTrainingConsent)
+            .catch((reason) => setError(reason instanceof Error ? reason.message : "BantAI could not load your training-data preference."));
+    }, []);
     const saveName = async (event) => {
         event.preventDefault();
         setNameBusy(true);
@@ -71,6 +80,48 @@ function ProfilePage({ user, onUserChanged, onSignOut }) {
         catch (reason) {
             setError(reason instanceof Error ? reason.message : "BantAI could not sign you out.");
             setSignOutBusy(false);
+        }
+    };
+    const enableTrainingCollection = async (event) => {
+        event.preventDefault();
+        if (!trainingAgreement)
+            return;
+        setTrainingBusy(true);
+        setError("");
+        setTrainingMessage("");
+        try {
+            const result = await api("/training-consent", {
+                method: "PATCH",
+                body: JSON.stringify({ enabled: true, confirmed: true }),
+            });
+            setTrainingConsent(result);
+            setTrainingAgreement(false);
+            setTrainingMessage(result.message);
+        }
+        catch (reason) {
+            setError(reason instanceof Error ? reason.message : "BantAI could not enable automatic training-data collection.");
+        }
+        finally {
+            setTrainingBusy(false);
+        }
+    };
+    const disableTrainingCollection = async () => {
+        setTrainingBusy(true);
+        setError("");
+        setTrainingMessage("");
+        try {
+            const result = await api("/training-consent", {
+                method: "PATCH",
+                body: JSON.stringify({ enabled: false, confirmed: false }),
+            });
+            setTrainingConsent(result);
+            setTrainingMessage(result.message);
+        }
+        catch (reason) {
+            setError(reason instanceof Error ? reason.message : "BantAI could not disable automatic training-data collection.");
+        }
+        finally {
+            setTrainingBusy(false);
         }
     };
     return (<>
@@ -143,6 +194,43 @@ function ProfilePage({ user, onUserChanged, onSignOut }) {
           </form>
         </section>
       </div>
+
+      <section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6" aria-labelledby="training-contribution-title">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4 pb-4 border-b border-slate-100">
+          <div>
+            <p className="text-[10px] font-bold text-[#008F7A] uppercase tracking-wider">HELP THE FUTURE OF BANTAI</p>
+            <h2 id="training-contribution-title" className="text-base font-bold text-[#04142F]">Automatic training-data contribution</h2>
+            <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">When enabled, BantAI randomly selects about 10% of completed checks. Selected website samples include the complete address, including path, query, and fragment. Selected email samples include provider, sender, subject, and body.</p>
+          </div>
+          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 ${trainingConsent?.enabled ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+            {trainingConsent?.enabled ? "ENABLED" : "OFF"}
+          </span>
+        </div>
+
+        <div className="rounded-xl border border-[#BFE4DC] bg-[#F1FAF8] p-4 text-xs text-slate-600 leading-relaxed mb-4">
+          <strong className="text-[#064E43] block mb-1">How your contribution is protected</strong>
+          Complete samples are encrypted before database storage and kept outside normal activity history. Administrators may review complete URL samples and email metadata, but the stored email body is never displayed in the web interface. Automatic samples are detector references—not confirmed labels—and do not automatically retrain or change the frozen models.
+        </div>
+
+        {trainingConsent?.enabled ? (<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="text-xs text-slate-500">
+              <strong className="text-slate-800 block">Contribution active</strong>
+              {trainingConsent.collected_sample_count} automatic {trainingConsent.collected_sample_count === 1 ? "sample" : "samples"} currently retained. Disabling collection also deletes these automatic samples.
+            </div>
+            <button type="button" className="px-4 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition disabled:opacity-50 shrink-0" onClick={disableTrainingCollection} disabled={trainingBusy}>
+              {trainingBusy ? "Updating..." : "Stop collection and delete samples"}
+            </button>
+          </div>) : (<form onSubmit={enableTrainingCollection} className="space-y-4">
+            <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 cursor-pointer focus-within:ring-2 focus-within:ring-[#087EFF]">
+              <input type="checkbox" checked={trainingAgreement} onChange={(event) => setTrainingAgreement(event.target.checked)} required className="mt-0.5 w-4 h-4 accent-[#008F7A]"/>
+              <span className="text-xs text-slate-600 leading-relaxed"><strong className="text-slate-900 block mb-0.5">I agree to automatic random training-data collection.</strong>I understand what complete URL and email information may be collected, that collection is optional for using BantAI, and that I can withdraw and delete automatic samples from this page.</span>
+            </label>
+            <button className="px-5 py-2.5 rounded-xl bg-[#008F7A] hover:bg-[#064E43] text-white text-xs font-bold shadow-sm transition disabled:opacity-50" disabled={trainingBusy || !trainingAgreement}>
+              {trainingBusy ? "Enabling..." : "Enable automatic contribution"}
+            </button>
+          </form>)}
+        {trainingMessage && <div className="mt-4"><Notice type="success">{trainingMessage}</Notice></div>}
+      </section>
 
       <section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>

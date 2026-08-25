@@ -9,6 +9,18 @@ $ErrorActionPreference = "Stop"
 
 $BackendDir = $PSScriptRoot
 $ProjectRoot = Resolve-Path (Join-Path $BackendDir "..")
+$VirtualEnvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+
+if (Test-Path -LiteralPath $VirtualEnvPython -PathType Leaf) {
+    $PythonExe = $VirtualEnvPython
+}
+else {
+    $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -eq $PythonCommand) {
+        throw "Python was not found. Restore the BantAI .venv environment before starting Companion."
+    }
+    $PythonExe = $PythonCommand.Source
+}
 
 if ([string]::IsNullOrWhiteSpace($TextModelDir)) {
     $TextModelDir = Join-Path `
@@ -45,10 +57,16 @@ Write-Host "=============================================="
 Write-Host "Email model: $env:BANTAI_MODEL_DIR"
 Write-Host "URL model:   $env:BANTAI_RF_MODEL_PATH"
 Write-Host "Platform:    $env:BANTAI_PLATFORM_API"
-Write-Host "Cloud reviews are always enabled in the extension."
+Write-Host "Cloud reviews run automatically after local model warnings."
+Write-Host "Runtime:     $PythonExe"
 Write-Host "Port:        $Port"
 Write-Host ""
 
-python -m uvicorn server:app `
+& $PythonExe -m uvicorn server:app `
     --host 127.0.0.1 `
-    --port $Port
+    --port $Port `
+    --no-access-log
+
+if ($LASTEXITCODE -ne 0) {
+    throw "BantAI Companion stopped unexpectedly with exit code $LASTEXITCODE."
+}

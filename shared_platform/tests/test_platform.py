@@ -21,6 +21,7 @@ from shared_platform.app.database import Base, SessionLocal, engine
 from shared_platform.app.main import app, cleanup_expired
 from shared_platform.app.models import (
     ActivityEvent,
+    AutomaticTrainingSample,
     EmailReport,
     EmailTrainingCandidate,
     PairedDevice,
@@ -155,6 +156,108 @@ class PlatformTests(unittest.TestCase):
         with SessionLocal() as db:
             self.assertEqual(activity_before, db.scalar(select(func.count(ActivityEvent.id))) or 0)
             self.assertEqual(reports_before, db.scalar(select(func.count(EmailReport.id))) or 0)
+
+    def test_opt_in_automatic_samples_are_encrypted_and_deleted_on_withdrawal(self) -> None:
+        token = self.paired_device_token()
+        device_headers = {"Authorization": f"Bearer {token}"}
+        url_payload = {
+            "client_event_id": "automatic-url-sample-0001",
+            "event_type": "URL",
+            "url": "https://sample.example.test/private/path?token=synthetic#section",
+            "outcome": "NEEDS_CAUTION",
+            "occurred_at": "2026-08-25T10:00:00+08:00",
+        }
+        self.assertEqual(403, self.client.post("/api/v1/training-samples", headers=device_headers, json=url_payload).status_code)
+
+        self.login("user@example.com", "correct horse battery staple")
+        self.assertEqual(
+            422,
+            self.client.patch(
+                "/api/v1/training-consent",
+                headers=self.csrf(),
+                json={"enabled": True, "confirmed": False},
+            ).status_code,
+        )
+        enabled = self.client.patch(
+            "/api/v1/training-consent",
+            headers=self.csrf(),
+            json={"enabled": True, "confirmed": True},
+        )
+        self.assertEqual(200, enabled.status_code, enabled.text)
+        self.assertTrue(enabled.json()["enabled"])
+        self.assertEqual(10, enabled.json()["sample_rate_percent"])
+
+        self.assertEqual(202, self.client.post("/api/v1/training-samples", headers=device_headers, json=url_payload).status_code)
+        email_body = "Synthetic training email body requesting account details."
+        email_payload = {
+            "client_event_id": "automatic-email-sample-0001",
+            "event_type": "EMAIL",
+            "provider": "gmail",
+            "sender": "sender@example.test",
+            "subject": "Synthetic sample",
+            "body": email_body,
+            "outcome": "SUSPICIOUS_SIGNS_FOUND",
+            "occurred_at": "2026-08-25T10:01:00+08:00",
+        }
+        self.assertEqual(202, self.client.post("/api/v1/training-samples", headers=device_headers, json=email_payload).status_code)
+
+        with SessionLocal() as db:
+            samples = list(db.scalars(select(AutomaticTrainingSample)).all())
+            self.assertEqual(2, len(samples))
+            stored_text = " ".join(
+                value or ""
+                for sample in samples
+                for value in (sample.url_ciphertext, sample.sender_encrypted, sample.subject_encrypted, sample.body_ciphertext)
+            )
+            self.assertNotIn("private/path", stored_text)
+            self.assertNotIn(email_body, stored_text)
+
+        admin_client = TestClient(app)
+        admin_client.post("/api/v1/auth/login", json={"email": "admin@example.com", "password": "admin correct horse battery"})
+        inventory = admin_client.get("/api/v1/admin/training-data")
+        self.assertEqual(200, inventory.status_code, inventory.text)
+        automatic = inventory.json()["automatic_samples"]
+        self.assertEqual(1, automatic["url_total"])
+        self.assertEqual(1, automatic["email_total"])
+        self.assertEqual(1, len(automatic["urls"]["items"]))
+        self.assertEqual(1, automatic["urls"]["total"])
+        self.assertEqual("URL", automatic["urls"]["items"][0]["event_type"])
+        self.assertEqual(1, len(automatic["emails"]["items"]))
+        self.assertEqual(1, automatic["emails"]["total"])
+        self.assertEqual("EMAIL", automatic["emails"]["items"][0]["event_type"])
+        self.assertIn("private/path", inventory.text)
+        self.assertNotIn(email_body, inventory.text)
+        self.assertNotIn("body_ciphertext", inventory.text)
+        self.assertNotIn("user_id", inventory.text)
+
+        url_export = admin_client.get(
+            "/api/v1/admin/training-data/automatic-export.csv?sample_type=URL"
+        )
+        self.assertEqual(200, url_export.status_code, url_export.text)
+        self.assertIn("bantai-automatic-url-samples", url_export.headers["content-disposition"])
+        self.assertIn("private/path?token=synthetic#section", url_export.text)
+        self.assertNotIn("user_id", url_export.text)
+
+        email_export = admin_client.get(
+            "/api/v1/admin/training-data/automatic-export.csv?sample_type=EMAIL"
+        )
+        self.assertEqual(200, email_export.status_code, email_export.text)
+        self.assertIn("bantai-automatic-email-sample-manifest", email_export.headers["content-disposition"])
+        self.assertIn("sender@example.test", email_export.text)
+        self.assertIn("Synthetic sample", email_export.text)
+        self.assertIn("RESTRICTED_TRAINING_PROCESS_ONLY", email_export.text)
+        self.assertNotIn(email_body, email_export.text)
+        self.assertNotIn("body_ciphertext", email_export.text)
+
+        disabled = self.client.patch(
+            "/api/v1/training-consent",
+            headers=self.csrf(),
+            json={"enabled": False, "confirmed": False},
+        )
+        self.assertEqual(200, disabled.status_code, disabled.text)
+        self.assertEqual(2, disabled.json()["deleted_samples"])
+        with SessionLocal() as db:
+            self.assertEqual(0, db.scalar(select(func.count(AutomaticTrainingSample.id))) or 0)
 
     def test_registration_is_active_immediately_and_email_account_flows_are_absent(self) -> None:
         registration = self.client.post(
@@ -721,6 +824,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(403, response.status_code)
         self.assertEqual(403, self.client.get("/api/v1/admin/training-data").status_code)
         self.assertEqual(403, self.client.get("/api/v1/admin/training-data/export.csv?candidate_type=URL").status_code)
+        self.assertEqual(403, self.client.get("/api/v1/admin/training-data/automatic-export.csv?sample_type=URL").status_code)
         self.assertEqual(403, self.client.get("/api/v1/admin/email-reports").status_code)
 
     def test_explicit_email_review_encrypts_body_and_never_exposes_it_to_admin(self) -> None:

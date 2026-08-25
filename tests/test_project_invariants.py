@@ -21,6 +21,19 @@ def read_web_interface() -> str:
 
 
 class ProjectInvariantTests(unittest.TestCase):
+    def test_source_companion_autostart_uses_the_project_runtime(self) -> None:
+        launcher = read("backend/START_BANTAI_V1_1.ps1")
+        startup = read("scripts/ENABLE_BANTAI_COMPANION_STARTUP.ps1")
+
+        self.assertIn('.venv\\Scripts\\python.exe', launcher)
+        self.assertIn('& $PythonExe -m uvicorn server:app', launcher)
+        self.assertIn('--host 127.0.0.1', launcher)
+        self.assertIn('--no-access-log', launcher)
+        self.assertIn('CurrentVersion\\Run', startup)
+        self.assertIn('-Name "BantAICompanion"', startup)
+        self.assertIn('-WindowStyle Hidden', startup)
+        self.assertIn('START_BANTAI_V1_1.ps1', startup)
+
     def test_web_interface_uses_javascript_and_separate_route_views(self) -> None:
         web_root = ROOT / "web"
         typescript_sources = [
@@ -127,8 +140,9 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertNotIn("GEMINI_API_KEY", extension_source)
         self.assertNotRegex(extension_source, r"AIza[0-9A-Za-z_-]{20,}")
 
-    def test_cloud_reviews_are_always_on_without_toggles(self) -> None:
+    def test_cloud_reviews_are_automatic_only_after_local_model_warnings(self) -> None:
         worker = read("extension/background/service-worker.js")
+        server = read("backend/server.py")
         popup = read("extension/popup/popup.js")
         popup_html = read("extension/popup/popup.html")
         for removed in (
@@ -141,6 +155,9 @@ class ProjectInvariantTests(unittest.TestCase):
             self.assertNotIn(removed, popup)
             self.assertNotIn(removed, popup_html)
         self.assertIn("fetchHybridEmail(\n        payload,\n        currentUrl,\n        true", worker)
+        self.assertIn('request.cloud_ai_review\n        and email_model.signal == "SUSPICIOUS"', server)
+        self.assertIn("Cloud Email Review was not needed because the local email model did not warn.", server)
+        self.assertIn("Cloud URL Review was not needed because the local URL model did not warn.", server)
 
     def test_url_cloud_review_is_always_on_origin_only_and_local_first(self) -> None:
         worker = read("extension/background/service-worker.js")
@@ -247,7 +264,7 @@ class ProjectInvariantTests(unittest.TestCase):
         web_app = read_web_interface()
 
         self.assertIn("def require_detection_access", server)
-        self.assertEqual(server.count("Depends(require_detection_access)"), 5)
+        self.assertEqual(server.count("Depends(require_detection_access)"), 6)
         self.assertIn("def access_status", companion)
         self.assertIn('"detection_enabled": authenticated', companion)
         self.assertIn("async function checkDetectionAccess", worker)
@@ -312,6 +329,58 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertNotIn('body_ciphertext:', web_app)
         self.assertNotIn('body_fingerprint:', web_app)
 
+    def test_automatic_training_collection_requires_opt_in_and_keeps_sensitive_content_encrypted(self) -> None:
+        models = read("shared_platform/app/models.py")
+        schemas = read("shared_platform/app/schemas.py")
+        platform = read("shared_platform/app/main.py")
+        companion = read("backend/companion.py")
+        server = read("backend/server.py")
+        worker = read("extension/background/service-worker.js")
+        profile = read("web/app/views/ProfileView.jsx")
+        training = read("web/app/views/TrainingDataView.jsx")
+
+        self.assertIn("training_collection_enabled", models)
+        self.assertIn('class AutomaticTrainingSample', models)
+        self.assertIn('body_ciphertext: Mapped[str | None]', models)
+        self.assertIn('class TrainingConsentUpdateRequest', schemas)
+        self.assertIn('if self.enabled and not self.confirmed', schemas)
+        self.assertIn('@app.patch("/api/v1/training-consent")', platform)
+        self.assertIn('body_ciphertext=encrypt_text(body)', platform)
+        auto_view = platform[
+            platform.index("def automatic_training_sample_view") :
+            platform.index("def persist_url_activity_feedback")
+        ]
+        self.assertNotIn("decrypt_text(sample.body_ciphertext)", auto_view)
+        self.assertIn('secrets.randbelow(10_000)', companion)
+        sample_method = companion[
+            companion.index("def submit_automatic_training_sample") :
+            companion.index("def flush")
+        ]
+        self.assertNotIn("_append_outbox", sample_method)
+        self.assertNotIn("_save_outbox", sample_method)
+        self.assertIn('"/companion/training-sample"', server)
+        self.assertIn('url:\n          currentUrl', worker)
+        self.assertIn('body:\n        payload?.body', worker)
+        self.assertIn('I agree to automatic random training-data collection.', profile)
+        self.assertIn('type="checkbox"', profile)
+        self.assertIn('required', profile)
+        self.assertIn('Stop collection and delete samples', profile)
+        self.assertIn('Automatic URL samples', training)
+        self.assertIn('Automatic email samples', training)
+        self.assertIn('/admin/training-data/automatic-export.csv', training)
+        self.assertIn('Export URL samples', training)
+        self.assertIn('Export email samples', training)
+        self.assertIn('Administrators cannot open, retrieve, or export', training)
+        automatic_export = platform[
+            platform.index('@app.get("/api/v1/admin/training-data/automatic-export.csv")') :
+            platform.index('@app.get("/api/v1/admin/url-reports")')
+        ]
+        self.assertIn('Depends(admin_user)', automatic_export)
+        self.assertIn('sample_type: Literal["URL", "EMAIL"]', automatic_export)
+        self.assertIn('decrypt_text(sample.url_ciphertext)', automatic_export)
+        self.assertNotIn('decrypt_text(sample.body_ciphertext)', automatic_export)
+        self.assertIn('RESTRICTED_TRAINING_PROCESS_ONLY', automatic_export)
+
     def test_extension_email_feedback_is_explicit_and_uses_the_current_opened_email(self) -> None:
         server = read("backend/server.py")
         platform = read("shared_platform/app/main.py")
@@ -373,12 +442,20 @@ class ProjectInvariantTests(unittest.TestCase):
     def test_automatic_email_popup_waits_for_complete_cloud_result(self) -> None:
         worker = read("extension/background/service-worker.js")
         function = worker[worker.index("async function analyzeOpenedEmail") : worker.index("async function openFiveSecondPopup")]
-        cloud_result = function.index("const cloudResult")
+        hybrid_request = function.index("hybridResult =")
+        completed_state = function.index("const completedState")
         popup_open = function.index("await openFiveSecondPopup")
+        activity_submit = function.index("await submitCompanionActivity")
         self.assertIn("/analyze-hybrid-email", worker)
-        self.assertNotIn("await openFiveSecondPopup", function[:cloud_result])
-        self.assertGreater(popup_open, cloud_result)
-        self.assertIn("cloudReviewIsComplete", function[cloud_result:popup_open])
+        self.assertEqual(1, function.count("await fetchHybridEmail("))
+        self.assertNotIn("localResult", function)
+        self.assertNotIn("currentUrl,\n        false", function)
+        self.assertNotIn("await openFiveSecondPopup", function[:hybrid_request])
+        self.assertGreater(completed_state, hybrid_request)
+        self.assertGreater(popup_open, completed_state)
+        self.assertGreater(activity_submit, completed_state)
+        self.assertIn("hybrid_ready:\n            true", function[completed_state:popup_open])
+        self.assertIn("cloudReviewIsComplete", function[hybrid_request:popup_open])
         self.assertIn("AUTO_POPUP_DURATION_MS =\n  5000", worker)
 
     def test_automatic_url_popup_waits_for_complete_cloud_result(self) -> None:
@@ -386,9 +463,14 @@ class ProjectInvariantTests(unittest.TestCase):
         function = worker[worker.index("async function scanCurrentTabUrl") : worker.index("async function fetchHybridEmail")]
         cloud_result = function.index("const cloudResult")
         popup_open = function.index("await openFiveSecondPopup")
+        pending_warning = function[function.index("let state =", function.index("if (!shouldRunCloudReview)")) : cloud_result]
         self.assertNotIn("openFiveSecondPopup", function[:cloud_result])
         self.assertGreater(popup_open, cloud_result)
         self.assertIn("cloudReviewIsComplete", function[cloud_result:popup_open])
+        self.assertIn('state:\n              "analyzing"', pending_warning)
+        self.assertIn('signal:\n              "ANALYZING"', pending_warning)
+        self.assertIn('result:\n              null', pending_warning)
+        self.assertNotIn('signal:\n              result.final_result', pending_warning)
 
     def test_automatic_popup_is_not_reopened_by_focus_or_same_result(self) -> None:
         worker = read("extension/background/service-worker.js")

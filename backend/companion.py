@@ -7,11 +7,13 @@ import ctypes
 import json
 import os
 import platform
+import secrets
 import threading
 import urllib.error
 import urllib.request
 from ctypes import wintypes
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 try:
@@ -78,6 +80,7 @@ class CompanionManager:
         )
         self.platform_url = os.getenv("BANTAI_PLATFORM_API", "").rstrip("/")
         self._lock = threading.RLock()
+        self._training_consent_cache = {"expires_at": 0.0, "enabled": False, "sample_rate_percent": 0}
 
     def _empty(self) -> dict[str, Any]:
         return {
@@ -151,6 +154,28 @@ class CompanionManager:
                 pass
             raise CompanionError(message) from exc
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+            raise CompanionError("The shared BantAI service is unavailable.") from exc
+
+    def _get(self, path: str, *, timeout: int = 5) -> dict[str, Any]:
+        if not self.platform_url:
+            raise CompanionError("The shared BantAI service is not configured.")
+        state = self._load()
+        token = self._credential(state)
+        if not token:
+            raise CompanionError("Pair BantAI before using shared services.")
+        request = urllib.request.Request(
+            f"{self.platform_url}/api/v1{path}",
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+                "User-Agent": "BantAI-Companion/1.0",
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError) as exc:
             raise CompanionError("The shared BantAI service is unavailable.") from exc
 
     def platform_status(self) -> dict[str, Any]:
@@ -368,6 +393,34 @@ class CompanionManager:
                 if not delivery.get("submitted") or not delivery.get("remaining"):
                     break
             return self._request("/email-reports/from-device-activity", feedback)
+
+    def submit_automatic_training_sample(self, sample: dict[str, Any]) -> dict[str, Any]:
+        """Randomly forward opted-in content without placing it in the retry outbox."""
+
+        with self._lock:
+            now = monotonic()
+            consent = self._training_consent_cache
+            if now >= float(consent.get("expires_at", 0)):
+                try:
+                    result = self._get("/training-consent/device")
+                except CompanionError:
+                    return {"selected": False, "submitted": False, "reason": "CONSENT_UNAVAILABLE"}
+                consent = {
+                    "expires_at": now + 60,
+                    "enabled": bool(result.get("enabled")),
+                    "sample_rate_percent": int(result.get("sample_rate_percent") or 0),
+                }
+                self._training_consent_cache = consent
+            if not consent.get("enabled"):
+                return {"selected": False, "submitted": False, "reason": "NOT_ENABLED"}
+            rate = max(0, min(100, int(consent.get("sample_rate_percent") or 0)))
+            if secrets.randbelow(10_000) >= rate * 100:
+                return {"selected": False, "submitted": False, "reason": "NOT_SELECTED"}
+            try:
+                result = self._request("/training-samples", sample)
+            except CompanionError:
+                return {"selected": True, "submitted": False, "reason": "SERVICE_UNAVAILABLE"}
+            return {"selected": True, "submitted": bool(result.get("accepted")), **result}
 
     def flush(self) -> dict[str, Any]:
         with self._lock:

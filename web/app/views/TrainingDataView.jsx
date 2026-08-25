@@ -61,6 +61,33 @@ function TrainingDataPage() {
             setExporting(null);
         }
     };
+    const exportAutomaticSamples = async (sampleType) => {
+        const exportKey = `AUTO_${sampleType}`;
+        setExporting(exportKey);
+        setError("");
+        setMessage("");
+        try {
+            const params = new URLSearchParams({ sample_type: sampleType });
+            const { blob, filename } = await downloadApiFile(`/admin/training-data/automatic-export.csv?${params}`);
+            const href = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+            anchor.href = href;
+            anchor.download = filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            URL.revokeObjectURL(href);
+            setMessage(sampleType === "URL"
+                ? "Automatic URL samples exported."
+                : "Automatic email sample manifest exported. Email bodies were not included.");
+        }
+        catch (reason) {
+            setError(reason instanceof Error ? reason.message : `BantAI could not export the automatic ${sampleType.toLowerCase()} samples.`);
+        }
+        finally {
+            setExporting(null);
+        }
+    };
     return (<>
       <PageHeader eyebrow="ADMINISTRATION" title="Training data" description="Inspect the approved, de-identified records currently reserved for a future, separately authorized model-training cycle."/>
       <div className="grid sm:grid-cols-2 gap-4 mb-6" aria-label="Training data summary">
@@ -174,7 +201,7 @@ function TrainingDataPage() {
           </div>)}
       </section>
 
-      <section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm" aria-labelledby="email-training-title">
+      <section className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6" aria-labelledby="email-training-title">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
           <div>
             <p className="text-[10px] font-bold text-[#087EFF] uppercase tracking-wider">COLLECTED EMAILS</p>
@@ -226,6 +253,88 @@ function TrainingDataPage() {
             <span>Page {page} of {data.emails.pages}</span>
             <button disabled={page >= data.emails.pages} onClick={() => setPage((value) => value + 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 font-semibold hover:bg-slate-50 disabled:opacity-40">Next →</button>
           </div>)}
+      </section>
+
+      <section className="p-6 rounded-2xl bg-white border border-[#BFE4DC] shadow-sm mb-6" aria-labelledby="automatic-url-samples-title">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+          <div>
+            <p className="text-[10px] font-bold text-[#008F7A] uppercase tracking-wider">OPT-IN RANDOM COLLECTION</p>
+            <h2 id="automatic-url-samples-title" className="text-base font-bold text-[#04142F]">Automatic URL samples</h2>
+            <p className="text-xs text-slate-500 mt-1">Complete addresses randomly collected from consenting users. These detector references are not confirmed labels.</p>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] font-bold">
+            <span className="px-2.5 py-1 rounded-full bg-blue-50 text-[#087EFF]">{data?.automatic_samples.urls.total || 0} URLs</span>
+            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#087EFF] hover:bg-[#071E4A] text-white text-xs font-bold shadow-sm transition disabled:opacity-50" type="button" onClick={() => void exportAutomaticSamples("URL")} disabled={exporting !== null || !data || data.automatic_samples.urls.total === 0}>
+              <DownloadIcon className="w-3.5 h-3.5"/>
+              <span>{exporting === "AUTO_URL" ? "Preparing URL CSV..." : "Export URL samples"}</span>
+            </button>
+          </div>
+        </div>
+        {data && data.automatic_samples.urls.items.length > 0 ? (<div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-600">
+              <thead className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                <tr>
+                  <th className="pb-3 px-3">Complete website address</th>
+                  <th className="pb-3 px-3">Detector result</th>
+                  <th className="pb-3 px-3">Model</th>
+                  <th className="pb-3 px-3">Collected</th>
+                  <th className="pb-3 px-3"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.automatic_samples.urls.items.map((sample) => (<tr key={sample.id} className="hover:bg-slate-50">
+                    <td className="py-3 px-3 max-w-lg"><strong className="block truncate font-semibold text-slate-900" title={sample.url}>{sample.url}</strong></td>
+                    <td className="py-3 px-3"><StatusBadge outcome={sample.detector_outcome}/></td>
+                    <td className="py-3 px-3 text-slate-400">{sample.detector_model_version}</td>
+                    <td className="py-3 px-3 text-slate-400 whitespace-nowrap">{niceDate(sample.collected_at)}</td>
+                    <td className="py-3 px-3"><button className="text-xs font-bold text-[#087EFF] hover:underline" type="button" onClick={() => void copyUrl(sample.url)}>Copy address</button></td>
+                  </tr>))}
+              </tbody>
+            </table>
+          </div>) : data ? (<EmptyState icon="◇" title="No automatic URL samples" text="URL samples appear only after a user explicitly opts in and a completed URL check is randomly selected."/>) : (<DashboardSkeleton />)}
+      </section>
+
+      <section className="p-6 rounded-2xl bg-white border border-[#BFE4DC] shadow-sm" aria-labelledby="automatic-email-samples-title">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+          <div>
+            <p className="text-[10px] font-bold text-[#008F7A] uppercase tracking-wider">OPT-IN RANDOM COLLECTION</p>
+            <h2 id="automatic-email-samples-title" className="text-base font-bold text-[#04142F]">Automatic email samples</h2>
+            <p className="text-xs text-slate-500 mt-1">Email metadata and encrypted bodies randomly collected from consenting users. These detector references are not confirmed labels.</p>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] font-bold">
+            <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800">{data?.automatic_samples.emails.total || 0} emails</span>
+            <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#087EFF] hover:bg-[#071E4A] text-white text-xs font-bold shadow-sm transition disabled:opacity-50" type="button" onClick={() => void exportAutomaticSamples("EMAIL")} disabled={exporting !== null || !data || data.automatic_samples.emails.total === 0}>
+              <DownloadIcon className="w-3.5 h-3.5"/>
+              <span>{exporting === "AUTO_EMAIL" ? "Preparing email CSV..." : "Export email samples"}</span>
+            </button>
+          </div>
+        </div>
+        {data && data.automatic_samples.emails.items.length > 0 ? (<div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-600">
+              <thead className="text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                <tr>
+                  <th className="pb-3 px-3">Email reference</th>
+                  <th className="pb-3 px-3">Detector result</th>
+                  <th className="pb-3 px-3">Training content</th>
+                  <th className="pb-3 px-3">Model</th>
+                  <th className="pb-3 px-3">Collected</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.automatic_samples.emails.items.map((sample) => (<tr key={sample.id} className="hover:bg-slate-50">
+                    <td className="py-3 px-3 max-w-sm">
+                      <strong className="block truncate font-semibold text-slate-900" title={sample.subject || "No subject"}>{sample.subject || "No subject"}</strong>
+                      <small className="text-slate-400 block">{sample.sender || "Sender unavailable"} · {sample.provider?.toUpperCase()}</small>
+                    </td>
+                    <td className="py-3 px-3"><StatusBadge outcome={sample.detector_outcome}/></td>
+                    <td className="py-3 px-3"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-[#071E4A]">Encrypted body · {sample.body_character_count.toLocaleString()} chars</span></td>
+                    <td className="py-3 px-3 text-slate-400">{sample.detector_model_version}</td>
+                    <td className="py-3 px-3 text-slate-400 whitespace-nowrap">{niceDate(sample.collected_at)}</td>
+                  </tr>))}
+              </tbody>
+            </table>
+          </div>) : data ? (<EmptyState icon="◇" title="No automatic email samples" text="Email samples appear only after a user explicitly opts in and a completed email check is randomly selected."/>) : (<DashboardSkeleton />)}
+        <p className="text-[11px] text-slate-400 mt-4 leading-relaxed"><strong>Email body privacy:</strong> CSV exports include metadata and body size only. Administrators cannot open, retrieve, or export the automatically collected email body. Opting out deletes that user’s automatic samples.</p>
       </section>
       <p className="text-[11px] text-slate-400 text-center max-w-2xl mx-auto mt-6 leading-relaxed"><strong>Training inventory only.</strong> These records require offline quality checks, dataset versioning, and explicit authorization before any future model work.</p>
     </>);

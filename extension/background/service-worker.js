@@ -696,6 +696,31 @@ async function submitCompanionActivity(
 }
 
 
+async function submitAutomaticTrainingSample(
+  sample
+) {
+  try {
+    await fetch(
+      `${API_BASE}/companion/training-sample`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json"
+        },
+        body:
+          JSON.stringify(
+            sample
+          )
+      }
+    );
+  } catch {
+    // Automatic samples are never placed in the retry outbox because they can
+    // contain a complete URL or email body. A missed sample stays missed.
+  }
+}
+
+
 async function updateBadge(
   tabId,
   urlDetector
@@ -847,9 +872,7 @@ async function fetchUrlAnalysis(
       () => {
         controller.abort();
       },
-      cloudAiReview
-        ? 15000
-        : 30000
+      30000
     );
 
   try {
@@ -1101,52 +1124,47 @@ async function scanCurrentTabUrl(
           "SUSPICIOUS_SIGNS_FOUND"
       );
 
-    let state =
-      await patchTabState(
+    if (!shouldRunCloudReview) {
+      const completedAt =
+        nowIso();
+
+      const state =
+        await patchTabState(
+          tabId,
+          (current) => ({
+            ...current,
+            current_url:
+              currentUrl,
+            hostname:
+              result.hostname ||
+              hostnameForUrl(
+                currentUrl
+              ),
+            url_detector: {
+              state:
+                "complete",
+              signal:
+                result.final_result ||
+                result.signal,
+              result,
+              cloud_review:
+                result.llm_review,
+              reason,
+              activity_event_id:
+                activityEventId,
+              completed_at:
+                completedAt
+            }
+          })
+        );
+
+      await updateBadge(
         tabId,
-        (current) => ({
-          ...current,
-          current_url:
-            currentUrl,
-          hostname:
-            result.hostname ||
-            hostnameForUrl(
-              currentUrl
-            ),
-          url_detector: {
-            state:
-              "complete",
-            signal:
-              result.final_result ||
-              result.signal,
-            result,
-            cloud_review:
-              shouldRunCloudReview
-                ? {
-                    enabled: true,
-                    status: "CHECKING",
-                    provider: "gemini",
-                    reasoning_summary:
-                      "Only the website origin is being reviewed. Page content is not shared."
-                  }
-                : result.llm_review,
-            reason,
-            activity_event_id:
-              activityEventId,
-            completed_at:
-              nowIso()
-          }
-        })
+        state?.url_detector
       );
 
-    await updateBadge(
-      tabId,
-      state?.url_detector
-    );
+      await checkServer();
 
-    await checkServer();
-
-    if (!shouldRunCloudReview) {
       await submitCompanionActivity({
         client_event_id:
           activityEventId,
@@ -1172,10 +1190,68 @@ async function scanCurrentTabUrl(
           nowIso()
       });
 
+      await submitAutomaticTrainingSample({
+        client_event_id:
+          activityEventId,
+        event_type:
+          "URL",
+        url:
+          currentUrl,
+        outcome:
+          result.final_result,
+        occurred_at:
+          state?.url_detector
+            ?.completed_at ||
+          nowIso()
+      });
+
       return state
         ?.url_detector ||
         null;
     }
+
+    let state =
+      await patchTabState(
+        tabId,
+        (current) => ({
+          ...current,
+          current_url:
+            currentUrl,
+          hostname:
+            result.hostname ||
+            hostnameForUrl(
+              currentUrl
+            ),
+          url_detector: {
+            state:
+              "analyzing",
+            signal:
+              "ANALYZING",
+            result:
+              null,
+            cloud_review: {
+              enabled: true,
+              status: "CHECKING",
+              reasoning_summary:
+                "A local URL warning was found. Only the website origin is being reviewed; page content is not shared."
+            },
+            message:
+              "A local warning was found. Preparing the final hybrid result...",
+            reason,
+            activity_event_id:
+              activityEventId,
+            requested_at:
+              nowIso()
+          }
+        })
+      );
+
+    await updateBadge(
+      tabId,
+      state?.url_detector
+    );
+
+    await checkServer();
 
     try {
       const cloudResult =
@@ -1259,16 +1335,32 @@ async function scanCurrentTabUrl(
             ...current,
             url_detector: {
               ...current.url_detector,
+              state:
+                "error",
+              signal:
+                "UNAVAILABLE",
+              result:
+                null,
               cloud_review: {
                 enabled: true,
                 status: "UNAVAILABLE",
-                provider: "gemini",
                 reasoning_summary:
-                  "Cloud URL Review could not be completed. The local URL warning still applies."
-              }
+                  "The final hybrid URL review could not be completed. Try the check again."
+              },
+              message:
+                "The complete hybrid website result is unavailable. Try again shortly."
             }
           })
         );
+
+      await updateBadge(
+        tabId,
+        state?.url_detector
+      );
+
+      return state
+        ?.url_detector ||
+        null;
     }
 
     const finalUrlResult =
@@ -1302,6 +1394,23 @@ async function scanCurrentTabUrl(
         )
           ? "COMPLETE"
           : "UNAVAILABLE",
+      occurred_at:
+        state?.url_detector
+          ?.completed_at ||
+        nowIso()
+    });
+
+    await submitAutomaticTrainingSample({
+      client_event_id:
+        activityEventId,
+      event_type:
+        "URL",
+      url:
+        currentUrl,
+      outcome:
+        finalUrlResult
+          ?.final_result ||
+        "SUSPICIOUS_SIGNS_FOUND",
       occurred_at:
         state?.url_detector
           ?.completed_at ||
@@ -1628,10 +1737,14 @@ async function analyzeOpenedEmail(
         enabled: true,
         status: "CHECKING",
         message:
-          "Cloud AI Review will run after local checks finish."
+          "Cloud AI Review runs only when the local email model finds warning signs."
       },
       fusion: null,
-      local_fusion: null
+      local_fusion: null,
+      hybrid_analysis_id:
+        null,
+      hybrid_ready:
+        false
     })
   );
 
@@ -1641,187 +1754,10 @@ async function analyzeOpenedEmail(
       ""
     );
 
-  let localResult;
+  let hybridResult;
 
   try {
-    localResult =
-      await fetchHybridEmail(
-        payload,
-        currentUrl,
-        false
-      );
-  } catch (error) {
-    if (
-      isPairingRequiredError(
-        error
-      )
-    ) {
-      await disableDetectionForPairing(
-        error
-      );
-
-      return null;
-    }
-
-    if (
-      !await emailRequestIsCurrent(
-        tabId,
-        sequence,
-        fingerprint,
-        currentUrl
-      )
-    ) {
-      return null;
-    }
-
-    await patchTabState(
-      tabId,
-      (current) => ({
-        ...current,
-        url_detector: {
-          state: "error",
-          signal: "UNAVAILABLE",
-          message:
-            "The website check could not be completed. Make sure the BantAI server is running.",
-          reason:
-            "new_email_opened"
-        },
-        email_detector: {
-          state: "error",
-          signal: "UNAVAILABLE",
-          provider: provider.id,
-          provider_label:
-            provider.label,
-          sender:
-            payload?.sender ||
-            null,
-          subject:
-            payload?.subject ||
-            "",
-          fingerprint,
-          message:
-            "The email check could not be completed. Make sure the BantAI server is running."
-        },
-        llm_review: {
-          enabled:
-            true,
-          status:
-            "UNAVAILABLE",
-          reasoning_summary:
-            "Cloud AI Review could not run because the local BantAI server is unavailable."
-        }
-      })
-    );
-
-    await setServerState(
-      "unavailable",
-      String(
-        error?.message ||
-        error
-      )
-    );
-
-    await updateBadge(
-      tabId,
-      {
-        signal:
-          "UNAVAILABLE"
-      }
-    );
-
-    return null;
-  }
-
-  if (
-    !await emailRequestIsCurrent(
-      tabId,
-      sequence,
-      fingerprint,
-      currentUrl
-    )
-  ) {
-    return null;
-  }
-
-  const localState =
-    await patchTabState(
-      tabId,
-      (current) => ({
-        ...current,
-        current_url:
-          localResult.url_model
-            ?.current_url ||
-          currentUrl,
-        hostname:
-          localResult.url_model
-            ?.hostname ||
-          hostnameForUrl(
-            currentUrl
-          ),
-        url_detector: {
-          state: "complete",
-          signal:
-            localResult.url_model
-              ?.signal ||
-            "UNAVAILABLE",
-          result:
-            localResult.url_model,
-          reason:
-            "new_email_opened",
-          completed_at:
-            nowIso()
-        },
-        email_detector: {
-          state: "complete",
-          signal:
-            localResult.email_model
-              ?.signal ||
-            "UNAVAILABLE",
-          provider: provider.id,
-          provider_label:
-            provider.label,
-          sender:
-            payload?.sender ||
-            null,
-          subject:
-            payload?.subject ||
-            "",
-          fingerprint,
-          result:
-            localResult.email_model,
-          completed_at:
-            nowIso()
-        },
-        local_indicators:
-          localResult.local_indicators,
-        llm_review: {
-          enabled: true,
-          status: "CHECKING",
-          provider:
-            localResult.llm_review
-              ?.provider ||
-            "gemini",
-          reasoning_summary:
-            "A limited, cleaned version of this email is being reviewed."
-        },
-        fusion:
-          localResult.fusion,
-        local_fusion:
-          localResult.fusion,
-        hybrid_analysis_id:
-          localResult.analysis_id
-      })
-    );
-
-  await updateBadge(
-    tabId,
-    localState?.url_detector
-  );
-
-  await checkServer();
-
-  try {
-    const cloudResult =
+    hybridResult =
       await fetchHybridEmail(
         payload,
         currentUrl,
@@ -1839,63 +1775,118 @@ async function analyzeOpenedEmail(
       return null;
     }
 
-    const updatedState =
+    const finalEmailOutcome =
+      hybridResult
+        ?.fusion
+        ?.final_result;
+
+    if (
+      !COMPLETE_CLOUD_STATUSES
+        .has(
+          String(
+            finalEmailOutcome ||
+            ""
+          ).toUpperCase()
+        )
+    ) {
+      throw new Error(
+        "Hybrid detector returned an incomplete result."
+      );
+    }
+
+    const completedAt =
+      nowIso();
+
+    const cloudReviewCompleted =
+      cloudReviewIsComplete(
+        hybridResult
+          .llm_review
+      );
+
+    const cloudReviewSkipped =
+      String(
+        hybridResult
+          ?.llm_review
+          ?.status ||
+        ""
+      ).toUpperCase() ===
+        "OFF";
+
+    const completedState =
       await patchTabState(
         tabId,
         (current) => ({
           ...current,
+          current_url:
+            hybridResult
+              .url_model
+              ?.current_url ||
+            currentUrl,
+          hostname:
+            hybridResult
+              .url_model
+              ?.hostname ||
+            hostnameForUrl(
+              currentUrl
+            ),
           url_detector: {
             state: "complete",
             signal:
-              cloudResult.url_model
-                ?.signal ||
-              current.url_detector
+              hybridResult.url_model
                 ?.signal ||
               "UNAVAILABLE",
             result:
-              cloudResult.url_model ||
-              current.url_detector
-                ?.result,
+              hybridResult.url_model,
             reason:
               "new_email_opened",
             completed_at:
-              nowIso()
+              completedAt
           },
           email_detector: {
-            ...current.email_detector,
             state: "complete",
             signal:
-              cloudResult.email_model
+              hybridResult.email_model
                 ?.signal ||
-              current.email_detector
-                ?.signal,
+              "UNAVAILABLE",
+            provider:
+              provider.id,
+            provider_label:
+              provider.label,
+            sender:
+              payload?.sender ||
+              null,
+            subject:
+              payload?.subject ||
+              "",
             result:
-              cloudResult.email_model ||
-              current.email_detector
-                ?.result,
-            fingerprint
+              hybridResult.email_model,
+            fingerprint,
+            completed_at:
+              completedAt
           },
           local_indicators:
-            cloudResult.local_indicators ||
-            current.local_indicators,
+            hybridResult.local_indicators,
           llm_review:
-            cloudResult.llm_review,
+            hybridResult.llm_review,
           fusion:
-            cloudResult.fusion,
+            hybridResult.fusion,
+          local_fusion:
+            null,
           hybrid_analysis_id:
-            cloudResult.analysis_id
+            hybridResult.analysis_id,
+          hybrid_ready:
+            true
         })
       );
 
     await updateBadge(
       tabId,
-      updatedState?.url_detector
+      completedState
+        ?.url_detector
     );
 
     if (
-      cloudReviewIsComplete(
-        cloudResult.llm_review
-      )
+      cloudReviewCompleted
     ) {
       await openFiveSecondPopup(
         tab,
@@ -1903,6 +1894,56 @@ async function analyzeOpenedEmail(
         "email_review_complete"
       );
     }
+
+    await submitCompanionActivity({
+      client_event_id:
+        hybridResult
+          .analysis_id,
+      event_type:
+        "EMAIL",
+      origin:
+        null,
+      provider:
+        provider.id,
+      sender:
+        payload?.sender ||
+        null,
+      subject:
+        payload?.subject ||
+        "",
+      outcome:
+        finalEmailOutcome,
+      cloud_status:
+        cloudReviewCompleted ||
+        cloudReviewSkipped
+          ? "COMPLETE"
+          : "UNAVAILABLE",
+      occurred_at:
+        completedAt
+    });
+
+    await submitAutomaticTrainingSample({
+      client_event_id:
+        hybridResult
+          .analysis_id,
+      event_type:
+        "EMAIL",
+      provider:
+        provider.id,
+      sender:
+        payload?.sender ||
+        "",
+      subject:
+        payload?.subject ||
+        "",
+      body:
+        payload?.body ||
+        "",
+      outcome:
+        finalEmailOutcome,
+      occurred_at:
+        completedAt
+    });
   } catch (error) {
     if (
       isPairingRequiredError(
@@ -1927,80 +1968,57 @@ async function analyzeOpenedEmail(
       return null;
     }
 
-    await patchTabState(
-      tabId,
-      (current) => ({
+    const failedState =
+      await patchTabState(
+        tabId,
+        (current) => ({
         ...current,
+        url_detector: {
+          ...current.url_detector,
+          state:
+            "error",
+          signal:
+            "UNAVAILABLE",
+          result:
+            null,
+          message:
+            "The complete hybrid result is unavailable. Try again shortly."
+        },
         llm_review: {
           enabled: true,
           status: "UNAVAILABLE",
-          provider: "gemini",
           reasoning_summary:
-            "Cloud AI Review could not be completed. Local BantAI checks are still available."
+            "The complete hybrid email result could not be prepared. Try the check again."
         },
         fusion:
-          current.local_fusion ||
-          current.fusion
-      })
+          null,
+        local_fusion:
+          null,
+        hybrid_analysis_id:
+          null,
+        hybrid_ready:
+          false,
+        email_detector: {
+          ...current.email_detector,
+          state:
+            "error",
+          signal:
+            "UNAVAILABLE",
+          result:
+            null,
+          message:
+            "The complete hybrid email result is unavailable. Try again shortly."
+        }
+        })
+      );
+
+    await updateBadge(
+      tabId,
+      failedState
+        ?.url_detector
     );
-  }
 
-  const completedStates =
-    await getTabStates();
-
-  const completedEmailState =
-    completedStates[
-      String(
-        tabId
-      )
-    ];
-
-  const finalEmailOutcome =
-    completedEmailState
-      ?.fusion
-      ?.final_result;
-
-  if (
-    COMPLETE_CLOUD_STATUSES
-      .has(
-        String(
-          finalEmailOutcome ||
-          ""
-        ).toUpperCase()
-      )
-  ) {
-    await submitCompanionActivity({
-      client_event_id:
-        completedEmailState
-          ?.hybrid_analysis_id ||
-        localResult.analysis_id,
-      event_type:
-        "EMAIL",
-      origin:
-        null,
-      provider:
-        provider.id,
-      sender:
-        payload?.sender ||
-        null,
-      subject:
-        payload?.subject ||
-        "",
-      outcome:
-        finalEmailOutcome,
-      cloud_status:
-        cloudReviewIsComplete(
-          completedEmailState
-            ?.llm_review
-        )
-          ? "COMPLETE"
-          : "UNAVAILABLE",
-      occurred_at:
-        completedEmailState
-          ?.email_detector
-          ?.completed_at ||
-        nowIso()
-    });
+    return null;
   }
 
   return true;
