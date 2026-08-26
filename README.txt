@@ -91,16 +91,20 @@ Never put the key in the extension or commit a real .env file.
 
 INSTALL AND START
 -----------------
-1. Install backend dependencies:
-
-   python -m pip install -r backend\requirements.txt
-
-2. Place the frozen local models at the documented project-relative paths.
-3. Start from the project root:
+1. Install and start Docker Desktop.
+2. Place the frozen models at the documented project-relative paths.
+3. Start the complete local stack from the project root:
 
    .\START_BANTAI.ps1
 
-4. Verify http://127.0.0.1:8000/health.
+   The first detector image build includes the frozen runtime model artifacts
+   and may take several minutes. Later starts reuse the built image.
+
+4. Verify both services:
+
+   http://127.0.0.1:8000/health  (RF/XLM-R detector Companion)
+   http://127.0.0.1:8080/health  (shared platform API)
+
 5. Load the `extension` folder unpacked in Chrome/Edge 127 or newer and refresh
    Gmail, Outlook, and Yahoo.
 

@@ -1,5 +1,25 @@
 BantAI v1.1.0 Hybrid AI Decision-Support Architecture
 
+LOCAL DOCKER DEPLOYMENT
+-----------------------
+Browser extension -> 127.0.0.1:8000 -> detector container
+                                           |
+                                           +-- frozen RF V4-B
+                                           +-- frozen XLM-R V1
+                                           +-- indicator engine + deterministic fusion
+                                           +-- Companion pairing/outbox state volume
+                                           |
+                                           +-- private Docker network
+                                                   |
+                                                   +-- platform container :8080
+                                                           |
+                                                           +-- MySQL container :3306
+                                                           +-- backend-only Cloud AI gateway
+
+Docker exposes detector port 8000 and platform port 8080 on host loopback only.
+The database is not published to the host. All three services use
+`restart: unless-stopped` and start in dependency/health-check order.
+
 ACTIVE TAB
     |
     +-- exact tab.url ----------------> Frozen RF URL V4-B

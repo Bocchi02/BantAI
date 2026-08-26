@@ -4,8 +4,10 @@
 
 - `web/`: responsive React, TypeScript, and Tailwind account/dashboard UI.
 - `shared_platform/`: FastAPI, SQLAlchemy, Alembic, and MySQL service.
-- `backend/companion.py`: DPAPI-protected pairing credential and bounded event outbox.
-- `companion/`: Windows tray host and installer build definition.
+- `backend/`: frozen RF/XLM-R detector, Companion pairing state, and bounded
+  event outbox, packaged as the Docker `detector` service.
+- `companion/`: legacy Windows tray packaging retained for development and
+  migration; it is not started in the default Docker deployment.
 - `extension/`: pairing UI and terminal-result submission.
 
 The account experience includes separate first, optional middle, and last name
@@ -80,9 +82,12 @@ production model.
 ## Privacy boundary
 
 The extension sends exact address-bar URLs and opened email content only to the
-local detector at `127.0.0.1`. Local redaction prepares LLM evidence. The shared
-service receives that limited evidence for cloud review and returns a validated
-assessment. Final fusion remains local.
+detector container exposed on host loopback at `127.0.0.1:8000`. The frozen
+models and deterministic fusion run inside that local container. The detector
+uses the private Docker network to reach the shared platform service, where
+redacted/origin-only cloud review is performed. MySQL, platform, and detector
+start together through Docker Compose; only ports 8000 and 8080 are bound to
+host loopback.
 
 Dashboard activity contains only:
 
@@ -100,9 +105,11 @@ candidates are stored without reporter identity.
 ## Release prerequisites
 
 - Confirm redistribution rights for both frozen models.
-- Obtain a Windows code-signing certificate and set the signing thumbprint.
+- Confirm the deployment host provides sufficient memory for both frozen
+  models and configures Docker to start automatically.
 - Configure production MySQL, HTTPS, encryption key, allowed origins, and
   Gemini credentials in the shared service.
-- Set `BANTAI_PLATFORM_API` and `BANTAI_WEB_DASHBOARD` in the Companion release.
+- Keep the detector-to-platform address on the private Docker network and
+  expose detector port 8000 to host loopback only.
 - Perform the documented Chrome/Edge acceptance flow before claiming browser
   verification.

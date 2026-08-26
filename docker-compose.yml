@@ -29,7 +29,7 @@ services:
     environment:
       BANTAI_DATABASE_URL: mysql+pymysql://bantai:bantai-development@mysql:3306/bantai
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       mysql:
         condition: service_healthy
@@ -40,5 +40,38 @@ services:
       retries: 12
       start_period: 20s
 
+  detector:
+    image: bantai-detector:latest
+    restart: unless-stopped
+    init: true
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      BANTAI_MODEL_DIR: /app/models/email_text_xlmr_v1/checkpoint-15666
+      BANTAI_RF_MODEL_PATH: /app/models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib
+      BANTAI_PLATFORM_API: http://platform:8080
+      BANTAI_COMPANION_STATE_PATH: /data/companion.dat
+      BANTAI_WEB_ORIGIN: http://localhost:3000
+      BANTAI_WEB_DASHBOARD: http://localhost:3000
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - bantai_companion:/data
+    depends_on:
+      platform:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    stop_grace_period: 30s
+
 volumes:
   bantai_mysql:
+  bantai_companion:

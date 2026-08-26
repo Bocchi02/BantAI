@@ -63,7 +63,10 @@ function AppShell({ user, page, navigate, children }) {
         </div>
 
         {/* Scrollable Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5 min-h-0" aria-label="Primary navigation">
+        <nav
+          className="flex-1 overflow-y-auto px-3 py-4 space-y-5 min-h-0"
+          aria-label="Primary navigation"
+        >
           <div>
             <p className="px-3 text-[10px] sm:text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
               MY BANTAI
@@ -107,16 +110,6 @@ function AppShell({ user, page, navigate, children }) {
 
         {/* Bottom Area: Privacy Card + User Account */}
         <div className="p-3 border-t border-slate-100/80 flex flex-col gap-2.5 shrink-0 bg-white">
-          <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/70">
-            <div className="flex items-center gap-2 text-xs font-semibold text-[#071E4A]">
-              <ShieldIcon className="w-4 h-4 text-[#087EFF] shrink-0" />
-              <span>Privacy protected</span>
-            </div>
-            <p className="text-[11px] text-slate-500 leading-snug mt-1">
-              BantAI minimizes unnecessary data sharing.
-            </p>
-          </div>
-
           <button
             className={cx(
               "w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition-colors border",
@@ -208,7 +201,9 @@ function NavButton({ item, active, onClick }) {
       <Icon
         className={cx(
           "w-[18px] h-[18px] shrink-0 transition-colors",
-          active ? "text-[#087EFF]" : "text-slate-400 group-hover:text-slate-600",
+          active
+            ? "text-[#087EFF]"
+            : "text-slate-400 group-hover:text-slate-600",
         )}
       />
       <span className="truncate">{item.label}</span>

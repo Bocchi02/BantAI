@@ -24,13 +24,19 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 python scripts\verify_models.py
 ```
 
-## Start the local backend
+## Start the local Docker stack
 
 ```powershell
 .\START_BANTAI.ps1
 ```
 
-Optional custom model paths are still supported:
+This starts MySQL, the shared platform API on `127.0.0.1:8080`, and the frozen
+RF/XLM-R detector Companion on `127.0.0.1:8000`. Docker keeps both APIs running
+with `restart: unless-stopped`; Docker Desktop must be configured to start with
+Windows for automatic recovery after sign-in.
+
+The legacy direct-Python launcher remains available for detector development
+only:
 
 ```powershell
 .\backend\START_BANTAI_V1_0.ps1 `

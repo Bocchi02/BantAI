@@ -21,18 +21,28 @@ def read_web_interface() -> str:
 
 
 class ProjectInvariantTests(unittest.TestCase):
-    def test_source_companion_autostart_uses_the_project_runtime(self) -> None:
-        launcher = read("backend/START_BANTAI_V1_1.ps1")
-        startup = read("scripts/ENABLE_BANTAI_COMPANION_STARTUP.ps1")
+    def test_detector_and_companion_run_in_the_local_docker_stack(self) -> None:
+        compose = read("docker-compose.yml")
+        dockerfile = read("backend/Dockerfile")
+        launcher = read("START_BANTAI.ps1")
+        dockerignore = read(".dockerignore")
 
-        self.assertIn('.venv\\Scripts\\python.exe', launcher)
-        self.assertIn('& $PythonExe -m uvicorn server:app', launcher)
-        self.assertIn('--host 127.0.0.1', launcher)
-        self.assertIn('--no-access-log', launcher)
-        self.assertIn('CurrentVersion\\Run', startup)
-        self.assertIn('-Name "BantAICompanion"', startup)
-        self.assertIn('-WindowStyle Hidden', startup)
-        self.assertIn('START_BANTAI_V1_1.ps1', startup)
+        self.assertIn("detector:", compose)
+        self.assertIn("image: bantai-detector:latest", compose)
+        self.assertIn('"127.0.0.1:8000:8000"', compose)
+        self.assertIn("BANTAI_PLATFORM_API: http://platform:8080", compose)
+        self.assertIn("BANTAI_COMPANION_STATE_PATH: /data/companion.dat", compose)
+        self.assertIn("bantai_companion:/data", compose)
+        self.assertIn("restart: unless-stopped", compose)
+        self.assertIn("condition: service_healthy", compose)
+        self.assertIn("model.safetensors", dockerfile)
+        self.assertIn("bantai_rf_url_model_v4b_optimized.joblib", dockerfile)
+        self.assertIn("https://download.pytorch.org/whl/cpu", dockerfile)
+        self.assertNotIn("\ntorch\n", read("backend/requirements-detector.txt"))
+        self.assertIn('"--no-access-log"', dockerfile)
+        self.assertIn('"compose", "up", "-d"', launcher)
+        self.assertIn('"--build"', launcher)
+        self.assertIn("optimizer.pt", dockerignore)
 
     def test_web_interface_uses_javascript_and_separate_route_views(self) -> None:
         web_root = ROOT / "web"
