@@ -63,6 +63,32 @@ class RemotePlatformProviderTests(unittest.TestCase):
         self.assertEqual("/cloud-review/url", path)
         self.assertEqual("https://synthetic.example", payload["origin"])
 
+    def test_email_gateway_forwards_sender_subject_and_redacted_body(self) -> None:
+        with patch.object(
+            remote_provider.companion_manager,
+            "cloud_review",
+            return_value=VALID_REVIEW,
+        ) as review:
+            result = RemotePlatformProvider().review(
+                {
+                    "provider": "gmail",
+                    "sender_display_name": "Sample Bank",
+                    "sender_domain": "sample-bank.example",
+                    "subject": "Incoming transfer notice",
+                    "email_body": "A privacy-safe synthetic message body.",
+                    "email_model": {"signal": "SUSPICIOUS"},
+                    "local_indicators": {"markers": []},
+                }
+            )
+
+        self.assertEqual("NEEDS_CAUTION", result.assessment)
+        path, payload = review.call_args.args
+        self.assertEqual("/cloud-review/email", path)
+        self.assertIn("Sample Bank", payload["redacted_sender"])
+        self.assertIn("sample-bank.example", payload["redacted_sender"])
+        self.assertEqual("Incoming transfer notice", payload["redacted_subject"])
+        self.assertEqual("A privacy-safe synthetic message body.", payload["redacted_context"])
+
     def test_remote_provider_preserves_unavailable_reason(self) -> None:
         with patch.object(
             remote_provider.companion_manager,

@@ -150,6 +150,8 @@ class LLMReviewCoordinator:
                 local_indicators=local_indicators,
                 maximum_email_chars=self.maximum_email_chars,
             )
+            cloud_body = str(payload.get("email_body") or "")
+            cloud_body_truncated = "[...TRUNCATED FOR DATA MINIMIZATION...]" in cloud_body
             review: LLMReview = validate_llm_response(self.provider.review(payload))
         except LLMProviderError as exc:
             return self._unavailable(
@@ -171,6 +173,17 @@ class LLMReviewCoordinator:
             "cached": False,
             **self._provider_review_metadata(),
             **review.model_dump(),
+            "body_context_sent_to_provider": True,
+            "sender_context_sent_to_provider": bool(
+                payload.get("sender_display_name") or payload.get("sender_domain")
+            ),
+            "subject_context_sent_to_provider": bool(payload.get("subject")),
+            "body_context_scope": (
+                "REDACTED_BEGINNING_AND_END"
+                if cloud_body_truncated
+                else "FULL_REDACTED_BODY"
+            ),
+            "body_context_chars_sent": len(cloud_body),
         }
         if result.get("fallback_used"):
             result["provider_note"] = (

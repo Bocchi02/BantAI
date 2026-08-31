@@ -125,6 +125,30 @@ class FusionEngineTests(unittest.TestCase):
         self.assertIn("suspicious language patterns", result["message"])
         self.assertLessEqual(result["message"].count("."), 2)
 
+    def test_received_transfer_marker_never_claims_the_email_requests_payment(self) -> None:
+        received_transfer = {
+            "markers": [
+                {
+                    "category": "PAYMENT_REQUEST",
+                    "severity": "CONTEXTUAL",
+                    "evidence": (
+                        "You have received a funds transfer. Transfer from: GCash "
+                        "Transfer to: Customer Transfer amount: PHP 300.00"
+                    ),
+                }
+            ],
+            "critical_count": 0,
+            "strong_count": 0,
+            "contextual_count": 1,
+        }
+        result = fuse_email_signals(
+            email_signal="SUSPICIOUS",
+            local_indicators=received_transfer,
+            llm_review=llm(NO_STRONG_WARNING_SIGNS),
+        )
+        self.assertNotIn("requests money", result["message"])
+        self.assertNotIn("requests payment", result["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -73,6 +73,61 @@ class ProjectInvariantTests(unittest.TestCase):
         }
         self.assertEqual({path.name for path in view_root.glob("*.jsx")}, expected_views)
 
+    def test_admin_overview_uses_the_platform_dashboard_route(self) -> None:
+        admin_overview = read("web/app/views/AdminOverviewView.jsx")
+        platform = read("shared_platform/app/main.py")
+
+        self.assertIn("/admin/dashboard?days=${days}", admin_overview)
+        self.assertNotIn("/admin/overview?days=${days}", admin_overview)
+        self.assertIn('@app.get("/api/v1/admin/dashboard")', platform)
+
+    def test_devices_view_matches_the_platform_device_contract(self) -> None:
+        devices_view = read("web/app/views/DevicesView.jsx")
+        platform = read("shared_platform/app/main.py")
+
+        self.assertIn("Array.isArray(data?.items)", devices_view)
+        self.assertIn("setDevices(data.items)", devices_view)
+        self.assertIn('api("/pairing", { method: "POST" })', devices_view)
+        self.assertIn('api(`/devices/${deviceId}`, { method: "DELETE" })', devices_view)
+        self.assertIn("device.label", devices_view)
+        self.assertIn("device.last_seen_at", devices_view)
+        self.assertNotIn("devices/pairing-codes", devices_view)
+        self.assertNotIn("last_active_at", devices_view)
+        self.assertIn('@app.get("/api/v1/devices")', platform)
+        self.assertIn('@app.post("/api/v1/pairing"', platform)
+        self.assertIn('@app.delete("/api/v1/devices/{device_id}"', platform)
+
+    def test_training_data_view_normalizes_all_inventory_sections(self) -> None:
+        training_view = read("web/app/views/TrainingDataView.jsx")
+        platform = read("shared_platform/app/main.py")
+
+        self.assertIn("function normalizeTrainingData(value)", training_view)
+        self.assertIn("urls: collectionData(automatic.urls)", training_view)
+        self.assertIn("emails: collectionData(automatic.emails)", training_view)
+        self.assertIn("setData(normalizeTrainingData(response))", training_view)
+        self.assertIn('"automatic_samples": {', platform)
+        self.assertIn('"urls": {', platform)
+        self.assertIn('"emails": {', platform)
+
+    def test_extension_uses_plain_language_for_result_explanations(self) -> None:
+        popup = read("extension/popup/popup.js")
+        popup_html = read("extension/popup/popup.html")
+
+        self.assertIn("function simpleWebsiteMessage(result)", popup)
+        self.assertIn("function simpleEmailMessage(state, result)", popup)
+        self.assertIn("simpleWebsiteMessage(finalResult)", popup)
+        self.assertIn("simpleEmailMessage(state, fusionResult)", popup)
+        self.assertIn("cloudReview.body_context_sent_to_provider === true", popup)
+        self.assertIn("cloudReview.sender_context_sent_to_provider === true", popup)
+        self.assertIn("cloudReview.subject_context_sent_to_provider === true", popup)
+        self.assertIn("cloudReview.reasoning_summary", popup)
+        self.assertIn('const inboundTransferNotice = category === "PAYMENT_REQUEST"', popup)
+        self.assertIn('evidence.includes("transfer from:")', popup)
+        self.assertNotIn("result.message || detector.message", popup)
+        self.assertIn("This does not guarantee", popup)
+        self.assertIn("Address only", popup_html)
+        self.assertIn("It does not guarantee", popup_html)
+
     def test_frozen_model_constants_are_unchanged(self) -> None:
         server = read("backend/server.py")
         self.assertRegex(server, r"EMAIL_THRESHOLD\s*=\s*0\.05\b")
@@ -207,9 +262,9 @@ class ProjectInvariantTests(unittest.TestCase):
             "conciseCloudUrlReviewMessage",
         ):
             self.assertNotIn(removed, popup)
-            self.assertNotIn(removed, popup_html)
+        self.assertNotIn(removed, popup_html)
         self.assertIn("result.final_result", popup)
-        self.assertIn("result.message", popup)
+        self.assertIn("simpleWebsiteMessage(finalResult)", popup)
         self.assertIn('id="websiteModelSignal"', popup_html)
 
     def test_email_cloud_result_is_fused_without_a_standalone_ai_card(self) -> None:
@@ -224,7 +279,8 @@ class ProjectInvariantTests(unittest.TestCase):
         ):
             self.assertNotIn(removed, popup)
             self.assertNotIn(removed, popup_html)
-        self.assertIn("state?.fusion?.message", popup)
+        self.assertIn("state?.fusion?.final_result", popup)
+        self.assertIn("simpleEmailMessage(state, fusionResult)", popup)
         self.assertIn('id="emailDecisionMessage"', popup_html)
         self.assertIn('id="emailModelSignal"', popup_html)
 
@@ -485,17 +541,41 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn('/companion/detail-context', server)
         self.assertIn('/companion/activity-explanation', server)
         self.assertIn('rememberCompanionDetailContext', worker)
+        self.assertIn('restoreCurrentEmailDetailContext', worker)
+        self.assertIn('reanalyzeIfMissing = false', worker)
+        self.assertIn('reanalyzeIfMissing:\n                  true', worker)
+        self.assertIn('force: true,\n              showAutomaticPopup:', worker)
+        self.assertIn('state?.llm_review\n        ?.body_context_sent_to_provider', worker)
+        self.assertIn('body_context_sent_to_provider', cloud)
         self.assertNotIn('body_ciphertext', models[models.index('class ActivityEvent') : models.index('class AutomaticTrainingSample')])
         self.assertIn('More details', dashboard)
         self.assertIn('/companion/activity-explanation', dashboard)
         self.assertIn('client_event_id: item.detail_reference', dashboard)
+        self.assertIn('const retryDetails = useCallback', dashboard)
+        self.assertIn('refreshed.last_email', dashboard)
         self.assertIn('role="dialog"', modal)
         self.assertIn('aria-modal="true"', modal)
         self.assertIn('complete website address', modal)
         self.assertIn('email provider, sender, subject, and message body', modal)
         self.assertIn('complete address was no longer in Companion memory', modal)
         self.assertIn('email body was no longer in Companion memory', modal)
+        self.assertIn('Email body included', modal)
         self.assertIn('not added to dashboard history or stored by this feature', modal)
+
+    def test_hybrid_email_result_remembers_body_under_its_exact_analysis_id(self) -> None:
+        server = read("backend/server.py")
+        hybrid_start = server.index("def analyze_hybrid_email(")
+        hybrid = server[hybrid_start:]
+
+        self.assertIn("analysis_id = str(uuid.uuid4())", hybrid)
+        self.assertIn("companion_manager.remember_detail_context({", hybrid)
+        self.assertIn('"client_event_id": analysis_id', hybrid)
+        self.assertIn('"body": str(request.body or "")[:50_000]', hybrid)
+        self.assertIn("analysis_id=analysis_id", hybrid)
+        self.assertLess(
+            hybrid.index("companion_manager.remember_detail_context({"),
+            hybrid.index("return HybridEmailAnalysisResponse("),
+        )
 
     def test_automatic_email_popup_waits_for_complete_cloud_result(self) -> None:
         worker = read("extension/background/service-worker.js")

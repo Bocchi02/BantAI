@@ -19,36 +19,36 @@ const FINAL_LABELS = {
 };
 
 const INDICATOR_LABELS = {
-  URGENCY: "Urgent action requested",
-  ACCOUNT_SECURITY_SCARE: "Uses an account-security scare",
-  CREDENTIAL_REQUEST: "Requests account credentials",
-  OTP_REQUEST: "Message asks for an OTP",
-  MPIN_REQUEST: "Message asks for an MPIN",
-  PASSWORD_REQUEST: "Message asks for a password",
-  PIN_OR_CVV_REQUEST: "Message asks for a PIN or CVV",
-  PRIZE_OR_REWARD: "Promises a prize or reward",
-  ADVANCE_FEE: "Requests payment before a promised benefit",
-  INVESTMENT_PROMISE: "Promises unusually certain investment returns",
-  JOB_OR_TASK_OFFER: "Uses a job or paid-task offer",
-  PAYMENT_REQUEST: "Requests money or payment",
-  EMERGENCY_REQUEST: "Uses an emergency money request",
-  AUTHORITY_IMPERSONATION: "Claims to represent a trusted organization",
-  ACTION_DEMAND: "Demands an action",
-  THREAT_OR_COERCION: "Uses threats or pressure",
-  DELIVERY_PAYMENT_REQUEST: "Requests a delivery or parcel payment",
-  AUTHORITY: "Uses authority to pressure the reader",
-  FEAR: "Uses fear to push an action",
-  SCARCITY: "Uses a limited-time or limited-slot claim",
-  REWARD: "Uses a promised reward as pressure",
-  FAMILIARITY: "Claims familiarity while requesting something sensitive",
-  EMERGENCY: "Uses an emergency as social pressure",
-  EMPLOYMENT_LURE: "Uses work or earnings as a lure",
-  ADVANCE_FEE_MANIPULATION: "Requires money before a promised benefit",
-  CREDENTIAL_VERIFICATION_PRETEXT: "Uses verification as a reason to request credentials",
-  IMPERSONATION: "May be impersonating a trusted person or organization",
-  COERCION: "Uses coercion or a threatened consequence",
-  ROMANCE_OR_EMOTIONAL_MANIPULATION: "Uses emotional pressure for money",
-  COMMITMENT_ESCALATION: "Asks for another task or payment"
+  URGENCY: "it pushes you to act quickly",
+  ACCOUNT_SECURITY_SCARE: "it tries to scare you about your account",
+  CREDENTIAL_REQUEST: "it asks for your sign-in details",
+  OTP_REQUEST: "it asks for a one-time password (OTP)",
+  MPIN_REQUEST: "it asks for your mobile banking PIN",
+  PASSWORD_REQUEST: "it asks for your password",
+  PIN_OR_CVV_REQUEST: "it asks for a card PIN or security code",
+  PRIZE_OR_REWARD: "it promises a prize or reward",
+  ADVANCE_FEE: "it asks for money before giving a promised benefit",
+  INVESTMENT_PROMISE: "it promises unusually certain investment earnings",
+  JOB_OR_TASK_OFFER: "it uses a job or paid task to attract you",
+  PAYMENT_REQUEST: "it asks you to send money",
+  EMERGENCY_REQUEST: "it uses an emergency to ask for money",
+  AUTHORITY_IMPERSONATION: "it may be pretending to be a trusted organization",
+  ACTION_DEMAND: "it demands that you take action",
+  THREAT_OR_COERCION: "it uses threats or pressure",
+  DELIVERY_PAYMENT_REQUEST: "it asks for a parcel or delivery payment",
+  AUTHORITY: "it uses authority to pressure you",
+  FEAR: "it uses fear to make you act",
+  SCARCITY: "it claims that time or slots are running out",
+  REWARD: "it uses a promised reward to pressure you",
+  FAMILIARITY: "it acts familiar while asking for private information",
+  EMERGENCY: "it uses an emergency to pressure you",
+  EMPLOYMENT_LURE: "it uses work or earnings to attract you",
+  ADVANCE_FEE_MANIPULATION: "it requires payment before a promised benefit",
+  CREDENTIAL_VERIFICATION_PRETEXT: "it uses verification as a reason to ask for sign-in details",
+  IMPERSONATION: "it may be pretending to be a trusted person or organization",
+  COERCION: "it threatens a consequence if you do not act",
+  ROMANCE_OR_EMOTIONAL_MANIPULATION: "it uses emotions to ask for money",
+  COMMITMENT_ESCALATION: "it keeps asking for another task or payment"
 };
 
 let activeTabId = null;
@@ -166,6 +166,101 @@ function setStatus(element, label, style) {
   element.className = `${element === elements.emailFinalStatus ? "final-result" : "result-badge"} ${style}`;
 }
 
+function simpleWebsiteMessage(result) {
+  if (result === "NO_STRONG_WARNING_SIGNS" || result === "SAFE") {
+    return "BantAI did not find clear warning signs in this website address. It did not check the page itself, so this does not guarantee that the website is legitimate.";
+  }
+  if (result === "NEEDS_CAUTION") {
+    return "This website address looks unusual. Check that it is spelled correctly and belongs to the organization you expect before entering personal information.";
+  }
+  if (result === "SUSPICIOUS_SIGNS_FOUND" || result === "SUSPICIOUS") {
+    return "This website address shows warning signs often seen in fake or misleading sites. Do not enter passwords, one-time codes, or payment details unless you confirm the address through an official source.";
+  }
+  if (result === "UNAVAILABLE") {
+    return "BantAI could not check this website right now. Avoid sharing private or payment information until the check is available.";
+  }
+  if (result === "ANALYZING" || result === "CHECKING") {
+    return "BantAI is checking this website address. Please wait for the final result.";
+  }
+  return "BantAI checks only the website address shown in the browser.";
+}
+
+function indicatorLabels(state) {
+  const combined = [
+    ...(state?.local_indicators?.markers || []),
+    ...(state?.llm_review?.indicators || [])
+  ];
+  const seenCategories = new Set();
+  const seenLabels = new Set();
+  const labels = [];
+  for (const marker of combined) {
+    const category = String(marker?.category || "").toUpperCase();
+    const evidence = String(marker?.evidence || "").toLowerCase().replace(/\s+/g, " ");
+    const inboundTransferNotice = category === "PAYMENT_REQUEST" && (
+      evidence.includes("you have received") ||
+      evidence.includes("you've received") ||
+      (
+        evidence.includes("transfer from:") &&
+        evidence.includes("transfer to:") &&
+        evidence.includes("transfer amount:")
+      )
+    );
+    if (inboundTransferNotice) continue;
+    if (!category || seenCategories.has(category)) continue;
+    seenCategories.add(category);
+    const label = INDICATOR_LABELS[category] || "it contains an unusual request";
+    if (seenLabels.has(label)) continue;
+    seenLabels.add(label);
+    labels.push(label);
+    if (labels.length >= 5) break;
+  }
+  return labels;
+}
+
+function simpleEmailMessage(state, result) {
+  if (result === "NO_STRONG_WARNING_SIGNS" || result === "SAFE") {
+    return "BantAI did not find clear scam warning signs in this email. This does not guarantee that the sender or message is legitimate.";
+  }
+  if (result === "UNAVAILABLE") {
+    return "BantAI could not finish checking this email. Be careful with links, attachments, money requests, and requests for private information.";
+  }
+  if (result === "ANALYZING" || result === "CHECKING" || result === "WAITING") {
+    return "BantAI is checking this email. Please wait for the final result.";
+  }
+
+  const cloudReview = state?.llm_review || {};
+  const cloudStatus = String(cloudReview.status || "").toUpperCase();
+  const cloudCompleted = [
+    "NO_STRONG_WARNING_SIGNS",
+    "NEEDS_CAUTION",
+    "SUSPICIOUS_SIGNS_FOUND"
+  ].includes(cloudStatus);
+  const cloudSummary = String(cloudReview.reasoning_summary || "").trim();
+  const cloudAction = String(cloudReview.recommended_action || "").trim();
+  if (
+    cloudCompleted &&
+    cloudReview.body_context_sent_to_provider === true &&
+    cloudReview.sender_context_sent_to_provider === true &&
+    cloudReview.subject_context_sent_to_provider === true &&
+    cloudSummary
+  ) {
+    return [cloudSummary, cloudAction]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  const findings = indicatorLabels(state).slice(0, 2);
+  const reason = findings.length
+    ? `BantAI noticed that ${findings.join(" and ")}. `
+    : result === "SUSPICIOUS_SIGNS_FOUND"
+      ? "This email shows warning signs often used in scams. "
+      : "Some parts of this email look unclear or unusual. ";
+  const action = result === "SUSPICIOUS_SIGNS_FOUND"
+    ? "Do not click links, send money, or share passwords, one-time codes, or personal details until you confirm the request through an official source."
+    : "Check with the sender using a phone number, app, or website you already trust before clicking links, sending money, or sharing information.";
+  return `${reason}${action}`;
+}
+
 function renderServer(server) {
   if (server?.status === "connected") {
     elements.serverStatus.className = "server-status connected";
@@ -197,7 +292,7 @@ function renderWebsite(state) {
       : FINAL_LABELS[finalResult] || finalResult,
     style
   );
-  elements.websiteMessage.textContent = result.message || detector.message || "BantAI checks only the URL shown in the browser address bar.";
+  elements.websiteMessage.textContent = simpleWebsiteMessage(finalResult);
   elements.websiteScore.textContent = percentage(result.suspicious_probability);
   elements.websiteThreshold.textContent = percentage(result.threshold);
   elements.websiteModelSignal.textContent = result.signal || "--";
@@ -374,23 +469,11 @@ function renderIndicators(state, fusionResult) {
     return;
   }
 
-  const combined = [
-    ...(state?.local_indicators?.markers || []),
-    ...(state?.llm_review?.indicators || [])
-  ];
-  const seen = new Set();
-  const labels = [];
-  for (const marker of combined) {
-    const category = String(marker?.category || "").toUpperCase();
-    if (!category || seen.has(category)) continue;
-    seen.add(category);
-    labels.push(INDICATOR_LABELS[category] || marker.evidence || category.replaceAll("_", " "));
-    if (labels.length >= 5) break;
-  }
+  const labels = indicatorLabels(state);
   elements.indicatorList.replaceChildren();
   for (const label of labels) {
     const item = document.createElement("li");
-    item.textContent = label;
+    item.textContent = label.charAt(0).toUpperCase() + label.slice(1);
     elements.indicatorList.append(item);
   }
   elements.indicatorsCard.classList.toggle("hidden", labels.length === 0);
@@ -421,7 +504,7 @@ function renderEmail(state) {
   elements.emailSubject.textContent = subject || "No subject";
 
   const modelSignal = String(result.signal || detector.signal || "WAITING").toUpperCase();
-  elements.emailDecisionMessage.textContent = state?.fusion?.message || detector.message || "Analyzing the opened email.";
+  elements.emailDecisionMessage.textContent = simpleEmailMessage(state, fusionResult);
   elements.emailScore.textContent = percentage(result.suspicious_probability);
   elements.emailThreshold.textContent = percentage(result.threshold);
   elements.emailModelSignal.textContent = modelSignal;

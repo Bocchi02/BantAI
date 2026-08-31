@@ -1,163 +1,151 @@
 "use client";
 import { useState } from "react";
 import { api } from "../api";
-import { SparklesIcon, AlertTriangleIcon } from "../Icons";
+import { SparklesIcon, AlertTriangleIcon, CheckCircle2Icon, ShieldAlertIcon } from "../Icons";
 import { cx, Notice, PageHeader } from "../components/ViewShared";
 
 function MessageReviewPage() {
-    const [message, setMessage] = useState("");
+    const [text, setText] = useState("");
     const [confirmed, setConfirmed] = useState(false);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState("");
     const [result, setResult] = useState(null);
+    const [error, setError] = useState("");
+    const charCount = text.length;
     const submit = async (event) => {
         event.preventDefault();
-        if (!message.trim() || !confirmed)
+        if (!text.trim() || text.length < 10 || !confirmed) {
+            setError("Paste at least 10 characters and confirm you agree to analyze this text.");
             return;
+        }
         setBusy(true);
         setError("");
         setResult(null);
         try {
-            setResult(await api("/message-review", {
+            const data = await api("/message-review", {
                 method: "POST",
-                body: JSON.stringify({ message, confirmed: true }),
-            }));
+                body: JSON.stringify({
+                    text: text.trim(),
+                    confirmed: true,
+                }),
+            });
+            setResult(data);
         }
-        catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not review this message.");
+        catch (problem) {
+            setError(problem instanceof Error ? problem.message : "BantAI could not complete the contextual review.");
         }
         finally {
             setBusy(false);
         }
     };
-    const clear = () => {
-        setMessage("");
+    const reset = () => {
+        setText("");
         setConfirmed(false);
         setResult(null);
         setError("");
     };
-    const assessmentTitle = result?.assessment === "SUSPICIOUS_SIGNS_FOUND"
-        ? "AI found suspicious wording"
-        : result?.assessment === "NEEDS_CAUTION"
-            ? "AI review suggests caution"
-            : "No strong warning signs in the pasted text";
-    const confidenceLabel = result?.confidence === "HIGH"
-        ? "High"
-        : result?.confidence === "MEDIUM"
-            ? "Moderate"
-            : "Limited";
+    const isSafe = result?.assessment.outcome === "NO_STRONG_WARNING_SIGNS";
+    const isCaution = result?.assessment.outcome === "NEEDS_CAUTION";
     return (<>
-      <PageHeader eyebrow="ON-DEMAND AI REVIEW" title="Check a message" description="Paste an email body, SMS, chat, or other message for a one-time contextual review."/>
-      {error && <Notice type="error">{error}</Notice>}
+      <PageHeader eyebrow="TEXT-ONLY CONTEXTUAL REVIEW" title="AI message check" description="Paste suspicious text to check it with BantAI’s Philippine scam contextual engine."/>
+
       <div className="grid lg:grid-cols-12 gap-6">
-        <section className="lg:col-span-8 p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm" aria-labelledby="message-review-form-title">
-          <div className="mb-4">
-            <p className="text-xs font-semibold text-[#087EFF] tracking-wider uppercase">PASTED TEXT</p>
-            <h2 id="message-review-form-title" className="text-base font-bold text-[#04142F]">What message would you like to check?</h2>
-          </div>
-          <form className="space-y-4" onSubmit={submit}>
-            <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-700">Message text</span>
-              <textarea value={message} onChange={(event) => { setMessage(event.target.value); setResult(null); }} maxLength={10_000} placeholder="Paste the message here. Remove any details you do not want processed." aria-describedby="message-review-help message-review-count" required className="w-full h-44 p-3.5 rounded-xl border border-slate-300 text-xs sm:text-sm font-mono leading-relaxed focus:ring-2 focus:ring-[#087EFF] outline-none"/>
-            </label>
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <p id="message-review-help" className="max-w-md">BantAI redacts reasonably detectable OTPs, phone numbers, email addresses, cards, and account identifiers before the AI request.</p>
-              <span id="message-review-count" className="font-mono font-bold text-slate-600">{message.length.toLocaleString()} / 10,000</span>
-            </div>
-            <label className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-50/60 border border-blue-200 cursor-pointer">
-              <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 rounded text-[#087EFF] focus:ring-[#087EFF]"/>
-              <div className="text-xs">
-                <strong className="text-[#071E4A] block font-semibold">Review this text with Cloud AI</strong>
-                <small className="text-slate-500 block mt-0.5">I understand the redacted text will be sent to Cloud AI for this one-time analysis. It will not be saved to activity or training data.</small>
-              </div>
-            </label>
-            <div className="flex items-center gap-3">
-              <button className="h-10 px-5 rounded-xl bg-[#087EFF] hover:bg-[#071E4A] text-white text-xs font-bold shadow-sm transition disabled:opacity-50" type="submit" disabled={busy || !message.trim() || !confirmed}>
-                {busy ? "Reviewing message..." : "Analyze pasted text"}
-              </button>
-              <button className="h-10 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-semibold transition disabled:opacity-40" type="button" onClick={clear} disabled={busy || (!message && !result)}>
-                Clear
-              </button>
-            </div>
-          </form>
-        </section>
+        <div className="lg:col-span-7 flex flex-col gap-6">
+          <section className="sneat-card p-5 sm:p-6" aria-labelledby="form-title">
+            <h2 id="form-title" className="text-base font-bold text-[#384551] mb-1">Check a message</h2>
+            <p className="text-xs text-[#8592a3] mb-4">Paste text from an SMS, email, or chat to check for Philippine scam tactics, urgent requests, or impersonation patterns.</p>
 
-        <aside className="lg:col-span-4 p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-[#071E4A] to-[#04142F] text-white flex flex-col justify-between" aria-label="AI message check limitations">
-          <div>
-            <div className="w-9 h-9 rounded-xl bg-[#087EFF]/20 border border-[#087EFF]/30 flex items-center justify-center text-[#1495FF] mb-3">
-              <SparklesIcon className="w-5 h-5"/>
+            {error && <Notice type="error">{error}</Notice>}
+
+            <form onSubmit={submit} className="space-y-4">
+              <label className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-[#384551]">Message text</span>
+                  <span className={cx("text-xs font-mono", charCount > 4000 ? "text-[#ff3e1d] font-bold" : "text-[#8592a3]")}>
+                    {charCount.toLocaleString()} / 4,000
+                  </span>
+                </div>
+                <textarea value={text} onChange={(event) => setText(event.target.value)} maxLength={4000} rows={7} placeholder="Paste the message text here (minimum 10 characters)..." required className="w-full p-3.5 rounded-md border border-[#d9dee3] text-xs sm:text-sm text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none transition bg-white resize-y font-sans"/>
+              </label>
+
+              <label className="flex items-start gap-3 p-3.5 rounded-lg bg-[#f5f5f9] border border-[#e4e6e8] cursor-pointer">
+                <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 rounded border-[#d9dee3] text-[#696cff] focus:ring-[#696cff] shrink-0 accent-[#696cff]"/>
+                <span className="text-xs text-[#646e78] leading-relaxed">
+                  I agree to analyze this pasted text. I understand BantAI redacts reasonably detectable OTPs, phone numbers, email addresses, and account identifiers before cloud analysis.
+                </span>
+              </label>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button type="submit" disabled={busy || charCount < 10 || charCount > 4000 || !confirmed} className="px-5 py-2.5 rounded-md bg-[#696cff] hover:bg-[#5f61e6] text-white text-xs sm:text-sm font-bold shadow-[0_2px_4px_0_rgba(105,108,255,0.4)] transition disabled:opacity-50 flex items-center gap-2">
+                  <SparklesIcon className="w-4 h-4"/>
+                  <span>{busy ? "Analyzing with Cloud AI..." : "Analyze pasted text"}</span>
+                </button>
+                {(text || result) && (<button type="button" onClick={reset} className="px-4 py-2.5 rounded-md border border-[#d9dee3] text-xs font-semibold text-[#646e78] hover:bg-[#f5f5f9] transition">
+                    Clear
+                  </button>)}
+              </div>
+            </form>
+          </section>
+
+          <section className="sneat-card p-5 rounded-lg bg-[#e7e7ff]/40 border-[#c3c4ff] flex gap-3 text-xs text-[#4347d9]">
+            <SparklesIcon className="w-5 h-5 text-[#696cff] shrink-0 mt-0.5"/>
+            <div className="space-y-1">
+              <strong className="block font-bold">This is a text-only contextual check, not a final BantAI email result.</strong>
+              <p className="text-[#646e78] leading-relaxed">English, Filipino, and Taglish scam context is reviewed. Language or code-switching alone is never a warning sign.</p>
             </div>
-            <p className="text-xs font-semibold text-[#1495FF] uppercase tracking-wider mb-1">CONTEXTUAL SIGNAL ONLY</p>
-            <h2 className="text-lg font-bold text-white mb-2">One part of the picture</h2>
-            <p className="text-xs text-slate-300 leading-relaxed mb-4">This check analyzes only the wording you paste. It does not inspect the sender, email headers, attachments, websites, or your local XLM-R model.</p>
-            <ul className="space-y-2 text-xs text-slate-300">
-              <li className="flex items-center gap-2"><span className="text-[#1495FF]">✓</span> English, Filipino, and Taglish scam context is reviewed</li>
-              <li className="flex items-center gap-2"><span className="text-[#1495FF]">✓</span> Language or code-switching alone is never a warning sign</li>
-              <li className="flex items-center gap-2"><span className="text-[#1495FF]">✓</span> No message is added to history or training data</li>
-              <li className="flex items-center gap-2"><span className="text-[#1495FF]">✓</span> No links are opened or followed</li>
-            </ul>
-          </div>
-        </aside>
+          </section>
+        </div>
+
+        <div className="lg:col-span-5 flex flex-col gap-6">
+          {result ? (<section className="sneat-card p-5 sm:p-6 border-t-4 border-t-[#696cff] space-y-4" aria-labelledby="result-title">
+              <div className="flex items-center justify-between pb-3 border-b border-[#e4e6e8]">
+                <div>
+                  <p className="text-xs font-semibold text-[#696cff] uppercase tracking-wider">DETAILED ASSESSMENT</p>
+                  <h2 id="result-title" className="text-lg font-bold text-[#384551]">Contextual analysis result</h2>
+                </div>
+                <span className={cx("text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider", isSafe && "bg-[#e8fadf] text-[#2d5816] border border-[#c6f1af]", isCaution && "bg-[#fff1d6] text-[#664400] border border-[#ffdd99]", !isSafe && !isCaution && "bg-[#ffe0db] text-[#66190c] border border-[#ffb2a5]")}>
+                  {result.assessment.outcome === "NO_STRONG_WARNING_SIGNS" ? "No warning signs" : result.assessment.outcome === "NEEDS_CAUTION" ? "Needs caution" : "Suspicious signs found"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs py-2 px-3 rounded-md bg-[#f5f5f9] border border-[#e4e6e8]">
+                <span className="text-[#8592a3]">Text-only confidence</span>
+                <strong className="text-[#384551] uppercase font-bold">{result.assessment.confidence}</strong>
+              </div>
+
+              <div className="p-4 rounded-lg bg-[#f5f5f9]/70 border border-[#e4e6e8]">
+                <h3 className="text-xs font-bold text-[#384551] uppercase tracking-wider mb-1.5">Assessment summary</h3>
+                <p className="text-xs sm:text-sm text-[#646e78] leading-relaxed">{result.assessment.reasoning_summary}</p>
+              </div>
+
+              {result.assessment.indicators?.length > 0 && (<div className="space-y-2">
+                  <h3 className="text-xs font-bold text-[#384551] uppercase tracking-wider">Observed scam indicators</h3>
+                  <ul className="space-y-2">
+                    {result.assessment.indicators.map((ind, i) => (<li key={i} className="p-3 rounded-md bg-[#fff1d6]/60 border border-[#ffdd99] text-xs text-[#664400]">
+                        <strong className="block font-bold mb-0.5">{ind.category.replaceAll("_", " ")}</strong>
+                        <span className="leading-relaxed text-[#646e78]">{ind.evidence}</span>
+                      </li>))}
+                  </ul>
+                </div>)}
+
+              <div className="p-4 rounded-lg bg-[#e8fadf]/60 border border-[#c6f1af] text-xs text-[#2d5816]">
+                <strong className="block font-bold mb-1">Safer next steps</strong>
+                <p className="leading-relaxed text-[#2d5816]/90">{result.assessment.recommended_action}</p>
+              </div>
+
+              <p className="text-xs text-[#8592a3] pt-3 border-t border-[#e4e6e8] leading-relaxed">
+                This standalone text check does not run the frozen local email model and does not store the text in dashboard history.
+              </p>
+            </section>) : (<section className="sneat-card p-8 text-center flex flex-col items-center justify-center h-full min-h-[300px] border-dashed">
+              <div className="w-12 h-12 rounded-lg bg-[#e7e7ff] text-[#696cff] flex items-center justify-center mb-3 shadow-2xs">
+                <SparklesIcon className="w-6 h-6"/>
+              </div>
+              <h2 className="text-sm font-bold text-[#384551]">No analysis yet</h2>
+              <p className="text-xs text-[#8592a3] max-w-xs mt-1 leading-relaxed">
+                Paste message text on the left to see Philippine scam indicators, reasoning, and safer next steps.
+              </p>
+            </section>)}
+        </div>
       </div>
-
-      {result?.status === "UNAVAILABLE" && (<section className="p-5 sm:p-6 rounded-2xl bg-amber-50 border border-amber-200 mt-6 flex items-start gap-4" role="status">
-          <AlertTriangleIcon className="w-6 h-6 text-amber-600 shrink-0 mt-0.5"/>
-          <div>
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">AI REVIEW UNAVAILABLE</p>
-            <h2 className="text-base font-bold text-amber-950">Message review could not be completed</h2>
-            <p className="text-xs text-amber-900 mt-1">{result.reasoning_summary} {result.recommended_action}</p>
-          </div>
-        </section>)}
-
-      {result?.status === "COMPLETE" && result.assessment && (<section className={cx("p-5 sm:p-6 rounded-2xl border shadow-sm mt-6 space-y-6", result.assessment === "NO_STRONG_WARNING_SIGNS" ? "bg-emerald-50/30 border-emerald-200" : result.assessment === "NEEDS_CAUTION" ? "bg-amber-50/30 border-amber-200" : "bg-rose-50/30 border-rose-200")} aria-live="polite">
-          <div className="flex items-center gap-4">
-            <div className={cx("w-12 h-12 rounded-2xl flex items-center justify-center text-white text-xl font-bold shrink-0", result.assessment === "NO_STRONG_WARNING_SIGNS" ? "bg-emerald-600" : result.assessment === "NEEDS_CAUTION" ? "bg-amber-600" : "bg-rose-600")}>
-              {result.assessment === "NO_STRONG_WARNING_SIGNS" ? "✓" : "!"}
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">CLOUD AI TEXT SIGNAL</p>
-              <h2 className="text-lg font-bold text-[#04142F]">{assessmentTitle}</h2>
-            </div>
-          </div>
-
-          <div className="p-4 sm:p-5 rounded-xl bg-white border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider">DETAILED ASSESSMENT</p>
-                <h3 className="text-sm font-bold text-[#04142F]">Why BantAI reached this result</h3>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 block uppercase font-medium">Text-only confidence</span>
-                <strong className="text-xs font-bold text-[#071E4A]">{confidenceLabel}</strong>
-              </div>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed mt-2">{result.reasoning_summary}</p>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider mb-1">OBSERVED WORDING</p>
-            <h3 className="text-sm font-bold text-[#04142F] mb-3">{result.indicators.length > 0 ? `${result.indicators.length} contextual indicator${result.indicators.length === 1 ? "" : "s"}` : "No specific warning indicators"}</h3>
-            {result.indicators.length > 0 ? (<div className="grid sm:grid-cols-2 gap-3" aria-label="Observed message indicators">
-                {result.indicators.map((indicator, index) => (<article key={`${indicator.category}-${index}`} className="p-4 rounded-xl bg-white border border-slate-200 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                        <span className="font-bold uppercase text-[10px]">{indicator.severity.toLowerCase()}</span>
-                        <em>Signal {index + 1}</em>
-                      </div>
-                      <strong className="text-xs sm:text-sm font-bold text-[#04142F] block">{indicator.category}</strong>
-                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">{indicator.evidence}</p>
-                    </div>
-                  </article>))}
-              </div>) : (<p className="text-xs text-slate-500 p-4 rounded-xl bg-white border border-slate-200">The pasted wording did not provide a specific scam or social-engineering signal. This does not verify the sender or message.</p>)}
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-100 border border-slate-200 text-xs">
-            <strong className="text-[#071E4A] block mb-1 font-bold">Safer next steps</strong>
-            <p className="text-slate-600 leading-relaxed">{result.recommended_action}</p>
-          </div>
-
-          <p className="text-xs text-slate-400"><strong>Cloud-only review:</strong> This is not a final BantAI email result and cannot confirm that a message is legitimate or malicious.</p>
-        </section>)}
     </>);
 }
 

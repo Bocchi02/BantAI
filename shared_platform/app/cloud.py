@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,154 @@ PASTED_MESSAGE_MAX_CLOUD_CHARS = 7000
 ACTIVITY_METADATA_MAX_CLOUD_CHARS = 800
 ACTIVITY_EMAIL_MAX_CLOUD_CHARS = 7000
 ACTIVITY_URL_MAX_CLOUD_CHARS = 8192
+
+
+_PRIVACY_MARKER_REPLACEMENTS = {
+    "EMAIL": "an email address hidden for privacy",
+    "PHONE": "a phone number hidden for privacy",
+    "OTP": "a one-time code hidden for privacy",
+    "CARD": "payment-card details hidden for privacy",
+    "ACCOUNT": "account details hidden for privacy",
+}
+
+
+def _humanize_privacy_markers(value: Any) -> str:
+    """Prevent internal redaction tokens from leaking into user-facing text."""
+
+    text = str(value or "")
+    for marker, replacement in _PRIVACY_MARKER_REPLACEMENTS.items():
+        text = re.sub(
+            rf"\[?\s*{marker}[\s_-]*REDACTED\s*\]?",
+            replacement,
+            text,
+            flags=re.IGNORECASE,
+        )
+    return text.strip()
+
+
+def _is_sender_redaction_only_indicator(indicator: dict[str, Any]) -> bool:
+    """A hidden address is a privacy limit, not evidence against the sender."""
+
+    category = str(indicator.get("category") or "")
+    evidence = str(indicator.get("evidence") or "")
+    combined = f"{category} {evidence}"
+    has_email_marker = bool(
+        re.search(r"\[?\s*EMAIL[\s_-]*REDACTED\s*\]?", combined, re.IGNORECASE)
+    )
+    sender_identity_claim = bool(
+        re.search(r"sender|identity|email address", combined, re.IGNORECASE)
+    )
+    privacy_limit_claim = bool(
+        re.search(r"redact|hidden|cannot be verified|unverified|not verified", combined, re.IGNORECASE)
+    )
+    return has_email_marker and sender_identity_claim and privacy_limit_claim
+
+
+def _sanitize_activity_explanation(result: dict[str, Any]) -> dict[str, Any]:
+    """Make provider text safe and clear without changing its assessment."""
+
+    sanitized = dict(result)
+    sanitized["reasoning_summary"] = _humanize_privacy_markers(
+        sanitized.get("reasoning_summary")
+    )
+    sanitized["recommended_action"] = _humanize_privacy_markers(
+        sanitized.get("recommended_action")
+    )
+    sanitized_indicators = []
+    for raw_indicator in sanitized.get("indicators") or []:
+        indicator = dict(raw_indicator)
+        if _is_sender_redaction_only_indicator(indicator):
+            continue
+        indicator["category"] = _humanize_privacy_markers(indicator.get("category"))
+        indicator["evidence"] = _humanize_privacy_markers(indicator.get("evidence"))
+        sanitized_indicators.append(indicator)
+    sanitized["indicators"] = sanitized_indicators
+    return sanitized
+
+
+def _correct_email_context_wording(result: dict[str, Any], content_scope: str) -> dict[str, Any]:
+    """Keep provider wording aligned with the context that was actually supplied."""
+
+    corrected = dict(result)
+    summary = str(corrected.get("reasoning_summary") or "")
+    combined_redaction_claim = re.compile(
+        r"(?:the\s+)?sender(?:\s+details|\s+address)?\s+and\s+(?:the\s+)?(?:email\s+|message\s+)?body\s+"
+        r"(?:is|are|was|were|remain|remains)\s+(?:privacy[- ]?)?redacted",
+        re.IGNORECASE,
+    )
+    body_redaction_claim = re.compile(
+        r"(?:the\s+)?(?:email\s+|message\s+)?body\s+"
+        r"(?:is|are|was|were|remain|remains)\s+(?:privacy[- ]?)?redacted",
+        re.IGNORECASE,
+    )
+    if content_scope == "EMAIL_PROVIDER_SENDER_SUBJECT_BODY":
+        replacement = "personal identifiers were protected before review"
+    else:
+        replacement = "the temporary message text was unavailable for this explanation"
+    summary = combined_redaction_claim.sub(replacement, summary)
+    summary = body_redaction_claim.sub(replacement, summary)
+    corrected["reasoning_summary"] = summary
+    if content_scope == "EMAIL_PROVIDER_SENDER_SUBJECT_BODY":
+        corrected["indicators"] = [
+            indicator
+            for indicator in corrected.get("indicators") or []
+            if not (
+                re.search(r"email|message|body", str(indicator.get("category") or ""), re.IGNORECASE)
+                and re.search(
+                    r"unavailable|not available|missing|redacted",
+                    f"{indicator.get('category', '')} {indicator.get('evidence', '')}",
+                    re.IGNORECASE,
+                )
+            )
+        ]
+    return corrected
+
+
+def _correct_incoming_transfer_wording(
+    result: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Prevent a received-transfer receipt from being described as a payment request."""
+
+    if payload.get("analysis_type") != "EMAIL_CONTEXT":
+        return result
+    context = " ".join(str(payload.get("email_context") or "").lower().split())
+    incoming_notice = bool(
+        re.search(
+            r"\byou (?:have|'ve) (?:successfully )?received\b.{0,100}\b(?:funds?|money|payment|transfer)\b",
+            context,
+        )
+        or all(part in context for part in ("transfer from:", "transfer to:", "transfer amount:"))
+    )
+    outbound_request = bool(
+        re.search(r"\b(?:please|kindly)\s+(?:send|pay|transfer|deposit)\b", context)
+        or re.search(r"\byou\s+(?:must|need to|should)\s+(?:send|pay|transfer|deposit)\b", context)
+        or re.search(r"\b(?:send|pay|deposit)\s+(?:us\s+)?(?:money|payment|fee|php|₱)\b", context)
+    )
+    if not incoming_notice or outbound_request:
+        return result
+
+    corrected = dict(result)
+    corrected["indicators"] = [
+        indicator
+        for indicator in corrected.get("indicators") or []
+        if str(indicator.get("category") or "").upper() != "PAYMENT_REQUEST"
+    ]
+    summary = str(corrected.get("reasoning_summary") or "")
+    inaccurate_payment_claim = re.search(
+        r"\b(?:asks?|requests?|directs?|tells?)\b.{0,50}\b(?:send|pay|transfer|deposit)\b.{0,35}\b(?:money|payment|funds?|fee)?",
+        summary,
+        re.IGNORECASE,
+    )
+    if inaccurate_payment_claim:
+        corrected["reasoning_summary"] = (
+            "The email describes an incoming transfer and does not contain a clear request "
+            "for you to send money. BantAI cannot independently confirm that the notification is authentic."
+        )
+        corrected["recommended_action"] = (
+            "Confirm the transaction directly in the official banking app or website, without using links from the email."
+        )
+    return corrected
 
 
 def unavailable(reason: str = "PROVIDER_UNAVAILABLE") -> dict[str, Any]:
@@ -62,7 +211,7 @@ def review(payload: dict[str, Any]) -> dict[str, Any]:
         # Successful reviews use the strict provider-neutral schema directly.
         # `status` is reserved for the UNAVAILABLE transport envelope; adding
         # it to a successful review would be rejected as an unexpected field.
-        return result.model_dump()
+        return _correct_incoming_transfer_wording(result.model_dump(), payload)
     except LLMProviderError as exc:
         return unavailable(getattr(exc, "reason_code", "PROVIDER_UNAVAILABLE"))
     except Exception:
@@ -174,7 +323,11 @@ def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:
         )
         if not provider.available:
             raise LLMProviderError("Cloud explanation provider is unavailable.")
-        result = provider.review(review_payload).model_dump()
+        result = _sanitize_activity_explanation(
+            provider.review(review_payload).model_dump()
+        )
+        if payload.get("event_type") == "EMAIL":
+            result = _correct_email_context_wording(result, content_scope)
         result["assessment"] = recorded_outcome
         if recorded_outcome == "NO_STRONG_WARNING_SIGNS":
             result["indicators"] = []
@@ -185,6 +338,10 @@ def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:
             "analysis_scope": payload.get("content_scope"),
             "full_context_available": content_scope in {"FULL_URL", "EMAIL_PROVIDER_SENDER_SUBJECT_BODY"},
             "redacted_before_provider": payload.get("event_type") == "EMAIL",
+            "body_context_sent_to_provider": (
+                payload.get("event_type") == "EMAIL"
+                and content_scope == "EMAIL_PROVIDER_SENDER_SUBJECT_BODY"
+            ),
         }
     except LLMProviderError as exc:
         failure_reason = getattr(exc, "reason_code", "PROVIDER_UNAVAILABLE")
@@ -202,4 +359,5 @@ def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:
         "analysis_scope": payload.get("content_scope"),
         "full_context_available": content_scope in {"FULL_URL", "EMAIL_PROVIDER_SENDER_SUBJECT_BODY"},
         "redacted_before_provider": payload.get("event_type") == "EMAIL",
+        "body_context_sent_to_provider": False,
     }

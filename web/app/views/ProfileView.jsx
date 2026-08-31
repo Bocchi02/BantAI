@@ -1,247 +1,239 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { PASSWORD_REQUIREMENTS, passwordValidationMessage, userName, Notice, PageHeader } from "../components/ViewShared";
+import { UserIcon, LockIcon, LogOutIcon, GlobeIcon, MailIcon, CheckIcon } from "../Icons";
+import { PASSWORD_REQUIREMENTS, passwordValidationMessage, cx, Notice, PageHeader, DashboardSkeleton } from "../components/ViewShared";
 
-function ProfilePage({ user, onUserChanged, onSignOut }) {
-    const [nameBusy, setNameBusy] = useState(false);
-    const [passwordBusy, setPasswordBusy] = useState(false);
-    const [signOutBusy, setSignOutBusy] = useState(false);
-    const [nameMessage, setNameMessage] = useState("");
+function ProfilePage({ user, onUpdateUser, onUserChanged, onLogout, onSignOut }) {
+    const updateUser = onUpdateUser || onUserChanged || (() => {});
+    const logout = onLogout || onSignOut || (() => {});
+    const [profile, setProfile] = useState(null);
+    const [firstName, setFirstName] = useState(user.first_name || "");
+    const [middleName, setMiddleName] = useState(user.middle_name || "");
+    const [lastName, setLastName] = useState(user.last_name || "");
+    const [oldPassword, setOldPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [trainingConsent, setTrainingConsent] = useState(false);
+    const [profileError, setProfileError] = useState("");
+    const [profileMessage, setProfileMessage] = useState("");
+    const [passwordError, setPasswordError] = useState("");
     const [passwordMessage, setPasswordMessage] = useState("");
-    const [error, setError] = useState("");
-    const [trainingConsent, setTrainingConsent] = useState(null);
-    const [trainingAgreement, setTrainingAgreement] = useState(false);
-    const [trainingBusy, setTrainingBusy] = useState(false);
-    const [trainingMessage, setTrainingMessage] = useState("");
-    useEffect(() => {
-        api("/training-consent")
-            .then(setTrainingConsent)
-            .catch((reason) => setError(reason instanceof Error ? reason.message : "BantAI could not load your training-data preference."));
+    const [consentError, setConsentError] = useState("");
+    const [consentMessage, setConsentMessage] = useState("");
+    const [savingProfile, setSavingProfile] = useState(false);
+    const [savingPassword, setSavingPassword] = useState(false);
+    const [savingConsent, setSavingConsent] = useState(false);
+    const load = useCallback(() => {
+        return api("/profile")
+            .then((data) => {
+            setProfile(data);
+            setFirstName(data.first_name || "");
+            setMiddleName(data.middle_name || "");
+            setLastName(data.last_name || "");
+            setTrainingConsent(data.training_opt_in?.enabled || false);
+        })
+            .catch((reason) => setProfileError(reason.message));
     }, []);
-    const saveName = async (event) => {
+    useEffect(() => { void load(); }, [load]);
+    const saveProfile = async (event) => {
         event.preventDefault();
-        setNameBusy(true);
-        setError("");
-        setNameMessage("");
-        const data = Object.fromEntries(new FormData(event.currentTarget));
+        setSavingProfile(true);
+        setProfileError("");
+        setProfileMessage("");
         try {
-            const result = await api("/profile", {
-                method: "PATCH",
+            const updated = await api("/profile", {
+                method: "PUT",
                 body: JSON.stringify({
-                    first_name: data.first_name,
-                    middle_name: data.middle_name || null,
-                    last_name: data.last_name,
+                    first_name: firstName.trim(),
+                    middle_name: middleName.trim() || null,
+                    last_name: lastName.trim(),
                 }),
             });
-            onUserChanged(result.user);
-            setNameMessage(result.message);
+            setProfile(updated);
+            updateUser(updated);
+            setProfileMessage("Personal details updated.");
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not update your profile.");
+            setProfileError(reason instanceof Error ? reason.message : "BantAI could not update your details.");
         }
         finally {
-            setNameBusy(false);
+            setSavingProfile(false);
         }
     };
-    const changePassword = async (event) => {
+    const savePassword = async (event) => {
         event.preventDefault();
-        setPasswordBusy(true);
-        setError("");
+        setPasswordError("");
         setPasswordMessage("");
-        const form = event.currentTarget;
-        const data = Object.fromEntries(new FormData(form));
-        try {
-            const passwordError = passwordValidationMessage(data.new_password);
-            if (passwordError)
-                throw new Error(passwordError);
-            if (data.new_password !== data.confirm_password)
-                throw new Error("New passwords do not match.");
-            const result = await api("/profile/change-password", {
-                method: "POST",
-                body: JSON.stringify({ current_password: data.current_password, new_password: data.new_password }),
-            });
-            form.reset();
-            setPasswordMessage(result.message);
-        }
-        catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not change your password.");
-        }
-        finally {
-            setPasswordBusy(false);
-        }
-    };
-    const signOut = async () => {
-        setSignOutBusy(true);
-        setError("");
-        try {
-            await onSignOut();
-        }
-        catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not sign you out.");
-            setSignOutBusy(false);
-        }
-    };
-    const enableTrainingCollection = async (event) => {
-        event.preventDefault();
-        if (!trainingAgreement)
+        const validation = passwordValidationMessage(newPassword);
+        if (validation) {
+            setPasswordError(validation);
             return;
-        setTrainingBusy(true);
-        setError("");
-        setTrainingMessage("");
+        }
+        if (newPassword !== confirmPassword) {
+            setPasswordError("New passwords do not match.");
+            return;
+        }
+        setSavingPassword(true);
         try {
-            const result = await api("/training-consent", {
-                method: "PATCH",
-                body: JSON.stringify({ enabled: true, confirmed: true }),
+            await api("/profile/password", {
+                method: "PUT",
+                body: JSON.stringify({
+                    old_password: oldPassword,
+                    new_password: newPassword,
+                }),
             });
-            setTrainingConsent(result);
-            setTrainingAgreement(false);
-            setTrainingMessage(result.message);
+            setOldPassword("");
+            setNewPassword("");
+            setConfirmPassword("");
+            setPasswordMessage("Password updated successfully.");
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not enable automatic training-data collection.");
+            setPasswordError(reason instanceof Error ? reason.message : "BantAI could not update your password.");
         }
         finally {
-            setTrainingBusy(false);
+            setSavingPassword(false);
         }
     };
-    const disableTrainingCollection = async () => {
-        setTrainingBusy(true);
-        setError("");
-        setTrainingMessage("");
+    const updateConsent = async (enabled) => {
+        setSavingConsent(true);
+        setConsentError("");
+        setConsentMessage("");
         try {
-            const result = await api("/training-consent", {
-                method: "PATCH",
-                body: JSON.stringify({ enabled: false, confirmed: false }),
+            const updated = await api("/profile/training-opt-in", {
+                method: "PUT",
+                body: JSON.stringify({ enabled }),
             });
-            setTrainingConsent(result);
-            setTrainingMessage(result.message);
+            setTrainingConsent(updated.training_opt_in.enabled);
+            setProfile(updated);
+            setConsentMessage(enabled ? "Opted in to automatic random training-data contribution." : "Opted out. Your automatically collected samples have been deleted.");
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not disable automatic training-data collection.");
+            setConsentError(reason instanceof Error ? reason.message : "BantAI could not update your contribution preference.");
         }
         finally {
-            setTrainingBusy(false);
+            setSavingConsent(false);
         }
     };
     return (<>
-      <PageHeader eyebrow="YOUR ACCOUNT" title="Profile" description="Update your name, protect your password, and manage this signed-in session."/>
-      {error && <Notice type="error">{error}</Notice>}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm" aria-labelledby="personal-details-title">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-            <div>
-              <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider">PERSONAL DETAILS</p>
-              <h2 id="personal-details-title" className="text-base font-bold text-[#04142F]">Your name</h2>
+      <PageHeader eyebrow="ACCOUNT SETTINGS" title="Profile" description="Manage your account details, password, and privacy-preserving training contribution settings." actions={<button className="flex items-center gap-1.5 px-3.5 py-2 rounded-md bg-[#ffe0db] text-[#ff3e1d] hover:bg-[#ffb2a5]/50 text-xs font-bold transition" onClick={logout} type="button">
+            <LogOutIcon className="w-4 h-4"/>
+            <span>Sign out</span>
+          </button>}/>
+      <div className="grid lg:grid-cols-12 gap-6">
+        <section className="lg:col-span-6 sneat-card p-5 sm:p-6" aria-labelledby="personal-details-title">
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#e4e6e8]/70">
+            <div className="w-9 h-9 rounded-md bg-[#e7e7ff] text-[#696cff] flex items-center justify-center shrink-0 shadow-2xs">
+              <UserIcon className="w-4 h-4"/>
             </div>
-            <span className="w-8 h-8 rounded-xl bg-[#071E4A] text-white flex items-center justify-center font-bold text-xs">
-              {userName(user).slice(0, 1).toUpperCase()}
-            </span>
+            <div>
+              <p className="text-xs font-semibold text-[#696cff] uppercase tracking-wider">IDENTITY</p>
+              <h2 id="personal-details-title" className="text-base font-bold text-[#384551]">Personal details</h2>
+            </div>
           </div>
-          <form className="space-y-4" onSubmit={saveName}>
+          {profileError && <Notice type="error">{profileError}</Notice>}
+          {profileMessage && <Notice type="success">{profileMessage}</Notice>}
+          <form className="space-y-4" onSubmit={saveProfile}>
             <div className="grid sm:grid-cols-2 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-700">First name</span>
-                <input name="first_name" autoComplete="given-name" maxLength={80} defaultValue={user.first_name} required className="h-10 px-3 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-[#087EFF] outline-none"/>
+                <span className="text-xs font-semibold text-[#384551]">First name</span>
+                <input value={firstName} onChange={(event) => setFirstName(event.target.value)} maxLength={80} required className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-700">Middle name <small className="text-slate-400 font-normal">(optional)</small></span>
-                <input name="middle_name" autoComplete="additional-name" maxLength={80} defaultValue={user.middle_name || ""} className="h-10 px-3 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-[#087EFF] outline-none"/>
+                <span className="text-xs font-semibold text-[#384551]">Middle name <small className="text-[#8592a3] font-normal">(optional)</small></span>
+                <input value={middleName} onChange={(event) => setMiddleName(event.target.value)} maxLength={80} className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
               </label>
               <label className="sm:col-span-2 flex flex-col gap-1">
-                <span className="text-xs font-semibold text-slate-700">Last name</span>
-                <input name="last_name" autoComplete="family-name" maxLength={80} defaultValue={user.last_name} required className="h-10 px-3 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-[#087EFF] outline-none"/>
+                <span className="text-xs font-semibold text-[#384551]">Last name</span>
+                <input value={lastName} onChange={(event) => setLastName(event.target.value)} maxLength={80} required className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
               </label>
             </div>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-700">Email address</span>
-              <input value={user.email} readOnly aria-describedby="email-help" className="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 text-xs sm:text-sm cursor-not-allowed"/>
+              <span className="text-xs font-semibold text-[#384551]">Email address</span>
+              <input value={user.email} disabled className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-[#f5f5f9] text-[#8592a3] cursor-not-allowed"/>
+              <small className="text-[#8592a3] text-[11px]">Email addresses cannot be changed directly.</small>
             </label>
-            <p id="email-help" className="text-xs text-slate-400">Email changes are not available in this MVP.</p>
-            {nameMessage && <Notice type="success">{nameMessage}</Notice>}
-            <button className="h-10 px-5 rounded-xl bg-[#087EFF] hover:bg-[#071E4A] text-white text-xs font-bold shadow-sm transition disabled:opacity-50" disabled={nameBusy}>
-              {nameBusy ? "Saving..." : "Save name"}
+            <button type="submit" disabled={savingProfile} className="py-2 px-4 rounded-md bg-[#696cff] hover:bg-[#5f61e6] text-white text-xs font-bold shadow-[0_2px_4px_0_rgba(105,108,255,0.4)] transition disabled:opacity-50">
+              {savingProfile ? "Saving…" : "Save personal details"}
             </button>
           </form>
         </section>
 
-        <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm" aria-labelledby="password-title">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-            <div>
-              <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider">ACCOUNT SECURITY</p>
-              <h2 id="password-title" className="text-base font-bold text-[#04142F]">Change password</h2>
+        <section className="lg:col-span-6 sneat-card p-5 sm:p-6" aria-labelledby="change-password-title">
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#e4e6e8]/70">
+            <div className="w-9 h-9 rounded-md bg-[#e7e7ff] text-[#696cff] flex items-center justify-center shrink-0 shadow-2xs">
+              <LockIcon className="w-4 h-4"/>
             </div>
-            <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">Strong password</span>
+            <div>
+              <p className="text-xs font-semibold text-[#696cff] uppercase tracking-wider">SECURITY</p>
+              <h2 id="change-password-title" className="text-base font-bold text-[#384551]">Change password</h2>
+            </div>
           </div>
-          <form className="space-y-4" onSubmit={changePassword}>
+          {passwordError && <Notice type="error">{passwordError}</Notice>}
+          {passwordMessage && <Notice type="success">{passwordMessage}</Notice>}
+          <form className="space-y-4" onSubmit={savePassword}>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-700">Current password</span>
-              <input name="current_password" type="password" autoComplete="current-password" maxLength={128} required className="h-10 px-3 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-[#087EFF] outline-none"/>
+              <span className="text-xs font-semibold text-[#384551]">Current password</span>
+              <input type="password" value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} required className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-700">New password</span>
-              <input name="new_password" type="password" autoComplete="new-password" minLength={12} maxLength={128} aria-describedby="profile-password-requirements" required className="h-10 px-3 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-[#087EFF] outline-none"/>
+              <span className="text-xs font-semibold text-[#384551]">New password</span>
+              <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={12} maxLength={128} required className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
+              <small className="text-[#8592a3] text-[11px] leading-normal">{PASSWORD_REQUIREMENTS}</small>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-slate-700">Confirm new password</span>
-              <input name="confirm_password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required className="h-10 px-3 rounded-xl border border-slate-300 text-xs sm:text-sm focus:ring-2 focus:ring-[#087EFF] outline-none"/>
+              <span className="text-xs font-semibold text-[#384551]">Confirm new password</span>
+              <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={12} maxLength={128} required className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
             </label>
-            <p id="profile-password-requirements" className="text-xs text-slate-400 leading-relaxed">{PASSWORD_REQUIREMENTS} Changing your password closes your other signed-in web sessions.</p>
-            {passwordMessage && <Notice type="success">{passwordMessage}</Notice>}
-            <button className="h-10 px-5 rounded-xl bg-[#087EFF] hover:bg-[#071E4A] text-white text-xs font-bold shadow-sm transition disabled:opacity-50" disabled={passwordBusy}>
-              {passwordBusy ? "Updating..." : "Change password"}
+            <button type="submit" disabled={savingPassword} className="py-2 px-4 rounded-md bg-[#696cff] hover:bg-[#5f61e6] text-white text-xs font-bold shadow-[0_2px_4px_0_rgba(105,108,255,0.4)] transition disabled:opacity-50">
+              {savingPassword ? "Updating…" : "Update password"}
             </button>
           </form>
+        </section>
+
+        <section className="lg:col-span-12 sneat-card p-5 sm:p-6 border-l-4 border-l-[#008f7a]" aria-labelledby="training-contribution-title">
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-[#e4e6e8]/70">
+            <div className="w-9 h-9 rounded-md bg-[#e0f8f2] text-[#008f7a] flex items-center justify-center shrink-0 shadow-2xs">
+              <GlobeIcon className="w-4 h-4"/>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-[#008f7a] uppercase tracking-wider">FUTURE MODEL IMPROVEMENT</p>
+              <h2 id="training-contribution-title" className="text-base font-bold text-[#384551]">Automatic training-data contribution</h2>
+            </div>
+          </div>
+          {consentError && <Notice type="error">{consentError}</Notice>}
+          {consentMessage && <Notice type="success">{consentMessage}</Notice>}
+          <p className="text-xs text-[#646e78] leading-relaxed max-w-3xl mb-4">
+            Consenting users allow BantAI Companion to randomly collect a small fraction of completed checks to help improve future model accuracy. These references remain de-identified, encrypted, and isolated.
+          </p>
+          <div className="p-4 rounded-lg bg-[#e0f8f2]/40 border border-[#bfe4dc] space-y-3 mb-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" checked={trainingConsent} onChange={(event) => void updateConsent(event.target.checked)} disabled={savingConsent} className="mt-0.5 rounded border-[#d9dee3] text-[#008f7a] focus:ring-[#008f7a] shrink-0 accent-[#008f7a]"/>
+              <span className="text-xs font-semibold text-[#064e43] leading-relaxed">
+                I agree to automatic random training-data collection.
+              </span>
+            </label>
+            <p className="text-[11px] text-[#064e43]/80 leading-relaxed pl-6">
+              When enabled, a small random sample of full website addresses and encrypted email bodies are securely sent to the administrator training inventory. Opting out immediately deletes your stored automatic samples.
+            </p>
+          </div>
+          {profile?.training_opt_in?.samples && (<div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-[#e4e6e8]/70 text-xs text-[#646e78]">
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <GlobeIcon className="w-3.5 h-3.5 text-[#008f7a]"/>
+                  <strong>{profile.training_opt_in.samples.url_count}</strong> automatic URL samples
+                </span>
+                <span className="flex items-center gap-1.5 font-medium">
+                  <MailIcon className="w-3.5 h-3.5 text-[#008f7a]"/>
+                  <strong>{profile.training_opt_in.samples.email_count}</strong> automatic email samples
+                </span>
+              </div>
+              {trainingConsent && (profile.training_opt_in.samples.url_count > 0 || profile.training_opt_in.samples.email_count > 0) && (<button className="text-xs font-semibold text-[#ff3e1d] hover:underline" onClick={() => void updateConsent(false)} disabled={savingConsent} type="button">
+                  Stop collection and delete samples
+                </button>)}
+            </div>)}
         </section>
       </div>
-
-      <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6" aria-labelledby="training-contribution-title">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4 pb-4 border-b border-slate-100">
-          <div>
-            <p className="text-xs font-semibold text-[#008F7A] uppercase tracking-wider">HELP THE FUTURE OF BANTAI</p>
-            <h2 id="training-contribution-title" className="text-base font-bold text-[#04142F]">Automatic training-data contribution</h2>
-            <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">When enabled, BantAI randomly selects about 10% of completed checks. Selected website samples include the complete address, including path, query, and fragment. Selected email samples include provider, sender, subject, and body.</p>
-          </div>
-          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${trainingConsent?.enabled ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
-            {trainingConsent?.enabled ? "ENABLED" : "OFF"}
-          </span>
-        </div>
-
-        <div className="rounded-xl border border-[#BFE4DC] bg-[#F1FAF8] p-4 text-xs text-slate-600 leading-relaxed mb-4">
-          <strong className="text-[#064E43] block mb-1 font-bold">How your contribution is protected</strong>
-          Complete samples are encrypted before database storage and kept outside normal activity history. Administrators may review complete URL samples and email metadata, but the stored email body is never displayed in the web interface. Automatic samples are detector references—not confirmed labels—and do not automatically retrain or change the frozen models.
-        </div>
-
-        {trainingConsent?.enabled ? (<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="text-xs text-slate-500">
-              <strong className="text-slate-800 block font-semibold">Contribution active</strong>
-              {trainingConsent.collected_sample_count} automatic {trainingConsent.collected_sample_count === 1 ? "sample" : "samples"} currently retained. Disabling collection also deletes these automatic samples.
-            </div>
-            <button type="button" className="h-10 px-4 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition disabled:opacity-50 shrink-0" onClick={disableTrainingCollection} disabled={trainingBusy}>
-              {trainingBusy ? "Updating..." : "Stop collection and delete samples"}
-            </button>
-          </div>) : (<form onSubmit={enableTrainingCollection} className="space-y-4">
-            <label className="flex items-start gap-3 rounded-xl border border-slate-200 p-4 cursor-pointer focus-within:ring-2 focus-within:ring-[#087EFF]">
-              <input type="checkbox" checked={trainingAgreement} onChange={(event) => setTrainingAgreement(event.target.checked)} required className="mt-0.5 w-4 h-4 accent-[#008F7A]"/>
-              <span className="text-xs text-slate-600 leading-relaxed"><strong className="text-slate-900 block mb-0.5 font-bold">I agree to automatic random training-data collection.</strong>I understand what complete URL and email information may be collected, that collection is optional for using BantAI, and that I can withdraw and delete automatic samples from this page.</span>
-            </label>
-            <button className="h-10 px-5 rounded-xl bg-[#008F7A] hover:bg-[#064E43] text-white text-xs font-bold shadow-sm transition disabled:opacity-50" disabled={trainingBusy || !trainingAgreement}>
-              {trainingBusy ? "Enabling..." : "Enable automatic contribution"}
-            </button>
-          </form>)}
-        {trainingMessage && <div className="mt-4"><Notice type="success">{trainingMessage}</Notice></div>}
-      </section>
-
-      <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider mb-0.5">CURRENT SESSION</p>
-          <h2 className="text-base font-bold text-[#04142F]">Sign out of BantAI</h2>
-          <p className="text-xs text-slate-500 mt-0.5">This closes this web session. Your paired Companion continues local protection.</p>
-        </div>
-        <button className="h-10 px-4 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition disabled:opacity-50 shrink-0" onClick={signOut} disabled={signOutBusy}>
-          {signOutBusy ? "Signing out..." : "Sign out"}
-        </button>
-      </section>
     </>);
 }
 

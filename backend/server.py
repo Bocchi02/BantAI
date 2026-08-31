@@ -1272,8 +1272,23 @@ def analyze_hybrid_email(
         llm_review=llm_review,
     )
 
+    analysis_id = str(uuid.uuid4())
+    # The detector already has the exact message that produced this result.
+    # Keep its explanation context in Companion RAM under the same ID before
+    # returning, so dashboard details do not depend on a second extension
+    # request succeeding. Companion never writes this context to disk.
+    companion_manager.remember_detail_context({
+        "client_event_id": analysis_id,
+        "event_type": "EMAIL",
+        "provider": provider,
+        "sender": str(request.sender or "")[:320],
+        "subject": str(request.subject or "")[:500],
+        "body": str(request.body or "")[:50_000],
+        "outcome": fusion["final_result"],
+    })
+
     return HybridEmailAnalysisResponse(
-        analysis_id=str(uuid.uuid4()),
+        analysis_id=analysis_id,
         version=VERSION,
         email_model=email_model,
         url_model=url_model,

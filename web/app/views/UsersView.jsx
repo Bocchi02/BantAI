@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { cx, userName, niceDate, Notice, PageHeader } from "../components/ViewShared";
+import { UsersIcon, SearchIcon } from "../Icons";
+import { cx, niceDate, userName, Notice, EmptyState, PageHeader, DashboardSkeleton } from "../components/ViewShared";
 
 function UsersPage({ currentUser }) {
     const [page, setPage] = useState(1);
@@ -9,96 +10,116 @@ function UsersPage({ currentUser }) {
     const [statusFilter, setStatusFilter] = useState("");
     const [data, setData] = useState(null);
     const [error, setError] = useState("");
+    const [message, setMessage] = useState("");
+    const [busyId, setBusyId] = useState(null);
     const load = useCallback(() => {
-        const params = new URLSearchParams({ page: String(page), page_size: "25" });
-        if (search)
-            params.set("search", search);
-        if (statusFilter)
-            params.set("account_status", statusFilter);
-        api(`/admin/users?${params}`).then(setData).catch((reason) => setError(reason.message));
+        const params = new URLSearchParams({ page: String(page), page_size: "20" });
+        if (search) params.set("search", search);
+        if (statusFilter) params.set("status", statusFilter);
+        return api(`/admin/users?${params}`)
+            .then(setData)
+            .catch((reason) => setError(reason.message));
     }, [page, search, statusFilter]);
-    useEffect(load, [load]);
-    const toggle = async (user) => {
-        const next = user.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED";
-        if (!confirm(`${next === "SUSPENDED" ? "Suspend" : "Reactivate"} ${user.email}?`))
+    useEffect(() => { void load(); }, [load]);
+    const toggleStatus = async (user) => {
+        const nextStatus = user.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+        if (user.id === currentUser.id) {
+            setError("You cannot suspend your own administrative account.");
             return;
+        }
+        if (!confirm(`Are you sure you want to ${nextStatus === "SUSPENDED" ? "suspend" : "reactivate"} ${userName(user)}?`))
+            return;
+        setBusyId(user.id);
+        setError("");
+        setMessage("");
         try {
-            await api(`/admin/users/${user.id}/status?account_status=${next}`, { method: "PATCH" });
-            load();
+            await api(`/admin/users/${user.id}/status`, {
+                method: "PUT",
+                body: JSON.stringify({ status: nextStatus }),
+            });
+            setMessage(`User account ${nextStatus.toLowerCase()}.`);
+            await load();
         }
         catch (reason) {
-            setError(reason.message);
+            setError(reason instanceof Error ? reason.message : "BantAI could not update that user’s status.");
+        }
+        finally {
+            setBusyId(null);
         }
     };
     return (<>
-      <PageHeader eyebrow="ADMINISTRATION" title="Users" description="Manage account access. Detection history and personal activity are not available to administrators."/>
+      <PageHeader eyebrow="ADMINISTRATION" title="Users" description="Manage registered BantAI accounts and review active devices."/>
       {error && <Notice type="error">{error}</Notice>}
-      <section className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6 grid sm:grid-cols-2 gap-3 text-xs">
-        <label className="flex flex-col gap-1">
-          <span className="font-semibold text-slate-600 text-xs">Search accounts</span>
-          <input type="search" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Search by name or email" className="h-9 px-3 rounded-lg border border-slate-300 text-xs outline-none focus:ring-2 focus:ring-[#087EFF]"/>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="font-semibold text-slate-600 text-xs">Status</span>
-          <select value={statusFilter} onChange={(event) => { setPage(1); setStatusFilter(event.target.value); }} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
+      {message && <Notice type="success">{message}</Notice>}
+      <section className="sneat-card p-4 sm:p-5 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-1 items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <SearchIcon className="w-4 h-4 text-[#8592a3] absolute left-3 top-1/2 -translate-y-1/2"/>
+            <input type="search" placeholder="Search by name or email..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} className="w-full h-9 pl-9 pr-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
+          </div>
+          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} className="h-9 px-2.5 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none">
             <option value="">All statuses</option>
             <option value="ACTIVE">Active</option>
             <option value="SUSPENDED">Suspended</option>
           </select>
-        </label>
-      </section>
-      <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-          <div>
-            <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider">ACCOUNTS</p>
-            <h2 className="text-base font-bold text-[#04142F]">{data ? `${data.total} users` : "Loading users…"}</h2>
-          </div>
-          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">No personal activity access</span>
         </div>
-        {data && (<div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-600">
-              <thead className="text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+        <span className="text-xs text-[#8592a3] shrink-0">{data ? `${data.total} registered accounts` : "Loading…"}</span>
+      </section>
+      <section className="sneat-card p-5 sm:p-6">
+        {!data ? (<DashboardSkeleton />) : data.items.length === 0 ? (<EmptyState icon="👤" title="No users found" text="No registered accounts match your current search and status filter."/>) : (<div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-[#646e78]">
+              <thead className="text-[11px] font-bold text-[#8592a3] uppercase tracking-wider bg-[#f5f5f9]/80 border-b border-[#e4e6e8]">
                 <tr>
-                  <th className="pb-3 px-3.5">User</th>
-                  <th className="pb-3 px-3.5">Role</th>
-                  <th className="pb-3 px-3.5">Status</th>
-                  <th className="pb-3 px-3.5">Registered</th>
-                  <th className="pb-3 px-3.5">Last sign-in</th>
-                  <th className="pb-3 px-3.5"><span className="sr-only">Actions</span></th>
+                  <th className="py-3 px-3.5">User</th>
+                  <th className="py-3 px-3.5">Role</th>
+                  <th className="py-3 px-3.5">Status</th>
+                  <th className="py-3 px-3.5">Paired devices</th>
+                  <th className="py-3 px-3.5">Registered</th>
+                  <th className="py-3 px-3.5"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.items.map((user) => (<tr key={user.id} className="hover:bg-slate-50">
+              <tbody className="divide-y divide-[#e4e6e8]/70">
+                {data.items.map((item) => (<tr key={item.id} className="hover:bg-[#fbfbfd]">
                     <td className="py-3 px-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="w-8 h-8 rounded-lg bg-[#071E4A] text-white flex items-center justify-center font-bold shrink-0">{userName(user).slice(0, 1).toUpperCase()}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="w-8 h-8 rounded-full bg-[#696cff] text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-2xs">
+                          {userName(item).slice(0, 1).toUpperCase()}
+                        </span>
                         <div>
-                          <strong className="text-slate-900 block font-semibold">{userName(user)}</strong>
-                          <small className="text-xs text-slate-400 block">{user.email}</small>
+                          <strong className="block font-semibold text-[#384551]">{userName(item)}</strong>
+                          <small className="text-[#8592a3] block text-[11px]">{item.email}</small>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-3.5 text-xs">{user.role === "ADMIN" ? "Administrator" : "User"}</td>
                     <td className="py-3 px-3.5">
-                      <span className={cx("text-xs font-semibold px-2 py-0.5 rounded-full capitalize", user.status === "ACTIVE" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800")}>
-                        {user.status.replaceAll("_", " ").toLowerCase()}
+                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full", item.role === "ADMIN" ? "bg-[#e7e7ff] text-[#696cff] border border-[#c3c4ff]" : "bg-[#ebeef0] text-[#646e78]")}>
+                        {item.role}
                       </span>
                     </td>
-                    <td className="py-3 px-3.5 text-xs text-slate-400 whitespace-nowrap">{niceDate(user.created_at)}</td>
-                    <td className="py-3 px-3.5 text-xs text-slate-400 whitespace-nowrap">{niceDate(user.last_login_at)}</td>
                     <td className="py-3 px-3.5">
-                      {user.role !== "ADMIN" && user.id !== currentUser.id && (<button className={cx("text-xs font-bold px-3 py-1 rounded-lg border transition", user.status === "SUSPENDED" ? "border-slate-300 text-slate-700 hover:bg-slate-50" : "border-rose-200 text-rose-600 hover:bg-rose-50")} onClick={() => toggle(user)}>
-                          {user.status === "SUSPENDED" ? "Reactivate" : "Suspend"}
+                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full", item.status === "ACTIVE" ? "bg-[#e8fadf] text-[#2d5816] border border-[#c6f1af]" : "bg-[#ffe0db] text-[#66190c] border border-[#ffb2a5]")}>
+                        {item.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3.5 text-xs text-[#646e78]">
+                      {item.device_count} {item.device_count === 1 ? "device" : "devices"}
+                    </td>
+                    <td className="py-3 px-3.5 text-xs text-[#8592a3] whitespace-nowrap">
+                      {niceDate(item.created_at)}
+                    </td>
+                    <td className="py-3 px-3.5 text-right">
+                      {item.id !== currentUser.id && (<button className={cx("text-xs font-semibold hover:underline", item.status === "ACTIVE" ? "text-[#ff3e1d]" : "text-[#71dd37]")} onClick={() => void toggleStatus(item)} disabled={busyId === item.id} type="button">
+                          {item.status === "ACTIVE" ? "Suspend" : "Reactivate"}
                         </button>)}
                     </td>
                   </tr>))}
               </tbody>
             </table>
           </div>)}
-        {data && data.pages > 1 && (<div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100 text-xs text-slate-500">
-            <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 font-semibold hover:bg-slate-50 disabled:opacity-40">← Previous</button>
+        {data && data.pages > 1 && (<div className="flex items-center justify-between pt-4 mt-4 border-t border-[#e4e6e8]/70 text-xs text-[#8592a3]">
+            <button disabled={page <= 1} onClick={() => setPage((v) => v - 1)} className="px-3 py-1.5 rounded-md border border-[#d9dee3] font-semibold text-[#646e78] hover:bg-[#f5f5f9] disabled:opacity-40">← Previous</button>
             <span>Page {page} of {data.pages}</span>
-            <button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 font-semibold hover:bg-slate-50 disabled:opacity-40">Next →</button>
+            <button disabled={page >= data.pages} onClick={() => setPage((v) => v + 1)} className="px-3 py-1.5 rounded-md border border-[#d9dee3] font-semibold text-[#646e78] hover:bg-[#f5f5f9] disabled:opacity-40">Next →</button>
           </div>)}
       </section>
     </>);

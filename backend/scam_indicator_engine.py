@@ -220,6 +220,17 @@ def _is_protective_security_advice(sentence: str) -> bool:
     return any(pattern.search(sentence) for pattern in PROTECTIVE_SECURITY_PATTERNS)
 
 
+def _is_inbound_transaction_notice(sentence: str) -> bool:
+    """Distinguish a received-transfer receipt from a request to send money."""
+    normalized = re.sub(r"\s+", " ", sentence or "").strip()
+    patterns = (
+        r"\byou (?:have|'ve) (?:successfully )?received\b.{0,80}\b(?:funds?|money|payment|transfer)\b",
+        r"\b(?:funds?|money|payment)\b.{0,45}\b(?:was|has been|were|have been)\b.{0,25}\b(?:received|credited|deposited)\b",
+        r"\btransfer from\s*:.{0,140}\btransfer to\s*:.{0,140}\btransfer amount\s*:",
+    )
+    return any(re.search(pattern, normalized, re.IGNORECASE) for pattern in patterns)
+
+
 def _safe_evidence(sentence: str, maximum: int = 180) -> str:
     evidence = re.sub(
         r"(?i)(\b(?:otp|one[ -]?time (?:password|pin)|verification code)\b\D{0,18})\d{4,8}\b",
@@ -259,6 +270,8 @@ def _matching_sentence(
     compiled = tuple(re.compile(pattern, re.IGNORECASE) for pattern in rule.patterns)
     for sentence in sentences:
         if rule.credential_related and _is_protective_security_advice(sentence):
+            continue
+        if rule.category == "PAYMENT_REQUEST" and _is_inbound_transaction_notice(sentence):
             continue
         if any(pattern.search(sentence) for pattern in compiled):
             return sentence

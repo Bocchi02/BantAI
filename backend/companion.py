@@ -73,7 +73,7 @@ def _unprotect(data: bytes) -> bytes:
 
 class CompanionManager:
     max_outbox_entries = 500
-    max_detail_contexts = 20
+    max_detail_contexts_per_type = 20
 
     def __init__(self) -> None:
         local_data = os.getenv("LOCALAPPDATA") or str(Path.home())
@@ -380,10 +380,16 @@ class CompanionManager:
 
         with self._lock:
             client_event_id = str(context["client_event_id"])
+            event_type = str(context["event_type"])
             self._detail_contexts.pop(client_event_id, None)
             self._detail_contexts[client_event_id] = dict(context)
-            while len(self._detail_contexts) > self.max_detail_contexts:
-                self._detail_contexts.popitem(last=False)
+            same_type_ids = [
+                context_id
+                for context_id, saved_context in self._detail_contexts.items()
+                if saved_context.get("event_type") == event_type
+            ]
+            while len(same_type_ids) > self.max_detail_contexts_per_type:
+                self._detail_contexts.pop(same_type_ids.pop(0), None)
             return {"remembered": True, "stored": False}
 
     def explain_activity(self, activity_id: str, client_event_id: str) -> dict[str, Any]:

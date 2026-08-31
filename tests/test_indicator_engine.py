@@ -52,6 +52,20 @@ class IndicatorEngineTests(unittest.TestCase):
         self.assertEqual(payment["severity"], "CONTEXTUAL")
         self.assertEqual(result["strong_count"], 0)
 
+    def test_received_transfer_notice_is_not_a_payment_request(self) -> None:
+        result = analyze_scam_indicators(
+            subject="MariBank Transfer Notification",
+            body=(
+                "You have received a funds transfer to your account. "
+                "Transfer from: G-Xchange / GCash - 6920 "
+                "Transfer to: Customer - 7859 "
+                "Transfer amount: PHP 300.00. "
+                "Please save this email as reference for your transaction."
+            ),
+        )
+        categories = {marker["category"] for marker in result["markers"]}
+        self.assertNotIn("PAYMENT_REQUEST", categories)
+
     def test_advance_fee_request_remains_strong(self) -> None:
         result = analyze_scam_indicators(
             body="Pay the processing fee before you can claim your reward.",

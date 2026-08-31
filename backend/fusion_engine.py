@@ -72,6 +72,16 @@ GENERIC_INDICATOR_CATEGORIES = {
 }
 
 
+def _is_mislabeled_inbound_payment(marker: dict[str, Any]) -> bool:
+    if str(marker.get("category", "")).upper() != "PAYMENT_REQUEST":
+        return False
+    evidence = " ".join(str(marker.get("evidence", "")).lower().split())
+    return (
+        ("you have received" in evidence or "you've received" in evidence)
+        or all(part in evidence for part in ("transfer from:", "transfer to:", "transfer amount:"))
+    )
+
+
 def _marker_support(indicators: dict[str, Any] | None) -> bool:
     source = indicators or {}
     return bool(source.get("critical_count", 0) or source.get("strong_count", 0))
@@ -102,7 +112,7 @@ def _indicator_phrases(
     categories = [
         str(marker.get("category", "")).upper()
         for marker in markers
-        if isinstance(marker, dict)
+        if isinstance(marker, dict) and not _is_mislabeled_inbound_payment(marker)
     ]
     ordered = [
         category for category in categories

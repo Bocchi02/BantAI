@@ -699,25 +699,56 @@ async function submitCompanionActivity(
 async function rememberCompanionDetailContext(
   context
 ) {
-  try {
-    await fetch(
-      `${API_BASE}/companion/detail-context`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            "application/json"
-        },
-        body:
-          JSON.stringify(
-            context
-          )
+  for (
+    let attempt = 0;
+    attempt < 3;
+    attempt += 1
+  ) {
+    try {
+      const response =
+        await fetch(
+          `${API_BASE}/companion/detail-context`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body:
+              JSON.stringify(
+                context
+              )
+          }
+        );
+
+      if (response.ok) {
+        return true;
       }
-    );
-  } catch {
-    // Full URLs and email bodies are intentionally memory-only and are never
-    // placed in a retry queue or written to extension storage.
+
+      if (
+        response.status >= 400 &&
+        response.status < 500 &&
+        response.status !== 429
+      ) {
+        return false;
+      }
+    } catch {
+      // Retry short local transport interruptions below. Full URLs and email
+      // bodies remain memory-only and never enter extension storage.
+    }
+
+    if (attempt < 2) {
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            150 * (attempt + 1)
+          )
+      );
+    }
   }
+
+  return false;
 }
 
 
@@ -1652,7 +1683,11 @@ async function emailRequestIsCurrent(
 
 async function analyzeOpenedEmail(
   payload,
-  tab
+  tab,
+  {
+    force = false,
+    showAutomaticPopup = true
+  } = {}
 ) {
   const tabId =
     tab?.id;
@@ -1699,6 +1734,7 @@ async function analyzeOpenedEmail(
     );
 
   if (
+    !force &&
     priorPopup?.fingerprint ===
       fingerprint
   ) {
@@ -1935,6 +1971,7 @@ async function analyzeOpenedEmail(
     );
 
     if (
+      showAutomaticPopup &&
       cloudReviewCompleted
     ) {
       await openFiveSecondPopup(
@@ -1953,11 +1990,15 @@ async function analyzeOpenedEmail(
       provider:
         provider.id,
       sender:
-        payload?.sender ||
-        "",
+        String(
+          payload?.sender ||
+          ""
+        ).slice(0, 320),
       subject:
-        payload?.subject ||
-        "",
+        String(
+          payload?.subject ||
+          ""
+        ).slice(0, 500),
       body:
         String(
           payload?.body ||
@@ -2099,7 +2140,8 @@ async function analyzeOpenedEmail(
 
 async function extractCurrentEmailForFeedback(
   tab,
-  provider
+  provider,
+  maximumBodyChars = 10000
 ) {
   const requestType =
     EMAIL_FEEDBACK_REQUEST_TYPES[
@@ -2122,18 +2164,48 @@ async function extractCurrentEmailForFeedback(
     tab.url
   );
 
-  const extracted =
-    await chrome.tabs.sendMessage(
-      tab.id,
-      {
-        type:
-          requestType
-      }
-    );
+  let payload =
+    null;
 
-  const payload =
-    extracted?.nlp_payload ||
-    extracted;
+  for (
+    let attempt = 0;
+    attempt < 5;
+    attempt += 1
+  ) {
+    const extracted =
+      await chrome.tabs.sendMessage(
+        tab.id,
+        {
+          type:
+            requestType
+        }
+      );
+
+    payload =
+      extracted?.nlp_payload ||
+      extracted;
+
+    if (
+      payload?.provider ===
+        provider.id &&
+      String(
+        payload?.body ||
+        ""
+      ).trim()
+    ) {
+      break;
+    }
+
+    if (attempt < 4) {
+      await new Promise(
+        (resolve) =>
+          setTimeout(
+            resolve,
+            250
+          )
+      );
+    }
+  }
 
   if (
     !payload ||
@@ -2152,14 +2224,171 @@ async function extractCurrentEmailForFeedback(
   if (
     String(
       payload.body
-    ).length > 10000
+    ).length > maximumBodyChars
   ) {
     throw new Error(
-      "This email is too long to include in a report."
+      "This email is too long to include in this request."
     );
   }
 
   return payload;
+}
+
+
+async function restoreCurrentEmailDetailContext(
+  tab,
+  {
+    reanalyzeIfMissing = false
+  } = {}
+) {
+  const provider =
+    providerForUrl(
+      tab?.url
+    );
+
+  if (
+    !provider ||
+    !Number.isInteger(
+      tab?.id
+    )
+  ) {
+    return false;
+  }
+
+  try {
+    const payload =
+      await extractCurrentEmailForFeedback(
+        tab,
+        provider,
+        50000
+      );
+
+    const states =
+      await getTabStates();
+
+    const state =
+      states[
+        String(
+          tab.id
+        )
+      ];
+
+    const clientEventId =
+      state?.hybrid_analysis_id;
+
+    const outcome =
+      String(
+        state?.fusion
+          ?.final_result ||
+        ""
+      ).toUpperCase();
+
+    const matchingCompletedResult =
+      state?.email_detector
+        ?.state === "complete" &&
+      clientEventId &&
+      COMPLETE_CLOUD_STATUSES
+        .has(outcome) &&
+      buildEmailFingerprint(
+        payload
+      ) ===
+        state.email_detector
+          ?.fingerprint;
+
+    const matchingAnalysisInProgress =
+      state?.email_detector
+        ?.state === "analyzing" &&
+      buildEmailFingerprint(
+        payload
+      ) ===
+        state.email_detector
+          ?.fingerprint;
+
+    if (
+      matchingAnalysisInProgress
+    ) {
+      return true;
+    }
+
+    const cloudReviewCompleted =
+      COMPLETE_CLOUD_STATUSES.has(
+        String(
+          state?.llm_review
+            ?.status ||
+          ""
+        ).toUpperCase()
+      );
+
+    if (
+      matchingCompletedResult &&
+      reanalyzeIfMissing &&
+      cloudReviewCompleted &&
+      state?.llm_review
+        ?.body_context_sent_to_provider !==
+          true
+    ) {
+      return Boolean(
+        await analyzeOpenedEmail(
+          payload,
+          tab,
+          {
+            force: true,
+            showAutomaticPopup:
+              false
+          }
+        )
+      );
+    }
+
+    if (
+      !matchingCompletedResult
+    ) {
+      if (
+        reanalyzeIfMissing
+      ) {
+        return Boolean(
+          await analyzeOpenedEmail(
+            payload,
+            tab,
+            {
+              force: true,
+              showAutomaticPopup:
+                false
+            }
+          )
+        );
+      }
+
+      return false;
+    }
+
+    return rememberCompanionDetailContext({
+      client_event_id:
+        clientEventId,
+      event_type:
+        "EMAIL",
+      provider:
+        provider.id,
+      sender:
+        String(
+          payload.sender ||
+          ""
+        ).slice(0, 320),
+      subject:
+        String(
+          payload.subject ||
+          ""
+        ).slice(0, 500),
+      body:
+        String(
+          payload.body ||
+          ""
+        ).slice(0, 50000),
+      outcome
+    });
+  } catch {
+    return false;
+  }
 }
 
 
@@ -2707,6 +2936,10 @@ chrome.tabs.onActivated
                   "tab_switched"
               }
             );
+
+            await restoreCurrentEmailDetailContext(
+              tab
+            );
           }
         )
         .catch(
@@ -2757,6 +2990,14 @@ chrome.tabs.onUpdated
         void injectProviderScript(
           tabId,
           tab.url
+        ).then(
+          () =>
+            restoreCurrentEmailDetailContext({
+              ...tab,
+              id: tabId
+            })
+        ).catch(
+          () => {}
         );
 
         void scanCurrentTabUrl(
@@ -2966,10 +3207,25 @@ chrome.runtime.onMessage
         void scanActiveTab(
           "popup_opened",
           true
-        ).then(
-          () =>
-            checkServer()
-        );
+        ).then(async () => {
+          const tabs =
+            await chrome.tabs.query({
+              active: true,
+              lastFocusedWindow: true
+            });
+
+          if (tabs[0]) {
+            await restoreCurrentEmailDetailContext(
+              tabs[0],
+              {
+                reanalyzeIfMissing:
+                  true
+              }
+            );
+          }
+
+          return checkServer();
+        });
 
         sendResponse({
           received:

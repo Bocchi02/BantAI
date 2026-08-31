@@ -364,6 +364,39 @@ class CompanionManagerTests(unittest.TestCase):
         )
         self.assertFalse(result["full_context_available"])
 
+    def test_latest_email_context_is_not_evicted_by_website_checks(self) -> None:
+        manager = CompanionManager()
+        email_context = {
+            "client_event_id": "email:latest:details:123456",
+            "event_type": "EMAIL",
+            "provider": "gmail",
+            "sender": "sender@example.test",
+            "subject": "Synthetic notice",
+            "body": "Synthetic email body.",
+            "outcome": "NEEDS_CAUTION",
+        }
+        manager.remember_detail_context(email_context)
+        for index in range(manager.max_detail_contexts_per_type + 5):
+            manager.remember_detail_context({
+                "client_event_id": f"url:details:{index:04d}",
+                "event_type": "URL",
+                "url": f"https://example.test/{index}",
+                "outcome": "NO_STRONG_WARNING_SIGNS",
+            })
+
+        with patch.object(
+            manager,
+            "_request",
+            return_value={"status": "COMPLETE", "full_context_available": True},
+        ) as request:
+            manager.explain_activity(
+                "00000000-0000-0000-0000-000000000001",
+                email_context["client_event_id"],
+            )
+
+        self.assertEqual("/cloud-review/activity-explanation", request.call_args.args[0])
+        self.assertEqual("Synthetic email body.", request.call_args.args[1]["body"])
+
 
 if __name__ == "__main__":
     unittest.main()

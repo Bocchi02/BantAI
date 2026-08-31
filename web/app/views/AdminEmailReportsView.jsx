@@ -1,157 +1,127 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { LockIcon } from "../Icons";
-import { userClassificationLabel, feedbackReasonLabel, trainingStatusLabel, niceDate, StatusBadge, Notice, EmptyState, PageHeader, DashboardSkeleton } from "../components/ViewShared";
+import { MailIcon, LockIcon } from "../Icons";
+import { feedbackReasonLabel, niceDate, trainingStatusLabel, userClassificationLabel, StatusBadge, Notice, EmptyState, PageHeader, DashboardSkeleton } from "../components/ViewShared";
 
 function AdminEmailReportsPage() {
     const [page, setPage] = useState(1);
-    const [trainingFilter, setTrainingFilter] = useState("");
-    const [classificationFilter, setClassificationFilter] = useState("");
+    const [statusFilter, setStatusFilter] = useState("PENDING");
     const [data, setData] = useState(null);
-    const [busyId, setBusyId] = useState("");
     const [error, setError] = useState("");
     const [message, setMessage] = useState("");
+    const [actionBusy, setActionBusy] = useState(null);
+    const [adminNotes, setAdminNotes] = useState({});
     const load = useCallback(() => {
-        const params = new URLSearchParams({ page: String(page), page_size: "25" });
-        if (trainingFilter)
-            params.set("training_status", trainingFilter);
-        if (classificationFilter)
-            params.set("classification", classificationFilter);
+        const params = new URLSearchParams({ page: String(page), page_size: "15" });
+        if (statusFilter) params.set("training_status", statusFilter);
         return api(`/admin/email-reports?${params}`)
             .then(setData)
-            .catch((problem) => setError(problem.message || "BantAI could not load email reports."));
-    }, [classificationFilter, page, trainingFilter]);
+            .catch((reason) => setError(reason.message));
+    }, [page, statusFilter]);
     useEffect(() => { void load(); }, [load]);
-    const review = async (report, action, assessment) => {
-        setBusyId(report.id);
+    const decide = async (reportId, status, label) => {
+        setActionBusy(reportId);
         setError("");
         setMessage("");
         try {
-            const result = await api(`/admin/email-reports/${report.id}`, { method: "PATCH", body: JSON.stringify({ action, assessment }) });
-            setMessage(result.message);
+            await api(`/admin/email-reports/${reportId}/review`, {
+                method: "POST",
+                body: JSON.stringify({
+                    training_status: status,
+                    approved_label: label || undefined,
+                    admin_notes: adminNotes[reportId]?.trim() || undefined,
+                }),
+            });
+            setMessage(`Email report marked as ${trainingStatusLabel(status)}.`);
             await load();
         }
-        catch (problem) {
-            setError(problem instanceof Error ? problem.message : "BantAI could not save this email report.");
+        catch (reason) {
+            setError(reason instanceof Error ? reason.message : "BantAI could not complete that review.");
         }
         finally {
-            setBusyId("");
+            setActionBusy(null);
         }
     };
     return (<>
-      <PageHeader eyebrow="ADMINISTRATION" title="Email reports" description="Assess explicit email submissions without exposing their encrypted body content."/>
-      <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 flex items-center gap-3 text-xs text-[#071E4A] mb-6">
-        <LockIcon className="w-5 h-5 text-[#087EFF] shrink-0"/>
+      <PageHeader eyebrow="ADMINISTRATION" title="Email reports" description="Review encrypted email submissions and assign approved labels for future training datasets."/>
+      <div className="p-4 rounded-lg bg-[#e7e7ff]/50 border border-[#c3c4ff] flex items-center gap-3 text-xs text-[#4347d9] mb-6">
+        <LockIcon className="w-5 h-5 text-[#696cff] shrink-0"/>
         <div>
           <strong className="block font-bold">Email bodies cannot be opened from this interface</strong>
-          <p className="text-slate-600 mt-0.5">You can review sender, subject, detector outcome, and the user’s suggested label. Approval copies the existing ciphertext into the de-identified training inventory.</p>
+          <p className="text-[#646e78] mt-0.5">The message body remains encrypted and inaccessible in this dashboard. Reviewers assign training labels based on reported subject, sender domain, and detector outcome.</p>
         </div>
       </div>
       {error && <Notice type="error">{error}</Notice>}
       {message && <Notice type="success">{message}</Notice>}
-      <section className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm mb-6 grid sm:grid-cols-2 gap-3 text-xs">
-        <label className="flex flex-col gap-1">
-          <span className="font-semibold text-slate-600 text-xs">Training status</span>
-          <select value={trainingFilter} onChange={(event) => { setPage(1); setTrainingFilter(event.target.value); }} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
-            <option value="">All feedback</option>
-            <option value="PENDING">Awaiting review</option>
-            <option value="APPROVED">Training candidates</option>
+      <section className="sneat-card p-4 sm:p-5 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <label className="flex items-center gap-3 text-xs">
+          <span className="font-semibold text-[#384551]">Filter queue:</span>
+          <select value={statusFilter} onChange={(event) => { setPage(1); setStatusFilter(event.target.value); }} className="h-9 px-2.5 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none">
+            <option value="">All statuses</option>
+            <option value="PENDING">Pending review</option>
+            <option value="APPROVED">Approved candidates</option>
             <option value="REJECTED">Rejected</option>
             <option value="INCONCLUSIVE">Inconclusive</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="font-semibold text-slate-600 text-xs">User classification</span>
-          <select value={classificationFilter} onChange={(event) => { setPage(1); setClassificationFilter(event.target.value); }} className="h-9 px-2.5 rounded-lg border border-slate-300 bg-white text-xs">
-            <option value="">All classifications</option>
-            <option value="LEGITIMATE">Believes legitimate</option>
-            <option value="SUSPICIOUS">Believes suspicious</option>
-          </select>
-        </label>
+        <span className="text-xs text-[#8592a3]">{data ? `${data.total} entries in queue` : "Loading queue…"}</span>
       </section>
-
-      <section className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-sm">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-          <div>
-            <p className="text-xs font-semibold text-[#087EFF] uppercase tracking-wider">ENCRYPTED EMAIL REPORT QUEUE</p>
-            <h2 className="text-base font-bold text-[#04142F]">{data ? `${data.total} ${data.total === 1 ? "submission" : "submissions"}` : "Loading submissions..."}</h2>
-          </div>
-          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{data ? `${data.training_candidate_total} approved candidates` : "Body unavailable"}</span>
-        </div>
-
-        {data && data.items.length > 0 ? (<div className="space-y-4">
-            {data.items.map((report) => (<article className="p-4 sm:p-5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-4" key={report.id}>
-                <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-200/60">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-bold text-[#087EFF] uppercase tracking-wider">{report.provider.toUpperCase()} EMAIL</p>
-                    <h3 className="text-sm font-bold text-slate-900">{report.subject || "No subject"}</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">From {report.sender} · {report.body_character_count.toLocaleString()} encrypted characters · {report.similar_report_count || 1} similar {(report.similar_report_count || 1) === 1 ? "submission" : "submissions"} · Submitted {niceDate(report.submitted_at)}</p>
+      {!data ? (<DashboardSkeleton />) : data.items.length === 0 ? (<EmptyState icon="✉" title="No email reports in this queue" text="No encrypted email submissions match the selected filter."/>) : (<div className="space-y-4">
+          {data.items.map((report) => (<article key={report.id} className="sneat-card p-5 sm:p-6 border-l-4 border-l-[#696cff]">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3 pb-3 border-b border-[#e4e6e8]/70">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[11px] font-bold text-[#696cff] uppercase tracking-wider">{report.provider.toUpperCase()}</span>
+                    <span className="text-[#d9dee3]">·</span>
+                    <span className="text-[11px] text-[#8592a3]">{niceDate(report.created_at)}</span>
                   </div>
-                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-blue-50 text-[#071E4A] border border-blue-200 shrink-0">Encrypted body</span>
+                  <h2 className="text-sm sm:text-base font-bold text-[#384551] truncate" title={report.subject || "No subject"}>{report.subject || "No subject"}</h2>
+                  <p className="text-xs text-[#8592a3] mt-0.5">{report.sender || "Sender not provided"}</p>
                 </div>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start text-xs">
-                  {/* Left Column: Email Details (col-span-5) */}
-                  <div className="lg:col-span-5 space-y-2 p-3 rounded-lg bg-white border border-slate-200/80">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Submission Details</span>
-                    <div className="space-y-1 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Provider:</span>
-                        <strong className="text-slate-800 uppercase text-[11px]">{report.provider}</strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Encrypted size:</span>
-                        <span className="text-slate-700 font-semibold">{report.body_character_count.toLocaleString()} chars</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Similar submissions:</span>
-                        <span className="text-slate-700 font-semibold">{report.similar_report_count || 1}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Center Column: Assessment & Feedback (col-span-3) */}
-                  <div className="lg:col-span-3 space-y-2.5 p-3 rounded-lg bg-white border border-slate-200/80">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Detector result</span>
-                      <StatusBadge outcome={report.detector_outcome}/>
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">User label</span>
-                      <strong className="text-xs font-bold text-slate-800 block">{userClassificationLabel(report.user_classification)}</strong>
-                      <small className="text-xs text-slate-500">{feedbackReasonLabel(report.feedback_reason)}</small>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Admin Actions & Status (col-span-4) */}
-                  <div className="lg:col-span-4 p-3 rounded-lg bg-white border border-slate-200/80 flex flex-col justify-between h-full">
-                    <div className="mb-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Training status</span>
-                      <strong className="text-xs font-bold text-[#087EFF]">{trainingStatusLabel(report.training_status)}</strong>
-                    </div>
-                    {report.training_status === "PENDING" ? (<fieldset className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-1.5" disabled={busyId === report.id}>
-                        <legend className="sr-only">Store encrypted content for future training?</legend>
-                        <button type="button" className="px-2.5 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-bold" onClick={() => void review(report, "APPROVE", "LEGITIMATE")}>Approve legitimate</button>
-                        <button type="button" className="px-2.5 py-1.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-bold" onClick={() => void review(report, "APPROVE", "SUSPICIOUS")}>Approve suspicious</button>
-                        <button type="button" className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold" onClick={() => void review(report, "REJECT")}>Reject feedback</button>
-                        <button type="button" className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-semibold" onClick={() => void review(report, "INCONCLUSIVE")}>Inconclusive</button>
-                      </fieldset>) : (<div className="pt-2 border-t border-slate-100 text-xs text-slate-500">
-                        <strong className="text-slate-800 block">Review complete</strong>
-                        <span className="text-[11px] text-slate-400">{report.reviewed_at ? niceDate(report.reviewed_at) : "Review time unavailable"}</span>
-                      </div>)}
-                  </div>
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#f5f5f9] text-[#646e78] border border-[#e4e6e8] self-start">{trainingStatusLabel(report.training_status)}</span>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-3 text-xs mb-4">
+                <div className="p-3 rounded-lg bg-[#f5f5f9] border border-[#e4e6e8]">
+                  <span className="text-[11px] text-[#8592a3] uppercase font-bold block mb-1">Detector outcome</span>
+                  <StatusBadge outcome={report.observed_outcome}/>
+                  <small className="text-[#8592a3] block mt-1 font-mono text-[10px]">{report.detector_model_version}</small>
                 </div>
-              </article>))}
-          </div>) : data ? (<EmptyState icon="✉" title="No email reports in this view" text="Explicit email submissions will appear here without readable body content."/>) : (<DashboardSkeleton />)}
-
-        {data && data.pages > 1 && (<div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100 text-xs text-slate-500">
-            <button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 font-semibold hover:bg-slate-50 disabled:opacity-40">← Previous</button>
-            <span>Page {page} of {data.pages}</span>
-            <button disabled={page >= data.pages} onClick={() => setPage((value) => value + 1)} className="px-3 py-1.5 rounded-lg border border-slate-200 font-semibold hover:bg-slate-50 disabled:opacity-40">Next →</button>
-          </div>)}
-      </section>
-      <p className="text-xs text-slate-400 text-center max-w-2xl mx-auto mt-6 leading-relaxed"><strong>Encrypted reports only.</strong> Approval does not expose the email body or retrain the frozen XLM-R V1 model.</p>
+                <div className="p-3 rounded-lg bg-[#f5f5f9] border border-[#e4e6e8]">
+                  <span className="text-[11px] text-[#8592a3] uppercase font-bold block mb-1">User review</span>
+                  <strong className="text-[#384551] block font-semibold">{userClassificationLabel(report.classification)}</strong>
+                  <span className="text-[11px] text-[#8592a3]">{feedbackReasonLabel(report.reason)}</span>
+                </div>
+                <div className="p-3 rounded-lg bg-[#f5f5f9] border border-[#e4e6e8]">
+                  <span className="text-[11px] text-[#8592a3] uppercase font-bold block mb-1">Encrypted content</span>
+                  <strong className="text-[#384551] block font-semibold">{report.body_character_count.toLocaleString()} characters</strong>
+                  <span className="text-[11px] text-[#8592a3]">Body encrypted & isolated</span>
+                </div>
+              </div>
+              {report.training_status === "PENDING" && (<div className="space-y-3 pt-3 border-t border-[#e4e6e8]/70">
+                  <input placeholder="Admin review notes (optional)..." value={adminNotes[report.id] || ""} onChange={(e) => setAdminNotes({ ...adminNotes, [report.id]: e.target.value })} className="w-full h-9 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button className="px-3 py-1.5 rounded-md bg-[#e8fadf] border border-[#c6f1af] text-[#2d5816] text-xs font-bold hover:bg-[#c6f1af] transition disabled:opacity-50" onClick={() => void decide(report.id, "APPROVED", "LEGITIMATE")} disabled={actionBusy === report.id} type="button">
+                      Approve legitimate
+                    </button>
+                    <button className="px-3 py-1.5 rounded-md bg-[#ffe0db] border border-[#ffb2a5] text-[#66190c] text-xs font-bold hover:bg-[#ffb2a5] transition disabled:opacity-50" onClick={() => void decide(report.id, "APPROVED", "SUSPICIOUS")} disabled={actionBusy === report.id} type="button">
+                      Approve suspicious
+                    </button>
+                    <button className="px-3 py-1.5 rounded-md bg-white border border-[#d9dee3] text-[#646e78] text-xs font-semibold hover:bg-[#f5f5f9] transition disabled:opacity-50" onClick={() => void decide(report.id, "REJECTED")} disabled={actionBusy === report.id} type="button">
+                      Reject report
+                    </button>
+                    <button className="px-3 py-1.5 rounded-md bg-white border border-[#d9dee3] text-[#8592a3] text-xs font-semibold hover:bg-[#f5f5f9] transition disabled:opacity-50" onClick={() => void decide(report.id, "INCONCLUSIVE")} disabled={actionBusy === report.id} type="button">
+                      Inconclusive
+                    </button>
+                  </div>
+                </div>)}
+            </article>))}
+        </div>)}
+      {data && data.pages > 1 && (<div className="flex items-center justify-between pt-4 mt-4 border-t border-[#e4e6e8]/70 text-xs text-[#8592a3]">
+          <button disabled={page <= 1} onClick={() => setPage((v) => v - 1)} className="px-3 py-1.5 rounded-md border border-[#d9dee3] font-semibold text-[#646e78] hover:bg-[#f5f5f9] disabled:opacity-40">← Previous</button>
+          <span>Page {page} of {data.pages}</span>
+          <button disabled={page >= data.pages} onClick={() => setPage((v) => v + 1)} className="px-3 py-1.5 rounded-md border border-[#d9dee3] font-semibold text-[#646e78] hover:bg-[#f5f5f9] disabled:opacity-40">Next →</button>
+        </div>)}
     </>);
 }
 
