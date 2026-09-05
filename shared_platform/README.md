@@ -87,7 +87,7 @@ future training candidate, reject it, or mark it inconclusive. Approval stores
 curated candidate metadata in a separate de-identified table with no user ID.
 That approved candidate survives ordinary report retention so it can be
 reviewed during a future, explicitly authorized offline training cycle. It does
-not retrain or override frozen RF V4-B. User reports are removed after the
+not retrain or override BantAI RF Grouped v1.0.0. User reports are removed after the
 configured activity retention period.
 
 Administrators use the **User reviews** page to inspect the complete addresses

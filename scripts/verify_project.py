@@ -14,9 +14,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-EXPECTED_EMAIL_THRESHOLD = "0.05"
-EXPECTED_URL_THRESHOLD = "0.6800401751682739"
-EXPECTED_MAX_LENGTH = "256"
+EXPECTED_EMAIL_THRESHOLD = "0.6923658179915227"
+EXPECTED_EMAIL_TEMPERATURE = "2.2198894341340183"
+EXPECTED_URL_THRESHOLD = "0.547"
+EXPECTED_MAX_LENGTH = "512"
 EXPECTED_POPUP_DURATION = "5000"
 
 
@@ -122,22 +123,56 @@ def check_manifest() -> None:
 
 def check_backend_invariants() -> None:
     server = read("backend/server.py")
+    email_model = read("backend/email_model.py")
     requirements = read("backend/requirements.txt")
 
     require(
-        re.search(r"EMAIL_THRESHOLD\s*=\s*0\.05\b", server) is not None,
-        "Frozen email threshold changed.",
+        '"max_length": 512' in email_model
+        and '"truncation_strategy": "subject_head_tail"' in email_model
+        and '"subject_token_budget": 96' in email_model
+        and '"subject_tail_fraction": 0.25' in email_model
+        and '"body_tail_fraction": 0.35' in email_model
+        and '"clean_body": False' in email_model,
+        "Calibrated email preprocessing contract changed.",
     )
     require(
-        re.search(r"EMAIL_MAX_LENGTH\s*=\s*256\b", server) is not None,
-        "Frozen email max length changed.",
+        "load_deployment_contract" in server
+        and "calibrated_probabilities" in server
+        and "encode_email" in server
+        and "logits / contract.temperature" in email_model,
+        "Calibrated email inference path is incomplete.",
+    )
+    require(
+        EXPECTED_EMAIL_THRESHOLD in read(
+            "models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/calibration.json"
+        )
+        and EXPECTED_EMAIL_TEMPERATURE in read(
+            "models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/calibration.json"
+        ),
+        "Email calibration artifact changed.",
     )
     require(
         re.search(
-            r"URL_THRESHOLD\s*=\s*0\.6800401751682739\b",
+            r"URL_THRESHOLD\s*=\s*0\.547\b",
             server,
         ) is not None,
         "Frozen URL threshold changed.",
+    )
+    require(
+        "BantAIInference" in server
+        and "bantai_rf_url_model_v4b_runtime" not in server,
+        "Grouped v1.0.0 must be the only default URL inference path.",
+    )
+    require(
+        "EXPECTED_MODEL_SHA256" in server
+        and "URL_FEATURE_EXTRACTOR" in server
+        and "URL_FEATURE_NAMES" in server,
+        "Grouped v1.0.0 hash and 52-feature contract checks are missing.",
+    )
+    require(
+        '"BANTAI_URL_MODEL_ENFORCEMENT_ENABLED"' in server
+        and '"false"' in server,
+        "Grouped v1.0.0 must default to shadow/non-blocking mode.",
     )
 
     require(
@@ -185,6 +220,7 @@ def check_backend_invariants() -> None:
     )
 
     for relative in (
+        "backend/email_model.py",
         "backend/scam_indicator_engine.py",
         "backend/fusion_engine.py",
         "backend/llm/base.py",
@@ -195,6 +231,26 @@ def check_backend_invariants() -> None:
         "backend/llm/cache.py",
     ):
         require((ROOT / relative).is_file(), f"Missing v1.1 module: {relative}")
+
+    active_email_runtime_files = (
+        "backend/server.py",
+        "backend/Dockerfile",
+        "backend/START_BANTAI_V1_1.ps1",
+        "companion/app.py",
+        "docker-compose.yml",
+        "scripts/ENABLE_BANTAI_COMPANION_STARTUP.ps1",
+        ".env.example",
+    )
+    for relative in active_email_runtime_files:
+        active_source = read(relative)
+        require(
+            "checkpoint-15666" not in active_source,
+            f"Legacy email checkpoint remains active in {relative}.",
+        )
+        require(
+            re.search(r"\b0[.]378459(?:06615257263)?\b", active_source) is None,
+            f"Retired email threshold remains active in {relative}.",
+        )
 
 
 def check_extension_invariants() -> None:

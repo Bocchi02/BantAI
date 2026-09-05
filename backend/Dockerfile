@@ -16,11 +16,14 @@ RUN pip install --no-cache-dir -r backend/requirements-detector.txt
 
 # Copy only the frozen inference artifacts required at runtime. Training
 # checkpoints such as optimizer.pt are excluded by .dockerignore.
-COPY models/email_text_xlmr_v1/checkpoint-15666/config.json ./models/email_text_xlmr_v1/checkpoint-15666/config.json
-COPY models/email_text_xlmr_v1/checkpoint-15666/model.safetensors ./models/email_text_xlmr_v1/checkpoint-15666/model.safetensors
-COPY models/email_text_xlmr_v1/checkpoint-15666/tokenizer.json ./models/email_text_xlmr_v1/checkpoint-15666/tokenizer.json
-COPY models/email_text_xlmr_v1/checkpoint-15666/tokenizer_config.json ./models/email_text_xlmr_v1/checkpoint-15666/tokenizer_config.json
-COPY models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib ./models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib
+COPY models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/calibration.json ./models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/calibration.json
+COPY models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/config.json ./models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/config.json
+COPY models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00001-of-00002.safetensors ./models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00001-of-00002.safetensors
+COPY models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00002-of-00002.safetensors ./models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00002-of-00002.safetensors
+COPY models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model.safetensors.index.json ./models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model.safetensors.index.json
+COPY models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer.json ./models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer.json
+COPY models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer_config.json ./models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer_config.json
+COPY models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib ./models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib
 
 # Keep application code last so normal code changes do not rebuild model layers.
 COPY backend ./backend

@@ -4,15 +4,26 @@
   "architecture": "hybrid_ai_decision_support",
   "frozen_email_detector": {
     "providers": ["gmail", "outlook", "yahoo"],
-    "model": "BantAI XLM-RoBERTa NLP Classification Model V1",
-    "checkpoint": "checkpoint-15666",
-    "threshold": 0.05,
-    "max_length": 256
+    "model": "BantAI calibrated XLM-RoBERTa Email Model",
+    "model_version": "full_taglish_xlmr_512_headtail_seed13",
+    "calibration_method": "temperature_scaling",
+    "temperature": 2.2198894341340183,
+    "positive_class_id": 1,
+    "threshold": 0.6923658179915227,
+    "max_length": 512,
+    "truncation_strategy": "subject_head_tail"
   },
   "frozen_url_detector": {
     "scope": "CURRENT_ADDRESS_BAR_URL_ONLY",
-    "model": "BantAI Random Forest URL Model V4-B",
-    "threshold": 0.6800401751682739
+    "model": "BantAI RF Grouped",
+    "version": "v1.0.0",
+    "filename": "bantai_rf_grouped_v1.0.0.joblib",
+    "feature_extractor": "bantai_lexical_v1",
+    "feature_count": 52,
+    "threshold": 0.547,
+    "model_sha256": "4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c",
+    "shadow_mode": true,
+    "legacy_v4b_status": "DEPRECATED_ROLLBACK_AUDIT_ONLY"
   },
   "indicator_engine": {
     "enabled": true,
@@ -70,7 +81,8 @@
   ],
   "v1_0_baseline_preserved": {
     "architecture": "dual_detector",
-    "model_inputs_and_thresholds_unchanged": true,
+    "email_model_migrated_to_calibrated_release": true,
+    "url_model_migrated_to_grouped_v1_0_0": true,
     "provider_extractors_preserved": true
   }
 }

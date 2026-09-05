@@ -96,12 +96,20 @@ into the project, and verifies SHA-256 hashes.
 Expected local paths:
 
 ```text
-models/email_text_xlmr_v1/checkpoint-15666/
-models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
+models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib
 ```
 
-The model binaries are ignored by Git. Do not commit them to a public or cloud
-repository. Validation logs and private screenshots also remain excluded.
+The previous email checkpoint is retained only at
+`models/email_text_xlmr_v1/rollback_archive/checkpoint-15666/`. See
+`EMAIL_MODEL_DEPLOYMENT.md` for the explicit rollback procedure.
+
+The active URL model SHA-256 is
+`4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c`.
+The deprecated V4-B artifact may remain locally for explicit rollback/audit but
+is never a default fallback. Model binaries are ignored by Git. Do not commit
+them to a public or cloud repository. Validation logs and private screenshots
+also remain excluded.
 
 ## Recommended first Codex workflow
 

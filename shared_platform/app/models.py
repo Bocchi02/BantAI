@@ -239,7 +239,7 @@ class UrlReport(Base):
     feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
     feedback_source: Mapped[FeedbackSource] = mapped_column(Enum(FeedbackSource), default=FeedbackSource.MANUAL_ENTRY)
     training_status: Mapped[TrainingStatus] = mapped_column(Enum(TrainingStatus), default=TrainingStatus.PENDING)
-    detector_model_version: Mapped[str] = mapped_column(String(40), default="RF V4-B")
+    detector_model_version: Mapped[str] = mapped_column(String(40), default="BantAI RF Grouped v1.0.0")
     status: Mapped[UrlReportStatus] = mapped_column(Enum(UrlReportStatus), default=UrlReportStatus.PENDING)
     admin_assessment: Mapped[AdminUrlAssessment | None] = mapped_column(Enum(AdminUrlAssessment))
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

@@ -12,7 +12,10 @@ CURRENT WEBSITE
 - Scans only the exact HTTP/HTTPS URL in the active tab's address bar (`tab.url`).
 - Runs when the URL changes, a page loads, tabs switch, the window regains focus,
   or a supported email opens.
-- Uses frozen Random Forest URL Model V4-B at threshold 0.6800401751682739.
+- Uses hash-verified BantAI RF Grouped v1.0.0 with the exact 52-feature
+  `bantai_lexical_v1` extractor and calibrated threshold 0.547.
+- Runs the URL model in shadow/non-blocking mode by default. V4-B is retained
+  only for explicit rollback/audit and is never an automatic fallback.
 - Cloud URL Review automatically inspects only a minimized address origin after
   the frozen RF warns. AI disagreement produces caution,
   while a HIGH-confidence clean review without strong indicators may produce NO
@@ -24,7 +27,10 @@ OPENED EMAIL
 ------------
 - Enabled only for Gmail, Outlook, and Yahoo Mail.
 - Uses visible sender, subject, and current message body.
-- Runs frozen XLM-R V1 at threshold 0.05 and maximum length 256.
+- Runs `full_taglish_xlmr_512_headtail_seed13` with 512-token
+  subject-preserving head-tail preprocessing and temperature-calibrated output.
+- Treats `suspicious_probability` as the calibrated class-1 probability and
+  warns at `0.6923658179915227`.
 - Extracts explainable Philippine-context and social-engineering indicators.
 - Automatically requests a redacted contextual review after local analysis.
 - Applies deterministic Rules A-H. Two independent suspicious sources are
@@ -60,7 +66,7 @@ that review with `gemini-3.5-flash-lite` and keeps Flash-Lite active until the
 backend restarts. Non-quota errors do not trigger model switching.
 
 Cloud URL Review is always enabled and has no toggle. It runs only after the
-frozen RF URL model warns and sends only the URL origin
+BantAI RF Grouped URL model warns and sends only the URL origin
 (scheme and hostname), never the page path, query, fragment, HTML, messages, or
 account content. A HIGH-confidence clean result with no strong/critical cloud
 indicator may produce NO STRONG WARNING SIGNS; lower-confidence disagreement
@@ -116,8 +122,11 @@ TEST
 Automated tests do not make a real Gemini request. Full detector inference needs
 the user's frozen local model files.
 
-V1.0 COMPARISON
+MODEL MIGRATION
 ---------------
-The v1.0 dual-detector behavior remains the foundation. v1.1 does not change its
-models, thresholds, URL scope, supported email providers, or extractors. It adds
-explainable indicators, optional redacted context, and deterministic guidance.
+The dual-detector behavior remains the foundation. The active email detector is
+the calibrated `full_taglish_xlmr_512_headtail_seed13` release; its predecessor
+is retained locally for explicit rollback only. URL scope, supported email
+providers, and provider extractors remain unchanged. The active URL detector is
+BantAI RF Grouped v1.0.0; its V4-B predecessor is deprecated and available only
+for explicit rollback/audit.

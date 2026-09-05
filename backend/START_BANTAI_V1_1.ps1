@@ -25,13 +25,13 @@ else {
 if ([string]::IsNullOrWhiteSpace($TextModelDir)) {
     $TextModelDir = Join-Path `
         $ProjectRoot `
-        "models\email_text_xlmr_v1\checkpoint-15666"
+        "models\email_text_xlmr_v2\full_taglish_xlmr_512_headtail_seed13"
 }
 
 if ([string]::IsNullOrWhiteSpace($RfModelPath)) {
     $RfModelPath = Join-Path `
         $ProjectRoot `
-        "models\url_random_forest_v4b\bantai_rf_url_model_v4b_optimized.joblib"
+        "models\url_random_forest_grouped_v1\bantai_rf_grouped_v1.0.0.joblib"
 }
 
 if (-not (Test-Path -LiteralPath $TextModelDir -PathType Container)) {

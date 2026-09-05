@@ -90,6 +90,7 @@ EMAIL_IN_USE_MESSAGE = "This email is already in use."
 OUTCOME_VALUES = [item.value for item in Outcome]
 TRAINING_CONSENT_VERSION = "2026-08-v1"
 AUTOMATIC_SAMPLE_RATE_PERCENT = 10
+URL_DETECTOR_MODEL_VERSION = "BantAI RF Grouped v1.0.0"
 
 
 def _aware(value: datetime) -> datetime:
@@ -673,7 +674,7 @@ def persist_url_activity_feedback(
         feedback_reason=reason,
         feedback_source=FeedbackSource.RECENT_DETECTION,
         training_status=TrainingStatus.PENDING,
-        detector_model_version="RF V4-B",
+        detector_model_version=URL_DETECTOR_MODEL_VERSION,
     )
     db.add(report)
     try:
@@ -807,7 +808,7 @@ def ingest_automatic_training_sample(
             url_ciphertext=encrypt_text(normalized_content),
             content_fingerprint=blind_index(normalized_content, "automatic-url-sample-v1"),
             detector_outcome=payload.outcome,
-            detector_model_version="RF V4-B",
+            detector_model_version=URL_DETECTOR_MODEL_VERSION,
             consent_version=TRAINING_CONSENT_VERSION,
             occurred_at=payload.occurred_at.astimezone(timezone.utc),
         )
@@ -900,7 +901,7 @@ def create_url_report(
         feedback_reason=payload.reason,
         feedback_source=FeedbackSource.MANUAL_ENTRY,
         training_status=TrainingStatus.PENDING,
-        detector_model_version="RF V4-B",
+        detector_model_version=URL_DETECTOR_MODEL_VERSION,
     )
     db.add(report)
     try:
@@ -1363,7 +1364,7 @@ def admin_training_data(
                 "LEGITIMATE": label_counts.get("LEGITIMATE", 0),
                 "SUSPICIOUS": label_counts.get("SUSPICIOUS", 0),
             },
-            "model_version": "RF V4-B",
+            "model_version": URL_DETECTOR_MODEL_VERSION,
         },
         "emails": {
             "items": [email_training_candidate_view(row) for row in email_rows],

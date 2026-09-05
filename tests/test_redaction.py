@@ -54,7 +54,7 @@ class RedactionTests(unittest.TestCase):
             url_model={
                 "signal": "SUSPICIOUS",
                 "suspicious_probability": 0.91,
-                "threshold": 0.6800401751682739,
+                "threshold": 0.547,
             },
         )
         self.assertEqual(payload["address_origin"], "https://www.facebook.com/")

@@ -132,7 +132,7 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(messageReviewPage, /Safer next steps/);
   assert.doesNotMatch(messageReviewPage, /Gemini/i);
   assert.doesNotMatch(messageReviewPage, /localStorage|sessionStorage/);
-  assert.match(source, /RF V4-B remains frozen/);
+  assert.match(source, /BantAI RF Grouped v1\.0\.0 stays in shadow mode/);
   assert.match(source, /No reporter identity/);
   assert.match(source, /Complete website address/);
   assert.match(source, /does not automatically change future outcomes/);

@@ -2,10 +2,13 @@
 
 - [ ] Extract the Codex-ready project.
 - [ ] Run `scripts\models\MIGRATE_EXISTING_MODELS.ps1`.
-- [ ] Confirm the checkpoint files exist under
-      `models\email_text_xlmr_v1\checkpoint-15666`.
-- [ ] Confirm the RF joblib exists under
-      `models\url_random_forest_v4b`.
+- [ ] Confirm the calibrated email model files exist under
+      `models\email_text_xlmr_v2\full_taglish_xlmr_512_headtail_seed13`.
+- [ ] Confirm the prior checkpoint remains under
+      `models\email_text_xlmr_v1\rollback_archive\checkpoint-15666` for rollback only.
+- [ ] Confirm `bantai_rf_grouped_v1.0.0.joblib` exists under
+      `models\url_random_forest_grouped_v1` and its SHA-256 is verified.
+- [ ] Keep V4-B under `models\url_random_forest_v4b` for rollback/audit only.
 - [ ] Run `python scripts\verify_models.py`.
 - [ ] Run `python scripts\verify_project.py`.
 - [ ] Run `START_BANTAI.ps1`.

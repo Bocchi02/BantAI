@@ -130,7 +130,7 @@ class LLMCacheTests(unittest.TestCase):
             "url_model": {
                 "signal": "SUSPICIOUS",
                 "suspicious_probability": 0.91,
-                "threshold": 0.6800401751682739,
+                "threshold": 0.547,
             },
         }
         first = coordinator.review_url(**arguments)
@@ -156,7 +156,7 @@ class LLMCacheTests(unittest.TestCase):
             "url_model": {
                 "signal": "SUSPICIOUS",
                 "suspicious_probability": 0.91,
-                "threshold": 0.6800401751682739,
+                "threshold": 0.547,
             },
         }
         with ThreadPoolExecutor(max_workers=3) as executor:

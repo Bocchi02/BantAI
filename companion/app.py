@@ -23,8 +23,12 @@ BACKEND = ROOT / "backend"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-os.environ.setdefault("BANTAI_MODEL_DIR", str(ROOT / "models" / "email_text_xlmr_v1" / "checkpoint-15666"))
-os.environ.setdefault("BANTAI_RF_MODEL_PATH", str(ROOT / "models" / "url_random_forest_v4b" / "bantai_rf_url_model_v4b_optimized.joblib"))
+os.environ.setdefault(
+    "BANTAI_MODEL_DIR",
+    str(ROOT / "models" / "email_text_xlmr_v2" / "full_taglish_xlmr_512_headtail_seed13"),
+)
+os.environ.setdefault("BANTAI_RF_MODEL_PATH", str(ROOT / "models" / "url_random_forest_grouped_v1" / "bantai_rf_grouped_v1.0.0.joblib"))
+os.environ.setdefault("BANTAI_URL_MODEL_ENFORCEMENT_ENABLED", "false")
 os.environ.setdefault("BANTAI_PLATFORM_API", "http://127.0.0.1:8080")
 os.environ.setdefault("BANTAI_WEB_DASHBOARD", "http://localhost:3000")
 
@@ -82,7 +86,11 @@ class CompanionTray:
     def repair(self, *_args) -> None:
         expected = [
             Path(os.environ["BANTAI_MODEL_DIR"]) / "config.json",
-            Path(os.environ["BANTAI_MODEL_DIR"]) / "model.safetensors",
+            Path(os.environ["BANTAI_MODEL_DIR"]) / "calibration.json",
+            Path(os.environ["BANTAI_MODEL_DIR"]) / "model.safetensors.index.json",
+            Path(os.environ["BANTAI_MODEL_DIR"]) / "model-00001-of-00002.safetensors",
+            Path(os.environ["BANTAI_MODEL_DIR"]) / "model-00002-of-00002.safetensors",
+            Path(os.environ["BANTAI_MODEL_DIR"]) / "tokenizer.json",
             Path(os.environ["BANTAI_RF_MODEL_PATH"]),
         ]
         missing = [path.name for path in expected if not path.is_file()]

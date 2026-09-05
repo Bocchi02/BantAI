@@ -39,9 +39,9 @@ The legacy direct-Python launcher remains available for detector development
 only:
 
 ```powershell
-.\backend\START_BANTAI_V1_0.ps1 `
-  -TextModelDir "D:\custom\checkpoint-15666" `
-  -RfModelPath "D:\custom\bantai_rf_url_model_v4b_optimized.joblib"
+.\backend\START_BANTAI_V1_1.ps1 `
+  -TextModelDir "D:\custom\full_taglish_xlmr_512_headtail_seed13" `
+  -RfModelPath "D:\custom\bantai_rf_grouped_v1.0.0.joblib"
 ```
 
 ## Test the API after the server starts

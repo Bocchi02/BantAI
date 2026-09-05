@@ -6,9 +6,15 @@ AUTOMATED / STATIC
 [ ] python -m unittest discover -s tests -v passes
 [ ] Python syntax checks pass
 [ ] JavaScript syntax checks pass for worker, popup, Gmail, Outlook, and Yahoo
-[ ] Email threshold remains 0.05
-[ ] Email max length remains 256
-[ ] URL threshold remains 0.6800401751682739
+[ ] Email calibrated class-1 threshold remains 0.6923658179915227
+[ ] Email calibration temperature remains 2.2198894341340183
+[ ] Email max length remains 512 with subject_head_tail preprocessing
+[ ] Subject budget 96, subject tail 0.25, body tail 0.35, and body cleaning disabled
+[ ] Both logits are divided by temperature before softmax
+[ ] URL threshold remains 0.547
+[ ] URL model identity is BantAI RF Grouped v1.0.0 with 52 ordered features
+[ ] URL model SHA-256 matches 4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c
+[ ] URL model remains shadow/non-blocking pending external, future-time, and Philippine validation
 [ ] URL scope remains CURRENT_ADDRESS_BAR_URL_ONLY
 [ ] Email providers remain Gmail, Outlook, and Yahoo only
 [ ] No embedded-link scanning, navigation, redirect, TLS, or numeric overall score

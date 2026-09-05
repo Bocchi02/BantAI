@@ -610,7 +610,7 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual("INCORRECT", report["feedback_verdict"])
         self.assertEqual("MANUAL_ENTRY", report["feedback_source"])
         self.assertEqual("PENDING", report["training_status"])
-        self.assertEqual("RF V4-B", report["detector_model_version"])
+        self.assertEqual("BantAI RF Grouped v1.0.0", report["detector_model_version"])
         self.assertIn("private/path", created.text)
         self.assertIn("secret=1", created.text)
 
@@ -684,7 +684,7 @@ class PlatformTests(unittest.TestCase):
             candidate = db.scalar(select(UrlTrainingCandidate))
             self.assertIsNotNone(candidate)
             self.assertEqual("LEGITIMATE", candidate.approved_label.value)
-            self.assertEqual("RF V4-B", candidate.detector_model_version)
+            self.assertEqual("BantAI RF Grouped v1.0.0", candidate.detector_model_version)
             self.assertEqual(1, candidate.evidence_count)
             self.assertFalse(hasattr(candidate, "user_id"))
             self.assertFalse(hasattr(candidate, "source_report_id"))
@@ -722,7 +722,7 @@ class PlatformTests(unittest.TestCase):
             "https://review.example.test/private/path?secret=1#fragment",
             payload["urls"]["items"][0]["url"],
         )
-        self.assertEqual("RF V4-B", payload["urls"]["model_version"])
+        self.assertEqual("BantAI RF Grouped v1.0.0", payload["urls"]["model_version"])
         self.assertEqual(0, payload["emails"]["candidate_total"])
         self.assertEqual(1, payload["emails"]["observed_activity_total"])
         self.assertEqual("ENCRYPTED_REVIEW_CONTENT", payload["emails"]["collection_status"])

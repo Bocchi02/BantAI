@@ -7,8 +7,8 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Launcher = Join-Path $ProjectRoot "backend\START_BANTAI_V1_1.ps1"
 $PythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-$EmailModel = Join-Path $ProjectRoot "models\email_text_xlmr_v1\checkpoint-15666"
-$UrlModel = Join-Path $ProjectRoot "models\url_random_forest_v4b\bantai_rf_url_model_v4b_optimized.joblib"
+$EmailModel = Join-Path $ProjectRoot "models\email_text_xlmr_v2\full_taglish_xlmr_512_headtail_seed13"
+$UrlModel = Join-Path $ProjectRoot "models\url_random_forest_grouped_v1\bantai_rf_grouped_v1.0.0.joblib"
 
 foreach ($RequiredFile in @($Launcher, $PythonExe, $UrlModel)) {
     if (-not (Test-Path -LiteralPath $RequiredFile -PathType Leaf)) {

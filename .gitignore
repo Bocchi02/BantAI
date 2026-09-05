@@ -24,6 +24,7 @@ secrets*.json
 # must not be committed to Git.
 checkpoint-*/
 models/**/checkpoint-*/*
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
 !models/README.md
 !models/**/PLACE_*.txt
 *.safetensors

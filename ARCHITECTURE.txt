@@ -4,8 +4,8 @@ LOCAL DOCKER DEPLOYMENT
 -----------------------
 Browser extension -> 127.0.0.1:8000 -> detector container
                                            |
-                                           +-- frozen RF V4-B
-                                           +-- frozen XLM-R V1
+                                           +-- BantAI RF Grouped v1.0.0 (shadow/non-blocking)
+                                           +-- calibrated XLM-R email model
                                            +-- indicator engine + deterministic fusion
                                            +-- Companion pairing/outbox state volume
                                            |
@@ -22,7 +22,7 @@ The database is not published to the host. All three services use
 
 ACTIVE TAB
     |
-    +-- exact tab.url ----------------> Frozen RF URL V4-B
+    +-- exact tab.url ----------------> BantAI RF Grouped v1.0.0
     |                                      |
     |                                      +-- independent SAFE / SUSPICIOUS
     |                                      +-- optional minimized URL AI context
@@ -36,7 +36,10 @@ ACTIVE TAB
             |
             +-- provider extractor: sender + subject + visible current body
                     |
-                    +-- Frozen XLM-R Email V1
+                    +-- Calibrated XLM-R Email Model
+                    |       |
+                    |       +-- 512-token subject/head-tail encoding
+                    |       +-- logits / temperature -> softmax(class 1)
                     |
                     +-- Explainable Philippine Scam Indicator Engine
                     |

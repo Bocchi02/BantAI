@@ -19,11 +19,16 @@ build
 # Include only frozen runtime artifacts, not optimizer/trainer checkpoints.
 models/**
 models/**/optimizer.pt
-!models/email_text_xlmr_v1/
-!models/email_text_xlmr_v1/checkpoint-15666/
-!models/email_text_xlmr_v1/checkpoint-15666/config.json
-!models/email_text_xlmr_v1/checkpoint-15666/model.safetensors
-!models/email_text_xlmr_v1/checkpoint-15666/tokenizer.json
-!models/email_text_xlmr_v1/checkpoint-15666/tokenizer_config.json
+!models/email_text_xlmr_v2/
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/calibration.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/config.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00001-of-00002.safetensors
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00002-of-00002.safetensors
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model.safetensors.index.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer_config.json
 !models/url_random_forest_v4b/
 !models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib
+!models/url_random_forest_grouped_v1/
+!models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib

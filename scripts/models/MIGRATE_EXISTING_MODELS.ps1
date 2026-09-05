@@ -1,7 +1,9 @@
 param(
-    [string]$SourceTextModelDir = "D:\COOOODE\Capstone\Codes\Text_Detection\meajor_cleaned_preprocessed_audit\meajor_training_ready_splits\external_validation_prepared\checkpoint-15666",
+    [string]$SourceTextModelDir = "D:\COOOODE\Capstone\Models\Email Model\checkpoints\phase4\full_taglish_xlmr_512_headtail_seed13\best_model",
 
-    [string]$SourceRfModelPath = "D:\COOOODE\Capstone\Codes\URL_Detection\rf_model_v4b-final\rf_url_model_v4b\bantai_rf_url_model_v4b_optimized.joblib",
+    [string]$SourceCalibrationPath = "D:\COOOODE\Capstone\Models\Email Model\deployment\full_taglish_xlmr_512_headtail_seed13\calibration.json",
+
+    [string]$SourceRfModelPath = "D:\COOOODE\Capstone\Models\Random Forest\release\bantai-rf-grouped-v1.0.0\bantai_rf_grouped_final.joblib",
 
     [switch]$ReplaceExisting
 )
@@ -12,15 +14,29 @@ $ProjectRoot = Resolve-Path "$PSScriptRoot\..\.."
 
 $DestinationTextModelDir = Join-Path `
     $ProjectRoot `
+    "models\email_text_xlmr_v2\full_taglish_xlmr_512_headtail_seed13"
+
+$DestinationCalibrationPath = Join-Path `
+    $DestinationTextModelDir `
+    "calibration.json"
+
+$LegacyTextModelDir = Join-Path `
+    $ProjectRoot `
     "models\email_text_xlmr_v1\checkpoint-15666"
+
+$LegacyTextArchiveDir = Join-Path `
+    $ProjectRoot `
+    "models\email_text_xlmr_v1\rollback_archive\checkpoint-15666"
 
 $DestinationRfModelDir = Join-Path `
     $ProjectRoot `
-    "models\url_random_forest_v4b"
+    "models\url_random_forest_grouped_v1"
 
 $DestinationRfModelPath = Join-Path `
     $DestinationRfModelDir `
-    "bantai_rf_url_model_v4b_optimized.joblib"
+    "bantai_rf_grouped_v1.0.0.joblib"
+
+$ExpectedRfHash = "4FD1417FBCA11CC60A1EB1F16E9F71C1DB0D76F6CE042FEAE5ABCC2BDE528C4C"
 
 function Get-RelativeFileHashes {
     param(
@@ -86,8 +102,33 @@ if (-not (Test-Path -LiteralPath $SourceTextModelDir -PathType Container)) {
     throw "Source email model directory was not found: $SourceTextModelDir"
 }
 
+if (-not (Test-Path -LiteralPath $SourceCalibrationPath -PathType Leaf)) {
+    throw "Source email calibration contract was not found: $SourceCalibrationPath"
+}
+
 if (-not (Test-Path -LiteralPath $SourceRfModelPath -PathType Leaf)) {
     throw "Source RF model file was not found: $SourceRfModelPath"
+}
+
+if (
+    (Test-Path -LiteralPath $LegacyTextModelDir -PathType Container) -and
+    (Test-Path -LiteralPath $LegacyTextArchiveDir -PathType Container)
+) {
+    throw "Both the former active legacy path and rollback archive exist. Resolve the duplicate before migration."
+}
+
+if (Test-Path -LiteralPath $LegacyTextModelDir -PathType Container) {
+    New-Item `
+        -ItemType Directory `
+        -Path (Split-Path $LegacyTextArchiveDir -Parent) `
+        -Force |
+    Out-Null
+
+    Move-Item `
+        -LiteralPath $LegacyTextModelDir `
+        -Destination $LegacyTextArchiveDir
+
+    Write-Host "Archived the previous email checkpoint for explicit rollback only." -ForegroundColor Yellow
 }
 
 New-Item `
@@ -150,6 +191,11 @@ Copy-Item `
     -Recurse `
     -Force
 
+Copy-Item `
+    -LiteralPath $SourceCalibrationPath `
+    -Destination $DestinationCalibrationPath `
+    -Force
+
 Write-Host "Copying frozen RF model..." -ForegroundColor Cyan
 
 Copy-Item `
@@ -166,6 +212,8 @@ $SourceTextHashes = Get-RelativeFileHashes `
 $DestinationTextHashes = Get-RelativeFileHashes `
     -RootPath $DestinationTextModelDir
 
+$DestinationTextHashes.Remove("calibration.json")
+
 if (
     -not (
         Compare-HashMaps `
@@ -174,6 +222,22 @@ if (
     )
 ) {
     throw "The copied email checkpoint does not match the source checkpoint."
+}
+
+$SourceCalibrationHash = (
+    Get-FileHash `
+        -LiteralPath $SourceCalibrationPath `
+        -Algorithm SHA256
+).Hash
+
+$DestinationCalibrationHash = (
+    Get-FileHash `
+        -LiteralPath $DestinationCalibrationPath `
+        -Algorithm SHA256
+).Hash
+
+if ($SourceCalibrationHash -ne $DestinationCalibrationHash) {
+    throw "The copied email calibration contract does not match the source."
 }
 
 $SourceRfHash = (
@@ -190,6 +254,10 @@ $DestinationRfHash = (
 
 if ($SourceRfHash -ne $DestinationRfHash) {
     throw "The copied RF model does not match the source RF model."
+}
+
+if ($DestinationRfHash -ne $ExpectedRfHash) {
+    throw "BantAI RF Grouped v1.0.0 SHA-256 mismatch. Expected $ExpectedRfHash, found $DestinationRfHash."
 }
 
 Write-Host ""

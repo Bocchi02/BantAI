@@ -1,0 +1,16 @@
+{
+  "name": "BantAI RF Grouped",
+  "version": "v1.0.0",
+  "filename": "bantai_rf_grouped_v1.0.0.joblib",
+  "feature_extractor": "bantai_lexical_v1",
+  "feature_count": 52,
+  "decision_threshold": 0.547,
+  "labels": {
+    "0": "legitimate",
+    "1": "phishing"
+  },
+  "calibration": "sigmoid",
+  "model_sha256": "4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c",
+  "deployment_mode": "shadow_non_blocking",
+  "legacy_v4b_status": "deprecated_rollback_audit_only"
+}

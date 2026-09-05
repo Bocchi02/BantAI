@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlsplit
 
-import joblib
-import pandas as pd
 import torch
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -28,9 +26,27 @@ load_dotenv(
     override=False,
 )
 
-from bantai_rf_url_model_v4b_runtime import (
-    extract_v4b_features,
+from bantai_inference import (
+    BantAIInference,
+    EXPECTED_MODEL_SHA256,
+    MODEL_FILENAME as URL_MODEL_FILENAME,
+    MODEL_NAME as URL_MODEL_NAME,
+    MODEL_VERSION as URL_MODEL_VERSION,
 )
+from email_model import (
+    MODEL_NAME as EMAIL_MODEL_NAME,
+    MODEL_VERSION as EMAIL_MODEL_VERSION,
+    PREPROCESSING as EMAIL_PREPROCESSING,
+    CalibrationContract,
+    calibrated_probabilities,
+    count_untruncated_email_tokens,
+    encode_email,
+    encoded_to_tensors,
+    is_suspicious_probability,
+    load_deployment_contract,
+    safe_text,
+)
+from extract_url_features import EXTRACTOR_VERSION as URL_FEATURE_EXTRACTOR, FEATURE_NAMES as URL_FEATURE_NAMES
 from fusion_engine import fuse_email_signals
 from llm import create_coordinator_from_environment, off_review
 from llm.cache import TTLCache, normalized_email_fingerprint
@@ -41,20 +57,17 @@ from companion import CompanionError, companion_manager
 
 VERSION = "1.1.0"
 
-# Frozen XLM-RoBERTa Email NLP V1 configuration.
-EMAIL_MODEL_NAME = (
-    "BantAI XLM-RoBERTa "
-    "NLP Classification Model V1"
-)
-EMAIL_THRESHOLD = 0.05
-EMAIL_MAX_LENGTH = 256
+# Calibrated email deployment. The threshold and temperature are loaded from
+# calibration.json in the active model directory rather than duplicated here.
+EMAIL_MAX_LENGTH = int(EMAIL_PREPROCESSING["max_length"])
 
-# Frozen Random Forest URL V4-B configuration.
-URL_MODEL_NAME = (
-    "BantAI Random Forest "
-    "URL Model V4-B"
-)
-URL_THRESHOLD = 0.6800401751682739
+# Frozen BantAI RF Grouped v1.0.0 inference configuration. The deployment is
+# initially non-blocking; promotion requires explicit validation and opt-in.
+URL_THRESHOLD = 0.547
+URL_MODEL_ENFORCEMENT_ENABLED = os.getenv(
+    "BANTAI_URL_MODEL_ENFORCEMENT_ENABLED",
+    "false",
+).strip().lower() in {"1", "true", "yes", "on"}
 
 SUPPORTED_EMAIL_PROVIDERS = {
     "gmail",
@@ -68,12 +81,14 @@ class Runtime:
     email_model = None
     email_device: Optional[torch.device] = None
     email_model_dir: Optional[Path] = None
+    email_contract: Optional[CalibrationContract] = None
 
     url_bundle = None
+    url_engine: Optional[BantAIInference] = None
     url_model = None
     url_feature_names: list[str] = []
     url_model_path: Optional[Path] = None
-    url_model_version: str = "V4-B"
+    url_model_version: str = URL_MODEL_VERSION
 
 
 runtime = Runtime()
@@ -99,6 +114,12 @@ class UrlAnalysisResponse(BaseModel):
     final_result: str
     current_url: str
     hostname: str
+    model_name: str
+    model_version: str
+    phishing_probability: float
+    decision: Literal["legitimate", "phishing"]
+    decision_threshold: float
+    validation_status: Literal["retained", "retain_flagged", "repaired"]
     suspicious_probability: float
     safe_probability: float
     threshold: float
@@ -107,6 +128,8 @@ class UrlAnalysisResponse(BaseModel):
     llm_review: dict
     scanned_source: str
     automatic_navigation_performed: bool
+    shadow_mode: bool
+    enforcement_enabled: bool
 
 
 class EmailAnalysisRequest(BaseModel):
@@ -125,6 +148,11 @@ class EmailAnalysisResponse(BaseModel):
     sender: Optional[str]
     subject: str
     signal: str
+    predicted_label: Literal["legitimate", "phishing_social_engineering"]
+    is_suspicious: bool
+    model_version: str
+    calibration_method: str
+    temperature: float
     suspicious_probability: float
     safe_probability: float
     threshold: float
@@ -351,6 +379,8 @@ def load_email_model() -> None:
         "directory",
     )
 
+    contract = load_deployment_contract(model_dir)
+
     print(
         "[BantAI v1.1.0] Loading email "
         f"model from: {model_dir}"
@@ -384,10 +414,11 @@ def load_email_model() -> None:
     runtime.email_model = model
     runtime.email_device = device
     runtime.email_model_dir = model_dir
+    runtime.email_contract = contract
 
     print(
-        "[BantAI v1.1.0] Email model "
-        f"loaded on: {device}"
+        "[BantAI v1.1.0] Calibrated email model "
+        f"{contract.model_run_id} loaded on: {device}"
     )
 
 
@@ -402,77 +433,28 @@ def load_url_model() -> None:
         f"model from: {model_path}"
     )
 
-    bundle = joblib.load(
-        model_path
-    )
-
-    if not isinstance(
-        bundle,
-        dict,
-    ):
+    try:
+        engine = BantAIInference(model_path)
+    except Exception as exc:
         raise RuntimeError(
-            "The RF joblib must contain "
-            "the frozen V4-B model bundle."
-        )
+            "BantAI RF Grouped v1.0.0 could not be loaded; "
+            "V4-B fallback is intentionally disabled. "
+            f"{exc}"
+        ) from exc
 
-    required_keys = {
-        "model",
-        "feature_names",
-        "threshold",
-    }
-
-    missing = required_keys - set(
-        bundle.keys()
-    )
-
-    if missing:
-        raise RuntimeError(
-            "RF model bundle is missing: "
-            f"{sorted(missing)}"
-        )
-
-    saved_threshold = float(
-        bundle["threshold"]
-    )
-
-    if abs(
-        saved_threshold -
-        URL_THRESHOLD
-    ) > 1e-12:
-        raise RuntimeError(
-            "RF threshold mismatch. Expected "
-            f"{URL_THRESHOLD}, found "
-            f"{saved_threshold}."
-        )
-
-    model = bundle["model"]
-
-    if 1 not in list(
-        model.classes_
-    ):
-        raise RuntimeError(
-            "The RF model does not contain "
-            "internal suspicious class 1."
-        )
-
-    runtime.url_bundle = bundle
-    runtime.url_model = model
-    runtime.url_feature_names = list(
-        bundle["feature_names"]
-    )
+    runtime.url_engine = engine
+    runtime.url_bundle = engine.bundle
+    runtime.url_model = engine.model
+    runtime.url_feature_names = list(engine.bundle["feature_names"])
     runtime.url_model_path = model_path
-    runtime.url_model_version = str(
-        bundle.get(
-            "model_version",
-            "V4-B",
-        )
-    )
+    runtime.url_model_version = URL_MODEL_VERSION
 
     print(
         "[BantAI v1.1.0] URL model "
         f"loaded with "
         f"{len(runtime.url_feature_names)} "
-        "features."
+        f"features using {URL_FEATURE_EXTRACTOR}; SHA-256 "
+        f"{engine.model_sha256}."
     )
 
 
@@ -518,27 +500,6 @@ def validate_address_bar_url(
         )
 
     return url, parsed.hostname.lower()
-
-
-def build_email_input(
-    subject: str,
-    body: str,
-) -> str:
-    clean_subject = (
-        subject or ""
-    ).strip()
-
-    clean_body = (
-        body or ""
-    ).strip()
-
-    if clean_subject:
-        return (
-            f"Subject: {clean_subject}"
-            f"\n\n{clean_body}"
-        )
-
-    return clean_body
 
 
 @asynccontextmanager
@@ -589,10 +550,28 @@ def health() -> dict:
                 is not None,
             "model":
                 EMAIL_MODEL_NAME,
+            "model_version":
+                EMAIL_MODEL_VERSION,
+            "calibration_method": (
+                runtime.email_contract.method
+                if runtime.email_contract
+                else "temperature_scaling"
+            ),
+            "temperature": (
+                runtime.email_contract.temperature
+                if runtime.email_contract
+                else None
+            ),
             "threshold":
-                EMAIL_THRESHOLD,
+                (
+                    runtime.email_contract.suspicious_threshold
+                    if runtime.email_contract
+                    else None
+                ),
             "max_length":
                 EMAIL_MAX_LENGTH,
+            "truncation_strategy":
+                EMAIL_PREPROCESSING["truncation_strategy"],
             "supported_providers":
                 sorted(
                     SUPPORTED_EMAIL_PROVIDERS
@@ -613,8 +592,20 @@ def health() -> dict:
                 URL_MODEL_NAME,
             "model_version":
                 runtime.url_model_version,
+            "filename":
+                URL_MODEL_FILENAME,
+            "feature_extractor":
+                URL_FEATURE_EXTRACTOR,
+            "feature_count":
+                len(URL_FEATURE_NAMES),
+            "model_sha256":
+                EXPECTED_MODEL_SHA256,
             "threshold":
                 URL_THRESHOLD,
+            "shadow_mode":
+                not URL_MODEL_ENFORCEMENT_ENABLED,
+            "enforcement_enabled":
+                URL_MODEL_ENFORCEMENT_ENABLED,
             "scope":
                 "CURRENT_ADDRESS_BAR_URL_ONLY",
         },
@@ -863,57 +854,28 @@ def analyze_url(
     request:
         UrlAnalysisRequest,
 ) -> UrlAnalysisResponse:
-    if runtime.url_model is None:
+    if runtime.url_engine is None:
         raise HTTPException(
             status_code=503,
             detail=(
-                "The frozen URL model "
-                "is not loaded."
+                "BantAI RF Grouped v1.0.0 is not loaded."
             ),
         )
 
-    current_url, hostname = (
-        validate_address_bar_url(
-            request.url
+    records, _ = runtime.url_engine.predict_urls([request.url])
+    prediction = records[0]
+    if prediction["validation_status"] == "rejected":
+        findings = prediction["validation_findings"] or "invalid_url"
+        raise HTTPException(
+            status_code=400,
+            detail=f"The address-bar URL was rejected by URL validation: {findings}.",
         )
-    )
 
-    feature_values = (
-        extract_v4b_features(
-            current_url
-        )
-    )
-
-    frame = pd.DataFrame([
-        feature_values
-    ]).reindex(
-        columns=
-            runtime.url_feature_names,
-        fill_value=0,
-    )
-
-    suspicious_class_index = (
-        list(
-            runtime.url_model
-            .classes_
-        ).index(1)
-    )
-
-    suspicious_probability = float(
-        runtime.url_model
-        .predict_proba(
-            frame
-        )[0][
-            suspicious_class_index
-        ]
-    )
-
-    signal = (
-        "SUSPICIOUS"
-        if suspicious_probability
-        >= URL_THRESHOLD
-        else "SAFE"
-    )
+    current_url = prediction["normalized_url"]
+    current_url, hostname = validate_address_bar_url(current_url)
+    suspicious_probability = float(prediction["phishing_probability"])
+    decision = str(prediction["decision"])
+    signal = "SUSPICIOUS" if decision == "phishing" else "SAFE"
 
     if signal == "SUSPICIOUS":
         model_message = (
@@ -973,6 +935,18 @@ def analyze_url(
             current_url,
         hostname=
             hostname,
+        model_name=
+            URL_MODEL_NAME,
+        model_version=
+            URL_MODEL_VERSION,
+        phishing_probability=
+            suspicious_probability,
+        decision=
+            decision,
+        decision_threshold=
+            URL_THRESHOLD,
+        validation_status=
+            prediction["validation_status"],
         suspicious_probability=
             suspicious_probability,
         safe_probability=
@@ -990,6 +964,10 @@ def analyze_url(
             "BROWSER_ADDRESS_BAR",
         automatic_navigation_performed=
             False,
+        shadow_mode=
+            not URL_MODEL_ENFORCEMENT_ENABLED,
+        enforcement_enabled=
+            URL_MODEL_ENFORCEMENT_ENABLED,
     )
 
 
@@ -1010,6 +988,8 @@ def analyze_email(
         or runtime.email_tokenizer
         is None
         or runtime.email_device
+        is None
+        or runtime.email_contract
         is None
     ):
         raise HTTPException(
@@ -1037,12 +1017,7 @@ def analyze_email(
             ),
         )
 
-    model_input = build_email_input(
-        request.subject,
-        request.body,
-    )
-
-    if not model_input:
+    if not safe_text(request.subject) and not safe_text(request.body):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -1051,44 +1026,21 @@ def analyze_email(
             ),
         )
 
-    full_encoding = (
-        runtime.email_tokenizer(
-            model_input,
-            add_special_tokens=True,
-            truncation=False,
-        )
+    original_token_count = count_untruncated_email_tokens(
+        runtime.email_tokenizer,
+        request.subject,
+        request.body,
     )
 
-    original_token_count = len(
-        full_encoding[
-            "input_ids"
-        ]
+    encoded_lists = encode_email(
+        runtime.email_tokenizer,
+        request.subject,
+        request.body,
     )
 
-    encoded = (
-        runtime.email_tokenizer(
-            model_input,
-            return_tensors="pt",
-            truncation=True,
-            max_length=
-                EMAIL_MAX_LENGTH,
-        )
-    )
+    analyzed_token_count = len(encoded_lists["input_ids"])
 
-    analyzed_token_count = int(
-        encoded[
-            "input_ids"
-        ].shape[1]
-    )
-
-    encoded = {
-        key:
-            value.to(
-                runtime.email_device
-            )
-        for key, value
-        in encoded.items()
-    }
+    encoded = encoded_to_tensors(encoded_lists, runtime.email_device)
 
     start = time.perf_counter()
 
@@ -1099,9 +1051,9 @@ def analyze_email(
             ).logits
         )
 
-        probabilities = torch.softmax(
+        probabilities = calibrated_probabilities(
             logits,
-            dim=-1,
+            runtime.email_contract,
         )[0]
 
     if (
@@ -1120,13 +1072,17 @@ def analyze_email(
     )
 
     suspicious_probability = float(
-        probabilities[1].item()
+        probabilities[runtime.email_contract.positive_class_id].item()
+    )
+
+    is_suspicious = is_suspicious_probability(
+        suspicious_probability,
+        runtime.email_contract,
     )
 
     signal = (
         "SUSPICIOUS"
-        if suspicious_probability
-        >= EMAIL_THRESHOLD
+        if is_suspicious
         else "SAFE"
     )
 
@@ -1161,12 +1117,25 @@ def analyze_email(
             request.subject,
         signal=
             signal,
+        predicted_label=(
+            "phishing_social_engineering"
+            if is_suspicious
+            else "legitimate"
+        ),
+        is_suspicious=
+            is_suspicious,
+        model_version=
+            runtime.email_contract.model_run_id,
+        calibration_method=
+            runtime.email_contract.method,
+        temperature=
+            runtime.email_contract.temperature,
         suspicious_probability=
             suspicious_probability,
         safe_probability=
             safe_probability,
         threshold=
-            EMAIL_THRESHOLD,
+            runtime.email_contract.suspicious_threshold,
         max_length=
             EMAIL_MAX_LENGTH,
         original_token_count=

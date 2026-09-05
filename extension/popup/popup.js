@@ -62,6 +62,7 @@ let submittedReviewIds = new Set();
 let emailReviewEventId = null;
 let emailReviewBusy = false;
 let submittedEmailReviewIds = new Set();
+let latestServerHealth = null;
 
 const byId = (id) => document.getElementById(id);
 
@@ -141,6 +142,36 @@ function setDetectionVisibility(enabled) {
 function percentage(value) {
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * 100).toFixed(2)}%` : "--";
+}
+
+function installedThreshold(kind, result = {}) {
+  const detector = kind === "email"
+    ? latestServerHealth?.email_detector
+    : latestServerHealth?.url_detector;
+  const installed = Number(detector?.threshold);
+  if (Number.isFinite(installed)) return installed;
+
+  const resultThreshold = Number(
+    kind === "url"
+      ? result.decision_threshold ?? result.threshold
+      : result.threshold
+  );
+  return Number.isFinite(resultThreshold) ? resultThreshold : null;
+}
+
+function thresholdPercentage(value) {
+  return Number.isFinite(value) ? `${(value * 100).toFixed(4)}%` : "--";
+}
+
+function renderInstalledThresholds() {
+  const urlResult = latestState?.url_detector?.result || {};
+  const emailResult = latestState?.email_detector?.result || {};
+  const urlThreshold = installedThreshold("url", urlResult);
+  const emailThreshold = installedThreshold("email", emailResult);
+  elements.websiteThreshold.textContent = thresholdPercentage(urlThreshold);
+  elements.websiteThreshold.title = Number.isFinite(urlThreshold) ? String(urlThreshold) : "";
+  elements.emailThreshold.textContent = thresholdPercentage(emailThreshold);
+  elements.emailThreshold.title = Number.isFinite(emailThreshold) ? String(emailThreshold) : "";
 }
 
 function technicalStyle(signal) {
@@ -262,6 +293,9 @@ function simpleEmailMessage(state, result) {
 }
 
 function renderServer(server) {
+  latestServerHealth = server?.detail && typeof server.detail === "object"
+    ? server.detail
+    : null;
   if (server?.status === "connected") {
     elements.serverStatus.className = "server-status connected";
     elements.serverStatusText.textContent = "Ready";
@@ -272,6 +306,7 @@ function renderServer(server) {
     elements.serverStatus.className = "server-status checking";
     elements.serverStatusText.textContent = "Checking";
   }
+  renderInstalledThresholds();
 }
 
 function renderWebsite(state) {
@@ -294,7 +329,9 @@ function renderWebsite(state) {
   );
   elements.websiteMessage.textContent = simpleWebsiteMessage(finalResult);
   elements.websiteScore.textContent = percentage(result.suspicious_probability);
-  elements.websiteThreshold.textContent = percentage(result.threshold);
+  const threshold = installedThreshold("url", result);
+  elements.websiteThreshold.textContent = thresholdPercentage(threshold);
+  elements.websiteThreshold.title = Number.isFinite(threshold) ? String(threshold) : "";
   elements.websiteModelSignal.textContent = result.signal || "--";
 }
 
@@ -506,7 +543,9 @@ function renderEmail(state) {
   const modelSignal = String(result.signal || detector.signal || "WAITING").toUpperCase();
   elements.emailDecisionMessage.textContent = simpleEmailMessage(state, fusionResult);
   elements.emailScore.textContent = percentage(result.suspicious_probability);
-  elements.emailThreshold.textContent = percentage(result.threshold);
+  const threshold = installedThreshold("email", result);
+  elements.emailThreshold.textContent = thresholdPercentage(threshold);
+  elements.emailThreshold.title = Number.isFinite(threshold) ? String(threshold) : "";
   elements.emailModelSignal.textContent = modelSignal;
   elements.emailTruncated.textContent = typeof result.was_truncated === "boolean" ? (result.was_truncated ? "Yes" : "No") : "--";
 

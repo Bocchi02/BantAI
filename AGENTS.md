@@ -5,8 +5,8 @@
 BantAI v1.1.0 is a Chromium Manifest V3 hybrid AI decision-support browser
 extension with a local FastAPI backend. It combines five transparent parts:
 
-1. the frozen Random Forest URL Model V4-B;
-2. the frozen XLM-RoBERTa Email NLP Model V1;
+1. the frozen BantAI RF Grouped URL Model v1.0.0 in shadow/non-blocking mode;
+2. the calibrated BantAI XLM-RoBERTa email model;
 3. an explainable Philippine Scam Indicator Engine;
 4. automatic, redacted LLM contextual review; and
 5. deterministic email decision fusion.
@@ -19,12 +19,17 @@ local models and cannot produce the final red email result by itself.
 Do not change, retrain, retune, replace, reinterpret, delete, or commit these
 models unless the user explicitly authorizes a new model version:
 
-- Email model: BantAI XLM-RoBERTa NLP Classification Model V1
-- Checkpoint: `checkpoint-15666`
-- Email threshold: `0.05`
-- Email maximum sequence length: `256`
-- URL model: BantAI Random Forest URL Model V4-B
-- URL threshold: `0.6800401751682739`
+- Email model: `full_taglish_xlmr_512_headtail_seed13`
+- Calibration: temperature scaling, `2.2198894341340183`
+- Email threshold: `0.6923658179915227` calibrated class-1 probability
+- Email maximum sequence length: `512`
+- Email preprocessing: `subject_head_tail`, subject budget `96`, subject tail
+  fraction `0.25`, body tail fraction `0.35`, body cleaning disabled
+- URL model: BantAI RF Grouped v1.0.0
+- URL artifact: `bantai_rf_grouped_v1.0.0.joblib`
+- URL feature extractor: `bantai_lexical_v1` (52 features)
+- URL threshold: `0.547`
+- URL model SHA-256: `4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c`
 
 ## User-facing outcomes
 
@@ -85,8 +90,10 @@ synthetic or sanitized examples in tests.
 
 ## Local model storage
 
-- `models/email_text_xlmr_v1/checkpoint-15666/`
-- `models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib`
+- `models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/`
+- `models/email_text_xlmr_v1/rollback_archive/checkpoint-15666/` (rollback only)
+- `models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib`
+- `models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib` (deprecated rollback/audit only)
 
 Run `python scripts/verify_models.py` to verify presence without loading weights.
 
@@ -108,7 +115,7 @@ From the project root run:
 ```powershell
 python scripts\verify_project.py
 python -m unittest discover -s tests -v
-python -m py_compile backend\server.py backend\bantai_rf_url_model_v4b_runtime.py backend\test_client.py
+python -m py_compile backend\server.py backend\email_model.py backend\bantai_inference.py backend\extract_url_features.py backend\prepare_bantai_dataset.py backend\bantai_rf_url_model_v4b_runtime.py backend\test_client.py
 node --check extension\background\service-worker.js
 node --check extension\content\gmail-extractor.js
 node --check extension\content\outlook-extractor.js

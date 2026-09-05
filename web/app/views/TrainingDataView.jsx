@@ -38,7 +38,7 @@ function normalizeTrainingData(value) {
                 LEGITIMATE: Number.isFinite(urlLabels.LEGITIMATE) ? urlLabels.LEGITIMATE : 0,
                 SUSPICIOUS: Number.isFinite(urlLabels.SUSPICIOUS) ? urlLabels.SUSPICIOUS : 0,
             },
-            model_version: urls.model_version || "RF V4-B",
+            model_version: urls.model_version || "BantAI RF Grouped v1.0.0",
         },
         emails: {
             ...emails,
@@ -157,7 +157,7 @@ function TrainingDataPage() {
               <p className="text-[11px] text-[#8592a3] mt-0.5">{data ? `${data.urls.evidence_total} approved user ${data.urls.evidence_total === 1 ? "review" : "reviews"}` : "Loading evidence count..."}</p>
             </div>
           </div>
-          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#e7e7ff] text-[#696cff] border border-[#c3c4ff] self-start">{data?.urls.model_version || "RF V4-B"}</span>
+          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#e7e7ff] text-[#696cff] border border-[#c3c4ff] self-start">{data?.urls.model_version || "BantAI RF Grouped v1.0.0"}</span>
         </article>
 
         <article className="sneat-card p-5 flex items-center justify-between">
@@ -210,7 +210,7 @@ function TrainingDataPage() {
         <LockIcon className="w-5 h-5 text-[#696cff] shrink-0"/>
         <div>
           <strong className="block font-bold">This inventory does not train the live models</strong>
-          <p className="text-[#646e78] mt-0.5">Approved URL records and encrypted email content remain de-identified references. Email bodies cannot be opened here, and both frozen models remain unchanged. RF V4-B remains frozen.</p>
+          <p className="text-[#646e78] mt-0.5">Approved URL records and encrypted email content remain de-identified references. Email bodies cannot be opened here, and live model training remains disabled. BantAI RF Grouped v1.0.0 stays in shadow mode.</p>
         </div>
       </div>
 

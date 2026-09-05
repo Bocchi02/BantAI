@@ -35,8 +35,9 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn("bantai_companion:/data", compose)
         self.assertIn("restart: unless-stopped", compose)
         self.assertIn("condition: service_healthy", compose)
-        self.assertIn("model.safetensors", dockerfile)
-        self.assertIn("bantai_rf_url_model_v4b_optimized.joblib", dockerfile)
+        self.assertIn("model.safetensors.index.json", dockerfile)
+        self.assertIn("calibration.json", dockerfile)
+        self.assertIn("bantai_rf_grouped_v1.0.0.joblib", dockerfile)
         self.assertIn("https://download.pytorch.org/whl/cpu", dockerfile)
         self.assertNotIn("\ntorch\n", read("backend/requirements-detector.txt"))
         self.assertIn('"--no-access-log"', dockerfile)
@@ -128,11 +129,51 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn("Address only", popup_html)
         self.assertIn("It does not guarantee", popup_html)
 
+    def test_extension_details_use_installed_detector_thresholds(self) -> None:
+        popup = read("extension/popup/popup.js")
+
+        self.assertIn('latestServerHealth?.url_detector', popup)
+        self.assertIn('latestServerHealth?.email_detector', popup)
+        self.assertIn('result.decision_threshold ?? result.threshold', popup)
+        self.assertIn('function thresholdPercentage(value)', popup)
+        self.assertIn('(value * 100).toFixed(4)', popup)
+        self.assertIn('elements.websiteThreshold.title =', popup)
+        self.assertIn('elements.emailThreshold.title =', popup)
+
     def test_frozen_model_constants_are_unchanged(self) -> None:
         server = read("backend/server.py")
-        self.assertRegex(server, r"EMAIL_THRESHOLD\s*=\s*0\.05\b")
-        self.assertRegex(server, r"EMAIL_MAX_LENGTH\s*=\s*256\b")
-        self.assertRegex(server, r"URL_THRESHOLD\s*=\s*0\.6800401751682739\b")
+        email_model = read("backend/email_model.py")
+        calibration = json.loads(
+            read(
+                "models/email_text_xlmr_v2/"
+                "full_taglish_xlmr_512_headtail_seed13/calibration.json"
+            )
+        )
+        self.assertIn('"max_length": 512', email_model)
+        self.assertIn('"truncation_strategy": "subject_head_tail"', email_model)
+        self.assertIn("logits / contract.temperature", email_model)
+        self.assertEqual(calibration["temperature"], 2.2198894341340183)
+        self.assertEqual(calibration["suspicious_threshold"], 0.6923658179915227)
+        self.assertRegex(server, r"URL_THRESHOLD\s*=\s*0\.547\b")
+
+    def test_legacy_email_checkpoint_and_threshold_are_not_active(self) -> None:
+        active_files = (
+            "backend/server.py",
+            "backend/Dockerfile",
+            "backend/START_BANTAI_V1_1.ps1",
+            "companion/app.py",
+            "docker-compose.yml",
+            "scripts/ENABLE_BANTAI_COMPANION_STARTUP.ps1",
+            ".env.example",
+        )
+        for relative in active_files:
+            with self.subTest(relative=relative):
+                active_source = read(relative)
+                self.assertNotIn("checkpoint-15666", active_source)
+                self.assertNotRegex(
+                    active_source,
+                    r"\b0[.]378459(?:06615257263)?\b",
+                )
 
     def test_url_detector_uses_address_bar_url_only(self) -> None:
         worker = read("extension/background/service-worker.js")

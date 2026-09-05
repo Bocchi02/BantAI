@@ -48,8 +48,9 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
-      BANTAI_MODEL_DIR: /app/models/email_text_xlmr_v1/checkpoint-15666
-      BANTAI_RF_MODEL_PATH: /app/models/url_random_forest_v4b/bantai_rf_url_model_v4b_optimized.joblib
+      BANTAI_MODEL_DIR: /app/models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13
+      BANTAI_RF_MODEL_PATH: /app/models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib
+      BANTAI_URL_MODEL_ENFORCEMENT_ENABLED: "false"
       BANTAI_PLATFORM_API: http://platform:8080
       BANTAI_COMPANION_STATE_PATH: /data/companion.dat
       BANTAI_WEB_ORIGIN: http://localhost:3000

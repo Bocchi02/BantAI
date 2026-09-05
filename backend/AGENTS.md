@@ -12,10 +12,17 @@ These instructions apply under `backend/`.
 
 ## Frozen model invariants
 
-- Email threshold: `0.05`
-- Email max length: `256`
-- URL threshold: `0.6800401751682739`
-- Fail loudly if the saved RF threshold differs.
+- Email model: `full_taglish_xlmr_512_headtail_seed13`
+- Email calibration: temperature `2.2198894341340183`, calibrated class-1
+  suspicious threshold `0.6923658179915227`
+- Email preprocessing: 512-token `subject_head_tail`, subject budget 96,
+  subject tail fraction 0.25, body tail fraction 0.35, no body cleaning
+- URL model: BantAI RF Grouped v1.0.0, `bantai_lexical_v1`, 52 features
+- URL threshold: `0.547`
+- Fail loudly if the saved RF threshold, feature schema, labels, or artifact hash differs.
+- V4-B is deprecated rollback/audit-only and must never be an automatic fallback.
+- Keep `BANTAI_URL_MODEL_ENFORCEMENT_ENABLED=false` until external, future-time,
+  and Philippine-specific validation permits promotion.
 
 ## Cloud review
 
