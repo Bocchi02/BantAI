@@ -64,6 +64,9 @@ services:
       BANTAI_DETECTOR_URL: http://detector:8000
       BANTAI_INTERNAL_API_KEY: bantai-local-internal-service-key-2026
       BANTAI_REMOTE_RUNTIME_REQUIRED: "false"
+      # Restore the public sign-up flow for the loopback development stack.
+      # Production docker-compose.yml keeps registration disabled.
+      BANTAI_PUBLIC_REGISTRATION_ENABLED: "true"
       BANTAI_WEB_ORIGIN: http://localhost:3000
       BANTAI_COOKIE_SECURE: "false"
       BANTAI_CREATE_SCHEMA: "false"
