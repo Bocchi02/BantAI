@@ -13,8 +13,8 @@
  *       -> this content script
  *       -> chrome.runtime.sendMessage()
  *       -> unified BantAI service worker
- *       -> existing local FastAPI NLP backend
- *       -> frozen BantAI XLM-RoBERTa V1
+ *       -> authenticated BantAI server API
+ *       -> frozen BantAI XLM-RoBERTa email model
  *
  * IMPORTANT:
  *   - Email content only.
@@ -4995,10 +4995,7 @@
           "Extension context invalidated"
         )
       ) {
-        console.debug(
-          "[BantAI Yahoo] sendMessage failed:",
-          message
-        );
+        console.debug("[BantAI Yahoo] SEND_MESSAGE_FAILED");
       }
     }
   }
@@ -5062,19 +5059,7 @@
       if (
         result.subject
       ) {
-        console.info(
-          "[BantAI Yahoo] SUBJECT FOUND AFTER RETRY",
-          {
-            delay_ms:
-              delay,
-            subject:
-              result.subject,
-            subject_strategy:
-              result.diagnostics
-                ?.subject_strategy ||
-              null
-          }
-        );
+        console.info("[BantAI Yahoo] SUBJECT_FOUND_AFTER_RETRY");
 
         break;
       }
@@ -5107,7 +5092,8 @@
         return result;
       }
 
-      const fingerprint =
+      const authenticationFingerprint = await globalThis.BantAISenderAuthentication?.attach(result) || "{}";
+      const fingerprint = authenticationFingerprint +
         fingerprintEmail(
           result
         );
@@ -5123,26 +5109,7 @@
       lastFingerprint =
         fingerprint;
 
-      console.info(
-        "[BantAI Yahoo] EMAIL_EXTRACTED",
-        {
-          subject:
-            result.subject,
-          sender:
-            result.sender_email ||
-            result.sender_name ||
-            null,
-          body_char_count:
-            result.diagnostics
-              .body_char_count,
-          sender_strategy:
-            result.diagnostics
-              .sender_strategy,
-          subject_strategy:
-            result.diagnostics
-              .subject_strategy
-        }
-      );
+      console.info("[BantAI Yahoo] EMAIL_EXTRACTED");
 
       await sendExtractedEmail(
         result
@@ -5288,10 +5255,7 @@
           )
           .catch(
             (error) => {
-              console.error(
-                "[BantAI Yahoo] REQUEST EXTRACTION FAILED",
-                error
-              );
+              console.error("[BantAI Yahoo] REQUEST_EXTRACTION_FAILED");
 
               sendResponse(
                 extractOpenedEmail()
@@ -5313,16 +5277,7 @@
       scanAndNotify
     });
 
-  console.info(
-    "[BantAI Yahoo] Extractor loaded:",
-    EXTRACTOR_VERSION,
-    {
-      host:
-        location.hostname,
-      url:
-        location.href
-    }
-  );
+  console.info("[BantAI Yahoo] EXTRACTOR_LOADED");
 
   scheduleScanBurst();
 })();

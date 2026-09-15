@@ -14,6 +14,10 @@ from .config import settings
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 
+# A stable, synthetic Argon2id hash keeps the unknown-account login path at the
+# same password-verification cost without tying it to any real account.
+DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=3,p=2$1VSwAdLYLNzz5auxsmy+uw$Z8VHnAmM3aXSfgQbIZWXTw2t6Tt5ildogbe42xeJDGA"
+
 
 def hash_password(password: str) -> str:
     return password_hasher.hash(password)

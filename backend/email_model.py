@@ -13,6 +13,9 @@ import torch
 
 MODEL_VERSION = "full_taglish_xlmr_512_headtail_seed13"
 MODEL_NAME = "BantAI calibrated XLM-RoBERTa Email Model"
+MODEL_MANIFEST_FILENAME = "EMAIL_MODEL_MANIFEST.json"
+EXPECTED_TEMPERATURE = 2.2198894341340183
+EXPECTED_SUSPICIOUS_THRESHOLD = 0.6923658179915227
 EXPECTED_CONFIG_SHA256 = (
     "ab2444e5d1e75a24e5b900443a027f38b94ddb993fa41da8f80b720bde4c59c9"
 )
@@ -63,6 +66,39 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def verify_deployment_manifest(model_dir: Path) -> None:
+    """Reject an incomplete, substituted, or changed frozen model artifact set."""
+
+    manifest_path = model_dir / MODEL_MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        raise RuntimeError(f"Missing email model manifest: {manifest_path}")
+    manifest = _read_json(manifest_path)
+    if manifest.get("model_version") != MODEL_VERSION:
+        raise RuntimeError("Email model manifest does not match the deployed model version.")
+    files = manifest.get("files")
+    if not isinstance(files, Mapping) or not files:
+        raise RuntimeError("Email model manifest must declare artifact hashes.")
+
+    for filename, expected in files.items():
+        if not isinstance(filename, str) or Path(filename).name != filename:
+            raise RuntimeError("Email model manifest contains an unsafe artifact path.")
+        if not isinstance(expected, Mapping):
+            raise RuntimeError(f"Email model manifest entry is invalid: {filename}")
+        expected_hash = str(expected.get("sha256", "")).lower()
+        expected_size = expected.get("size_bytes")
+        if len(expected_hash) != 64 or any(c not in "0123456789abcdef" for c in expected_hash):
+            raise RuntimeError(f"Email model manifest hash is invalid: {filename}")
+        if not isinstance(expected_size, int) or expected_size <= 0:
+            raise RuntimeError(f"Email model manifest size is invalid: {filename}")
+        artifact = model_dir / filename
+        if not artifact.is_file():
+            raise RuntimeError(f"Missing email model artifact declared by manifest: {filename}")
+        if artifact.stat().st_size != expected_size:
+            raise RuntimeError(f"Email model artifact size mismatch: {filename}")
+        if _sha256_file(artifact) != expected_hash:
+            raise RuntimeError(f"Email model artifact SHA-256 mismatch: {filename}")
+
+
 def _normalized_id2label(config: Mapping[str, Any]) -> dict[int, str]:
     raw = config.get("id2label")
     if not isinstance(raw, Mapping):
@@ -76,6 +112,7 @@ def _normalized_id2label(config: Mapping[str, Any]) -> dict[int, str]:
 def load_deployment_contract(model_dir: Path) -> CalibrationContract:
     """Validate model identity, label mapping, and the calibration artifact."""
 
+    verify_deployment_manifest(model_dir)
     config_path = model_dir / "config.json"
     calibration_path = model_dir / "calibration.json"
     if not config_path.is_file():
@@ -124,10 +161,16 @@ def load_deployment_contract(model_dir: Path) -> CalibrationContract:
         raise RuntimeError("The calibrated positive email class must be class ID 1.")
     if probability_definition != "softmax(logits / temperature)[positive_class_id]":
         raise RuntimeError("Unexpected calibrated probability definition.")
-    if temperature <= 0.0:
-        raise RuntimeError("Email calibration temperature must be positive.")
-    if not 0.0 <= threshold <= 1.0:
-        raise RuntimeError("Email suspicious threshold must be between 0 and 1.")
+    if temperature != EXPECTED_TEMPERATURE:
+        raise RuntimeError(
+            "Email calibration temperature mismatch. "
+            f"Expected {EXPECTED_TEMPERATURE}, found {temperature}."
+        )
+    if threshold != EXPECTED_SUSPICIOUS_THRESHOLD:
+        raise RuntimeError(
+            "Email suspicious threshold mismatch. "
+            f"Expected {EXPECTED_SUSPICIOUS_THRESHOLD}, found {threshold}."
+        )
 
     return CalibrationContract(
         model_run_id=model_run_id,

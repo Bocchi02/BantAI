@@ -1,3 +1,6 @@
+<# LEGACY DEVELOPMENT ONLY: enables the retired local Companion workflow.
+   This script is not part of production or end-user setup. #>
+
 param(
     [switch]$DoNotStart
 )

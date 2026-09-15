@@ -1,49 +1,84 @@
 services:
+  gateway:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      BANTAI_API_DOMAIN: ${BANTAI_API_DOMAIN:?Set the public BantAI API domain}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - bantai_caddy_data:/data
+      - bantai_caddy_config:/config
+    depends_on:
+      platform:
+        condition: service_healthy
+    networks:
+      - edge
+
   mysql:
     image: mysql:8.4
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: bantai
-      MYSQL_USER: bantai
-      MYSQL_PASSWORD: bantai-development
-      MYSQL_ROOT_PASSWORD: bantai-root-development
+      MYSQL_ROOT_PASSWORD: ${BANTAI_DB_ROOT_PASSWORD:?Set BANTAI_DB_ROOT_PASSWORD}
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
-    # MySQL is intentionally reachable only by the platform container.
-    # The web interface and Windows companion communicate with the API on 8080.
     volumes:
       - bantai_mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ubantai", "-pbantai-development"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s
       timeout: 5s
       retries: 20
+    networks:
+      - data
 
-  platform:
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: shared_platform/Dockerfile
-    env_file:
-      - path: ./shared_platform/.env
-        required: false
+  db-roles:
+    image: mysql:8.4
+    restart: "no"
     environment:
-      BANTAI_DATABASE_URL: mysql+pymysql://bantai:bantai-development@mysql:3306/bantai
-    ports:
-      - "127.0.0.1:8080:8080"
+      MYSQL_ROOT_PASSWORD: ${BANTAI_DB_ROOT_PASSWORD:?Set BANTAI_DB_ROOT_PASSWORD}
+      BANTAI_DB_RUNTIME_PASSWORD: ${BANTAI_DB_RUNTIME_PASSWORD:?Set BANTAI_DB_RUNTIME_PASSWORD}
+      BANTAI_DB_MIGRATION_PASSWORD: ${BANTAI_DB_MIGRATION_PASSWORD:?Set BANTAI_DB_MIGRATION_PASSWORD}
+    volumes:
+      - ./deploy/mysql/create-roles.sh:/usr/local/bin/create-roles.sh:ro
+    command: ["sh", "/usr/local/bin/create-roles.sh"]
     depends_on:
       mysql:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5)"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
+    networks:
+      - data
+
+  migration:
+    image: bantai-platform:1.1.0
+    build:
+      context: .
+      dockerfile: shared_platform/Dockerfile
+    restart: "no"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      BANTAI_DATABASE_URL: mysql+pymysql://bantai_migration:${BANTAI_DB_MIGRATION_PASSWORD:?Set BANTAI_DB_MIGRATION_PASSWORD}@mysql:3306/bantai
+      BANTAI_CREATE_SCHEMA: "false"
+      BANTAI_ENCRYPTION_KEY: ${BANTAI_ENCRYPTION_KEY:?Set BANTAI_ENCRYPTION_KEY}
+    command: ["python", "-m", "alembic", "-c", "shared_platform/alembic.ini", "upgrade", "head"]
+    depends_on:
+      db-roles:
+        condition: service_completed_successfully
+    networks:
+      - data
 
   detector:
-    image: bantai-detector:latest
+    image: bantai-detector:1.1.0
     restart: unless-stopped
     init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -51,28 +86,98 @@ services:
       BANTAI_MODEL_DIR: /app/models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13
       BANTAI_RF_MODEL_PATH: /app/models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib
       BANTAI_URL_MODEL_ENFORCEMENT_ENABLED: "false"
-      BANTAI_PLATFORM_API: http://platform:8080
-      BANTAI_COMPANION_STATE_PATH: /data/companion.dat
-      BANTAI_WEB_ORIGIN: http://localhost:3000
-      BANTAI_WEB_DASHBOARD: http://localhost:3000
+      BANTAI_REMOTE_SERVER_MODE: "true"
+      BANTAI_INTERNAL_API_KEY: ${BANTAI_INTERNAL_API_KEY:?Set BANTAI_INTERNAL_API_KEY}
+      BANTAI_LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set the backend-only Gemini key}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-gemini-3.5-flash-lite}
+      BANTAI_LLM_TIMEOUT_SECONDS: ${BANTAI_LLM_TIMEOUT_SECONDS:-12}
+      BANTAI_LLM_MAX_RETRIES: ${BANTAI_LLM_MAX_RETRIES:-0}
       TRANSFORMERS_OFFLINE: "1"
       HF_HUB_OFFLINE: "1"
       TOKENIZERS_PARALLELISM: "false"
-    ports:
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - bantai_companion:/data
-    depends_on:
-      platform:
-        condition: service_healthy
+    expose:
+      - "8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/ready',headers={'X-BantAI-Internal-Key':os.environ['BANTAI_INTERNAL_API_KEY']}); urllib.request.urlopen(r,timeout=5)"]
       interval: 15s
-      timeout: 5s
+      timeout: 8s
       retries: 20
-      start_period: 90s
+      start_period: 120s
     stop_grace_period: 30s
+    networks:
+      - inference
+      - egress
+
+  platform:
+    image: bantai-platform:1.1.0
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    build:
+      context: .
+      dockerfile: shared_platform/Dockerfile
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      BANTAI_DATABASE_URL: mysql+pymysql://bantai_runtime:${BANTAI_DB_RUNTIME_PASSWORD:?Set BANTAI_DB_RUNTIME_PASSWORD}@mysql:3306/bantai
+      BANTAI_DETECTOR_URL: http://detector:8000
+      BANTAI_INTERNAL_API_KEY: ${BANTAI_INTERNAL_API_KEY:?Set BANTAI_INTERNAL_API_KEY}
+      BANTAI_REMOTE_RUNTIME_REQUIRED: "true"
+      BANTAI_PUBLIC_REGISTRATION_ENABLED: "false"
+      BANTAI_WEB_ORIGIN: ${BANTAI_WEB_ORIGIN:?Set the HTTPS dashboard origin}
+      BANTAI_EXTENSION_ORIGIN: ${BANTAI_EXTENSION_ORIGIN:?Set the released extension origin}
+      BANTAI_COOKIE_SECURE: "true"
+      BANTAI_CREATE_SCHEMA: "false"
+      BANTAI_ENCRYPTION_KEY: ${BANTAI_ENCRYPTION_KEY:?Set the 32-byte base64 encryption key}
+      BANTAI_ADMIN_EMAIL: ${BANTAI_ADMIN_EMAIL:-}
+      BANTAI_ADMIN_PASSWORD: ${BANTAI_ADMIN_PASSWORD:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set the backend-only Gemini key}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.6-flash}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-gemini-3.5-flash-lite}
+      BANTAI_LLM_TIMEOUT_SECONDS: ${BANTAI_LLM_TIMEOUT_SECONDS:-12}
+      BANTAI_DETECTOR_READINESS_TIMEOUT_SECONDS: ${BANTAI_DETECTOR_READINESS_TIMEOUT_SECONDS:-5}
+      BANTAI_DETECTOR_INFERENCE_TIMEOUT_SECONDS: ${BANTAI_DETECTOR_INFERENCE_TIMEOUT_SECONDS:-45}
+      BANTAI_MAX_REQUEST_BYTES: "262144"
+      BANTAI_DETECTION_RATE_LIMIT_PER_5_MINUTES: ${BANTAI_DETECTION_RATE_LIMIT_PER_5_MINUTES:-120}
+      BANTAI_TRUSTED_PROXY_CIDRS: ${BANTAI_TRUSTED_PROXY_CIDRS:?Set the private Caddy source CIDR or address}
+      BANTAI_TRANSIENT_CONTEXT_TTL_SECONDS: "600"
+      BANTAI_TRANSIENT_CONTEXT_MAX_ENTRIES: "512"
+    expose:
+      - "8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      detector:
+        condition: service_healthy
+      migration:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready',timeout=8)"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    networks:
+      - edge
+      - inference
+      - data
 
 volumes:
   bantai_mysql:
-  bantai_companion:
+  bantai_caddy_data:
+  bantai_caddy_config:
+
+networks:
+  edge:
+  inference:
+    internal: true
+  data:
+    internal: true
+  egress:

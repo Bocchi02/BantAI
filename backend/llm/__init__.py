@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 import threading
 import time
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
@@ -11,6 +13,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from .base import LLMProvider, LLMProviderError
+from .authentication import minimize_authentication
 from .cache import (
     TTLCache,
     normalized_email_fingerprint,
@@ -38,7 +41,7 @@ def off_review(provider_name: str = "gemini") -> dict[str, Any]:
         "confidence": None,
         "indicators": [],
         "reasoning_summary": "Cloud AI Review is off. Local BantAI checks still run.",
-        "recommended_action": "Continue using the local detector guidance.",
+        "recommended_action": "Continue using the server-model guidance.",
     }
 
 
@@ -105,7 +108,7 @@ class LLMReviewCoordinator:
             "confidence": None,
             "indicators": [],
             "reasoning_summary": "Cloud AI Review could not be completed. Local BantAI checks are still available.",
-            "recommended_action": "Use the local detector guidance and verify unexpected requests independently.",
+            "recommended_action": "Use the server-model guidance and verify unexpected requests independently.",
             "failure_reason": failure_reason,
             **self._provider_review_metadata(),
         }
@@ -124,16 +127,19 @@ class LLMReviewCoordinator:
         email_model: dict[str, Any],
         url_model: dict[str, Any],
         local_indicators: dict[str, Any],
+        sender_authentication: dict | None = None,
     ) -> dict[str, Any]:
         if self.provider is None or not self.provider.configured or not self.provider.available:
             return self._unavailable()
 
+        authentication = minimize_authentication(sender_authentication, provider)
         fingerprint = normalized_email_fingerprint(
             provider=provider,
             sender=sender,
             subject=subject,
             body=body,
         )
+        fingerprint = hashlib.sha256((fingerprint + json.dumps(authentication, sort_keys=True)).encode()).hexdigest()
         cached = self.cache.get(fingerprint)
         if cached is not None:
             return {**cached, "cached": True}
@@ -149,6 +155,7 @@ class LLMReviewCoordinator:
                 url_model=url_model,
                 local_indicators=local_indicators,
                 maximum_email_chars=self.maximum_email_chars,
+                sender_authentication=authentication,
             )
             cloud_body = str(payload.get("email_body") or "")
             cloud_body_truncated = "[...TRUNCATED FOR DATA MINIMIZATION...]" in cloud_body
@@ -174,6 +181,7 @@ class LLMReviewCoordinator:
             **self._provider_review_metadata(),
             **review.model_dump(),
             "body_context_sent_to_provider": True,
+            "sender_authentication_sent_to_provider": bool(authentication),
             "sender_context_sent_to_provider": bool(
                 payload.get("sender_display_name") or payload.get("sender_domain")
             ),

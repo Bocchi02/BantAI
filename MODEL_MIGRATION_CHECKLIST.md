@@ -1,4 +1,8 @@
-# Local model migration checklist
+# Legacy local-development model checklist
+
+> Legacy development tooling only. This is not the production or end-user
+> setup. Production inference runs behind the authenticated HTTPS BantAI API;
+> users install only the browser extension and connect it to their account.
 
 - [ ] Extract the Codex-ready project.
 - [ ] Run `scripts\models\MIGRATE_EXISTING_MODELS.ps1`.

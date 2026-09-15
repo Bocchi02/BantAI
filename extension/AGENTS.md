@@ -6,6 +6,11 @@ These instructions apply under `extension/`.
 
 - Chromium Manifest V3; minimum Chrome/Chromium version 127.
 - Use a service worker and standard browser JavaScript without a build step.
+- Send inference only through the configured public HTTPS BantAI API. Never
+  silently fall back to localhost or contact the private detector directly.
+- Keep the revocable device credential in extension storage restricted to
+  trusted extension contexts. Content scripts must never receive it or make API
+  requests.
 - Read the URL only from Chrome Tabs API data such as `tab.url`.
 - Never choose URLs from anchors, email content, redirects, HTML, or the DOM.
 - Run email extraction only on Gmail, Outlook, and Yahoo Mail.
@@ -28,7 +33,7 @@ These instructions apply under `extension/`.
 - Keep scores and thresholds under `More details`.
 - Automatic email-result popups last approximately five seconds.
 - Manual toolbar popups must not be forced to auto-close.
-- Open an automatic popup only after local and enabled cloud assessment outputs
+- Open an automatic popup only after server-model and enabled cloud assessment outputs
   are complete; never reopen it for focus changes or the same result fingerprint.
 - Cloud AI Review is always enabled and has no toggle or stored preference.
   Never store an API key or raw email body.

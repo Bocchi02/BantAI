@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from urllib.parse import urlsplit
 
 import torch
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from transformers import (
@@ -68,12 +69,20 @@ URL_MODEL_ENFORCEMENT_ENABLED = os.getenv(
     "BANTAI_URL_MODEL_ENFORCEMENT_ENABLED",
     "false",
 ).strip().lower() in {"1", "true", "yes", "on"}
+REMOTE_SERVER_MODE = os.getenv(
+    "BANTAI_REMOTE_SERVER_MODE",
+    "false",
+).strip().lower() in {"1", "true", "yes", "on"}
+INTERNAL_API_KEY = os.getenv("BANTAI_INTERNAL_API_KEY", "").strip()
 
 SUPPORTED_EMAIL_PROVIDERS = {
     "gmail",
     "outlook",
     "yahoo",
 }
+MAX_REQUEST_BYTES = int(os.getenv("BANTAI_MAX_REQUEST_BYTES", "131072"))
+if MAX_REQUEST_BYTES < 1024:
+    raise RuntimeError("BANTAI_MAX_REQUEST_BYTES must be at least 1024.")
 
 
 class Runtime:
@@ -100,6 +109,8 @@ local_email_analysis_cache: TTLCache[dict] = TTLCache(
 
 
 class UrlAnalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
     url: str = Field(
         min_length=1,
         max_length=8192,
@@ -133,11 +144,14 @@ class UrlAnalysisResponse(BaseModel):
 
 
 class EmailAnalysisRequest(BaseModel):
-    provider: str
-    sender: Optional[str] = None
-    subject: str = ""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    provider: Literal["gmail", "outlook", "yahoo"]
+    sender: Optional[str] = Field(default=None, max_length=320)
+    subject: str = Field(default="", max_length=500)
     body: str = Field(
         min_length=1,
+        max_length=50_000,
     )
 
 
@@ -166,6 +180,7 @@ class EmailAnalysisResponse(BaseModel):
 
 
 class HybridEmailAnalysisRequest(EmailAnalysisRequest):
+    sender_authentication: dict[str, str] = Field(default_factory=dict, max_length=10)
     current_url: str = Field(
         min_length=1,
         max_length=8192,
@@ -177,7 +192,7 @@ class HybridEmailAnalysisResponse(BaseModel):
     analysis_id: str
     version: str
     email_model: EmailAnalysisResponse
-    url_model: UrlAnalysisResponse
+    url_model: dict
     local_indicators: dict
     llm_review: dict
     fusion: dict
@@ -201,7 +216,21 @@ class CompanionActivityRequest(BaseModel):
     subject: Optional[str] = Field(default=None, max_length=500)
     outcome: str
     cloud_status: str
+    cloud_failure_category: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        pattern="^[A-Z][A-Z0-9_]{0,63}$",
+    )
+    duration_ms: Optional[int] = Field(default=None, ge=0, le=120_000)
     occurred_at: str = Field(min_length=20, max_length=40)
+
+    @model_validator(mode="after")
+    def normalize_cloud_failure_category(self) -> "CompanionActivityRequest":
+        if self.cloud_status.upper() == "UNAVAILABLE":
+            self.cloud_failure_category = self.cloud_failure_category or "UNSPECIFIED"
+        elif self.cloud_failure_category is not None:
+            raise ValueError("Only unavailable cloud reviews may include a failure category.")
+        return self
 
 
 class CompanionDetailContextRequest(BaseModel):
@@ -224,7 +253,7 @@ class CompanionDetailContextRequest(BaseModel):
     def require_matching_detail_content(self) -> "CompanionDetailContextRequest":
         if self.event_type == "URL":
             if not self.url or self.provider or self.sender is not None or self.subject is not None or self.body is not None:
-                raise ValueError("Website details require only the full URL.")
+                raise ValueError("Website details require only the current website address.")
         elif self.url is not None or not self.provider or not self.body or not self.body.strip():
             raise ValueError("Email details require provider and email body content without a URL.")
         return self
@@ -301,11 +330,13 @@ class CompanionTrainingSampleRequest(BaseModel):
 
     client_event_id: str = Field(min_length=8, max_length=128)
     event_type: Literal["URL", "EMAIL"]
-    url: Optional[str] = Field(default=None, max_length=2048)
+    # The local boundary accepts the detector's full input so the Companion can
+    # return an explicit OVERSIZED diagnostic without forwarding it.
+    url: Optional[str] = Field(default=None, max_length=8192)
     provider: Optional[Literal["gmail", "outlook", "yahoo"]] = None
     sender: Optional[str] = Field(default=None, max_length=320)
     subject: Optional[str] = Field(default=None, max_length=500)
-    body: Optional[str] = Field(default=None, max_length=10_000)
+    body: Optional[str] = Field(default=None, max_length=50_000)
     outcome: Literal[
         "NO_STRONG_WARNING_SIGNS",
         "NEEDS_CAUTION",
@@ -323,8 +354,17 @@ class CompanionTrainingSampleRequest(BaseModel):
         return self
 
 
-def require_detection_access() -> None:
-    """Disable all model inference until this device is paired and authenticated."""
+def require_detection_access(
+    internal_key: str | None = Header(default=None, alias="X-BantAI-Internal-Key"),
+) -> None:
+    """Allow only the private gateway in remote mode; retain legacy dev pairing."""
+
+    if REMOTE_SERVER_MODE:
+        if len(INTERNAL_API_KEY) < 32:
+            raise HTTPException(status_code=503, detail="Private detector authentication is not configured.")
+        if not internal_key or not secrets.compare_digest(internal_key, INTERNAL_API_KEY):
+            raise HTTPException(status_code=401, detail="Private gateway authentication required.")
+        return
 
     access = companion_manager.access_status()
     if not access["detection_enabled"]:
@@ -506,6 +546,10 @@ def validate_address_bar_url(
 async def lifespan(
     app: FastAPI,
 ):
+    if REMOTE_SERVER_MODE and len(INTERNAL_API_KEY) < 32:
+        raise RuntimeError(
+            "BANTAI_INTERNAL_API_KEY must contain at least 32 characters in remote server mode."
+        )
     load_email_model()
     load_url_model()
     yield
@@ -515,13 +559,13 @@ app = FastAPI(
     title="BantAI Hybrid AI Decision-Support API",
     version=VERSION,
     description=(
-        "Independent frozen detectors, explainable local scam indicators, "
+        "Private frozen server detectors, explainable scam indicators, "
         "privacy-minimized cloud review, and deterministic email fusion."
     ),
     lifespan=lifespan,
 )
 
-configured_web_origins = {
+configured_web_origins = set() if REMOTE_SERVER_MODE else {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 }
@@ -534,8 +578,80 @@ app.add_middleware(
     allow_origins=sorted(configured_web_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Accept", "Content-Type"],
+    allow_headers=["Accept", "Content-Type", "X-BantAI-Internal-Key"],
 )
+
+
+class RequestSizeLimitMiddleware:
+    """Bound request buffering before JSON parsing or detector inference."""
+
+    def __init__(self, app, maximum_bytes: int):
+        self.app = app
+        self.maximum_bytes = maximum_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        try:
+            declared_length = int(headers.get(b"content-length", b"0"))
+        except ValueError:
+            declared_length = self.maximum_bytes + 1
+        if declared_length > self.maximum_bytes:
+            return await Response(
+                content='{"detail":"Request is too large."}',
+                status_code=413,
+                media_type="application/json",
+            )(scope, receive, send)
+
+        messages = []
+        received_bytes = 0
+        more_body = True
+        while more_body:
+            message = await receive()
+            messages.append(message)
+            if message.get("type") != "http.request":
+                break
+            received_bytes += len(message.get("body", b""))
+            if received_bytes > self.maximum_bytes:
+                return await Response(
+                    content='{"detail":"Request is too large."}',
+                    status_code=413,
+                    media_type="application/json",
+                )(scope, receive, send)
+            more_body = bool(message.get("more_body", False))
+
+        index = 0
+
+        async def replay_receive():
+            nonlocal index
+            if index < len(messages):
+                message = messages[index]
+                index += 1
+                return message
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        return await self.app(scope, replay_receive, send)
+
+
+app.add_middleware(RequestSizeLimitMiddleware, maximum_bytes=MAX_REQUEST_BYTES)
+
+
+@app.get("/live")
+def live() -> dict:
+    return {"status": "ok", "service": "bantai-private-detector", "version": VERSION}
+
+
+@app.get("/ready", dependencies=[Depends(require_detection_access)])
+def ready() -> dict:
+    if runtime.email_model is None or runtime.url_model is None:
+        raise HTTPException(status_code=503, detail="Server models are still loading.")
+    return {
+        "status": "ready",
+        "email_model": EMAIL_MODEL_VERSION,
+        "url_model": URL_MODEL_VERSION,
+        "cloud_ai": llm_coordinator.configuration(),
+    }
 
 
 @app.get("/health")
@@ -703,6 +819,16 @@ def connection_status() -> dict:
                 )
             ),
         },
+        "operations": {
+            "activity_sync_backlog": companion.get("queued_events", 0),
+            "last_successful_activity_sync_at": companion.get("last_activity_sync_at"),
+            "automatic_collection": companion.get("automatic_collection") or {
+                "last_outcome": "NOT_ATTEMPTED",
+                "last_attempt_at": None,
+                "last_accepted_at": None,
+                "consent_cache_seconds_remaining": 0,
+            },
+        },
     }
 
 
@@ -734,7 +860,7 @@ def submit_companion_activity(request: CompanionActivityRequest) -> dict:
     }
     if request.outcome.upper() not in allowed_outcomes:
         raise HTTPException(status_code=400, detail="Activity has an invalid final outcome.")
-    if request.cloud_status.upper() not in {"COMPLETE", "UNAVAILABLE"}:
+    if request.cloud_status.upper() not in {"COMPLETE", "SKIPPED", "UNAVAILABLE"}:
         raise HTTPException(status_code=400, detail="Activity has an invalid cloud status.")
 
     event = request.model_dump()
@@ -787,7 +913,11 @@ def remember_companion_detail_context(request: CompanionDetailContextRequest) ->
             raise HTTPException(status_code=400, detail="Website details contain an invalid address.") from exc
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise HTTPException(status_code=400, detail="Website details contain an invalid address.")
-    return companion_manager.remember_detail_context(request.model_dump(exclude_none=True))
+        context = request.model_dump(exclude_none=True)
+        context["url"] = f"{parsed.scheme.lower()}://{parsed.hostname.lower()}" + (f":{parsed.port}" if parsed.port else "")
+    else:
+        context = request.model_dump(exclude_none=True)
+    return companion_manager.remember_detail_context(context)
 
 
 @app.post(
@@ -795,7 +925,7 @@ def remember_companion_detail_context(request: CompanionDetailContextRequest) ->
     dependencies=[Depends(require_detection_access)],
 )
 def explain_companion_activity(request: CompanionActivityExplanationRequest) -> dict:
-    """Request an on-demand explanation using memory-only full context."""
+    """Request an explanation using memory-only email context or a URL origin."""
 
     try:
         return companion_manager.explain_activity(request.activity_id, request.client_event_id)
@@ -1205,22 +1335,34 @@ def analyze_hybrid_email(
         local_indicators = cached_local["local_indicators"]
 
     # The RF receives the exact current address-bar URL supplied as tab.url.
-    url_model = analyze_url(
-        UrlAnalysisRequest(url=request.current_url)
-    )
+    # A URL-module failure must not discard the completed local email evidence.
+    try:
+        url_model = analyze_url(
+            UrlAnalysisRequest(url=request.current_url, cloud_ai_review=request.cloud_ai_review)
+        ).model_dump()
+    except Exception:
+        url_model = {
+            "state": "UNAVAILABLE",
+            "signal": "UNAVAILABLE",
+            "final_result": None,
+            "current_url": request.current_url,
+            "hostname": "",
+            "message": "The current website address could not be checked. The email result remains available.",
+            "failure_reason": "URL_ANALYSIS_UNAVAILABLE",
+        }
 
     if (
         request.cloud_ai_review
-        and email_model.signal == "SUSPICIOUS"
     ):
         llm_review = llm_coordinator.review_email(
+            sender_authentication=request.sender_authentication,
             provider=provider,
             sender=request.sender,
             subject=request.subject,
             body=request.body,
             current_url=request.current_url,
             email_model=email_model.model_dump(),
-            url_model=url_model.model_dump(),
+            url_model=url_model,
             local_indicators=local_indicators,
         )
     else:
@@ -1229,10 +1371,7 @@ def analyze_hybrid_email(
         llm_review["enabled"] = False
         llm_review["status"] = "OFF"
         llm_review["reasoning_summary"] = (
-            "Cloud Email Review runs automatically after this local email warning "
-            "when requested by the extension."
-            if email_model.signal == "SUSPICIOUS"
-            else "Cloud Email Review was not needed because the local email model did not warn."
+            "Cloud Email Review is awaiting the extension's automatic request."
         )
 
     fusion = fuse_email_signals(
@@ -1242,19 +1381,18 @@ def analyze_hybrid_email(
     )
 
     analysis_id = str(uuid.uuid4())
-    # The detector already has the exact message that produced this result.
-    # Keep its explanation context in Companion RAM under the same ID before
-    # returning, so dashboard details do not depend on a second extension
-    # request succeeding. Companion never writes this context to disk.
-    companion_manager.remember_detail_context({
-        "client_event_id": analysis_id,
-        "event_type": "EMAIL",
-        "provider": provider,
-        "sender": str(request.sender or "")[:320],
-        "subject": str(request.subject or "")[:500],
-        "body": str(request.body or "")[:50_000],
-        "outcome": fusion["final_result"],
-    })
+    # In remote mode the authenticated public gateway owns bounded transient
+    # context. The private detector never persists or forwards the raw message.
+    if not REMOTE_SERVER_MODE:
+        companion_manager.remember_detail_context({
+            "client_event_id": analysis_id,
+            "event_type": "EMAIL",
+            "provider": provider,
+            "sender": str(request.sender or "")[:320],
+            "subject": str(request.subject or "")[:500],
+            "body": str(request.body or "")[:50_000],
+            "outcome": fusion["final_result"],
+        })
 
     return HybridEmailAnalysisResponse(
         analysis_id=analysis_id,

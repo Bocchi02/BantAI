@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+from .authentication import minimize_authentication
 
 
 DEFAULT_MAX_EMAIL_CHARS = 7000
@@ -63,18 +64,9 @@ def sender_parts(sender: str | None) -> tuple[str | None, str | None]:
 
 
 def minimize_current_url(value: str | None) -> str | None:
-    """Keep webmail origin/path context while dropping query, fragment, and userinfo."""
-    try:
-        parsed = urlsplit(value or "")
-    except ValueError:
-        return None
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
-        return None
-    host = parsed.hostname.lower()
-    if parsed.port:
-        host = f"{host}:{parsed.port}"
-    path = re.sub(r"/[A-Za-z0-9_-]{20,}", "/[ID_REDACTED]", parsed.path or "/")
-    return urlunsplit((parsed.scheme.lower(), host, path, "", ""))
+    """Keep only the website origin; cloud review never receives browsing paths."""
+
+    return minimize_url_to_origin(value)
 
 
 def minimize_url_to_origin(value: str | None) -> str | None:
@@ -125,6 +117,7 @@ def prepare_cloud_payload(
     url_model: dict[str, Any],
     local_indicators: dict[str, Any],
     maximum_email_chars: int = DEFAULT_MAX_EMAIL_CHARS,
+    sender_authentication: dict | None = None,
 ) -> dict[str, Any]:
     sender_display_name, sender_domain = sender_parts(sender)
     redacted_body = redact_text(body)
@@ -132,6 +125,7 @@ def prepare_cloud_payload(
         "provider": provider,
         "sender_display_name": sender_display_name,
         "sender_domain": sender_domain,
+        "sender_authentication": minimize_authentication(sender_authentication, provider),
         "subject": redact_text(subject),
         "email_body": truncate_preserving_ends(redacted_body, maximum_email_chars),
         "current_address_bar_url": minimize_current_url(current_url),

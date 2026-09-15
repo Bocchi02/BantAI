@@ -3,7 +3,8 @@
 ## Project identity
 
 BantAI v1.1.0 is a Chromium Manifest V3 hybrid AI decision-support browser
-extension with a local FastAPI backend. It combines five transparent parts:
+extension backed by the authenticated public BantAI API and a private
+server-side detector service. It combines five transparent parts:
 
 1. the frozen BantAI RF Grouped URL Model v1.0.0 in shadow/non-blocking mode;
 2. the calibrated BantAI XLM-RoBERTa email model;
@@ -12,7 +13,7 @@ extension with a local FastAPI backend. It combines five transparent parts:
 5. deterministic email decision fusion.
 
 The LLM is an additional contextual analysis layer. It never replaces the
-local models and cannot produce the final red email result by itself.
+frozen server models and cannot produce the final red email result by itself.
 
 ## Non-negotiable frozen settings
 
@@ -56,7 +57,7 @@ guarantee that the email or website is legitimate.
 - Keep current website and opened-email signals independent.
 - A SAFE webmail address-bar result must never lower an email warning.
 - Do not add an overall numeric risk score.
-- Opening a supported email triggers URL, local email, marker, cloud,
+- Opening a supported email triggers URL, server email model, marker, cloud,
   and deterministic fusion analysis.
 - The automatic result popup lasts approximately five seconds. A manually
   opened toolbar popup follows normal browser behavior and does not auto-close.
@@ -88,7 +89,7 @@ data containing personal information, `.env` files, credentials, model weights,
 RF `.joblib` files, or screenshots containing personal email content. Use only
 synthetic or sanitized examples in tests.
 
-## Local model storage
+## Server model source storage
 
 - `models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/`
 - `models/email_text_xlmr_v1/rollback_archive/checkpoint-15666/` (rollback only)
@@ -123,6 +124,7 @@ node --check extension\content\yahoo-extractor.js
 node --check extension\popup\popup.js
 ```
 
-Full backend inference requires the user's frozen local models. Do not fabricate
-or download replacements. Do not claim Chromium behavior was tested unless it
-was actually tested in Chrome or Edge.
+Full detector inference requires the frozen server deployment artifacts. End
+users never install these models. Do not fabricate or download replacements.
+Do not claim Chromium behavior was tested unless it was actually tested in
+Chrome or Edge.

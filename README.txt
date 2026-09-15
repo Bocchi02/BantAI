@@ -1,132 +1,194 @@
-BantAI v1.1.0 — Hybrid AI Decision-Support
+BantAI v1.1.0 — Remote Hybrid AI Decision-Support
 
-PURPOSE
--------
-BantAI combines independent local machine-learning signals, explainable scam
-indicators, privacy-minimized cloud analysis, and transparent deterministic
-rules. It assists users; it does not guarantee that an email or website is
-legitimate and does not let Gemini decide the final result by itself.
+OVERVIEW
+--------
+BantAI checks the exact active address-bar URL and visible opened-email content
+from Gmail, Outlook, or Yahoo through an authenticated HTTPS service. End users
+need the browser extension and a BantAI account. They do not need Python,
+Docker, local model files, a local FastAPI service, or BantAI Companion.
 
-CURRENT WEBSITE
----------------
-- Scans only the exact HTTP/HTTPS URL in the active tab's address bar (`tab.url`).
-- Runs when the URL changes, a page loads, tabs switch, the window regains focus,
-  or a supported email opens.
-- Uses hash-verified BantAI RF Grouped v1.0.0 with the exact 52-feature
-  `bantai_lexical_v1` extractor and calibrated threshold 0.547.
-- Runs the URL model in shadow/non-blocking mode by default. V4-B is retained
-  only for explicit rollback/audit and is never an automatic fallback.
-- Cloud URL Review automatically inspects only a minimized address origin after
-  the frozen RF warns. AI disagreement produces caution,
-  while a HIGH-confidence clean review without strong indicators may produce NO
-  STRONG WARNING SIGNS. It never checks page content, accounts, or messages.
-- Does not scan links, HTML, redirects, or TLS. Separately opted-in Cloud URL
-  Review runs only after a local RF warning and sends only scheme and hostname.
+The frozen server models remain unchanged:
 
-OPENED EMAIL
-------------
-- Enabled only for Gmail, Outlook, and Yahoo Mail.
-- Uses visible sender, subject, and current message body.
-- Runs `full_taglish_xlmr_512_headtail_seed13` with 512-token
-  subject-preserving head-tail preprocessing and temperature-calibrated output.
-- Treats `suspicious_probability` as the calibrated class-1 probability and
-  warns at `0.6923658179915227`.
-- Extracts explainable Philippine-context and social-engineering indicators.
-- Automatically requests a redacted contextual review after local analysis.
-- Applies deterministic Rules A-H. Two independent suspicious sources are
-  required for SUSPICIOUS SIGNS FOUND.
-- Keeps the current website result independent from email guidance.
+- Email: full_taglish_xlmr_512_headtail_seed13; temperature scaling
+  2.2198894341340183; suspicious threshold 0.6923658179915227; 512-token
+  subject_head_tail preprocessing with subject budget 96, subject tail 0.25,
+  body tail 0.35, and body cleaning disabled.
+- URL: BantAI RF Grouped v1.0.0; bantai_lexical_v1; 52 features; threshold
+  0.547; SHA-256
+  4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c.
+  Shadow/non-blocking mode remains on and enforcement remains off.
 
-SCAM INDICATOR TAXONOMY
------------------------
-The local engine extracts evidence, not probabilities. Content categories cover
-urgency, account-security scares, credential/OTP/MPIN/password/PIN/CVV requests,
-prizes, advance fees, investment promises, job/task offers, payments, emergencies,
-authority impersonation, action demands, threats, and delivery payments. Social-
-engineering context covers authority, fear, urgency, scarcity, reward, familiarity,
-emergencies, employment lures, advance-fee manipulation, verification pretexts,
-impersonation, romance/emotional manipulation, coercion, and commitment escalation.
-Tagalog, Filipino, Taglish, politeness, informal grammar, mistakes, emojis, all caps,
-and punctuation never increase severity by themselves.
+BantAI supports decisions. NO STRONG WARNING SIGNS means no strong warning sign
+was detected by the completed module; it is not a guarantee that a website or
+email is legitimate. Gemini is contextual evidence only and cannot create the
+final red email outcome by itself. Deterministic fusion still requires two
+independent suspicious sources for SUSPICIOUS SIGNS FOUND.
 
-CLOUD AI REVIEW
----------------
-Cloud AI Review is always enabled and has no toggle. BantAI sends a limited,
-cleaned version of the opened email to the configured AI service for additional
-scam analysis. It redacts reasonably detectable OTPs, phone numbers, email addresses,
-cards, and account identifiers, limits text size, validates structured output,
-and caches valid results in memory for a short TTL. Redaction is best-effort.
-Missing configuration, timeout, rate limit, network error, provider exception, or
-malformed output makes only Cloud AI Review UNAVAILABLE; local checks continue.
-Quota exhaustion is reported separately as QUOTA REACHED. URL reviews coalesce
-duplicate in-flight requests and temporarily pause new provider calls during the
-reported retry window, so one provider limit does not leave every tab waiting.
-When `gemini-3.6-flash` returns a quota error, the backend automatically retries
-that review with `gemini-3.5-flash-lite` and keeps Flash-Lite active until the
-backend restarts. Non-quota errors do not trigger model switching.
-
-Cloud URL Review is always enabled and has no toggle. It runs only after the
-BantAI RF Grouped URL model warns and sends only the URL origin
-(scheme and hostname), never the page path, query, fragment, HTML, messages, or
-account content. A HIGH-confidence clean result with no strong/critical cloud
-indicator may produce NO STRONG WARNING SIGNS; lower-confidence disagreement
-produces NEEDS CAUTION. Neither outcome guarantees that page content is safe.
-
-Automatic result popups wait until the relevant local and cloud assessments are
-both complete. They do not open for cloud CHECKING or UNAVAILABLE states,
-and the same result is not reopened by focus changes or repeated tab clicks.
-The toolbar popup remains available manually at any time.
-
-Opened-email results are presented as one final decision. The cloud assessment
-is not shown as a standalone email card; local model diagnostics remain under
-More details.
-
-Current-website results are also presented as one final decision. Cloud URL
-context is not shown as a separate row; RF diagnostics remain under More details.
-
-Copy `.env.example` to `backend\.env`. The backend automatically loads that file
-without overriding variables already set in the operating-system environment.
-At minimum set:
-
-  BANTAI_LLM_PROVIDER=gemini
-  GEMINI_API_KEY=<backend-only secret>
-  GEMINI_MODEL=gemini-3.6-flash
-  GEMINI_FALLBACK_MODEL=gemini-3.5-flash-lite
-
-Never put the key in the extension or commit a real .env file.
-
-INSTALL AND START
+PRIVACY AND SCOPE
 -----------------
-1. Install and start Docker Desktop.
-2. Place the frozen models at the documented project-relative paths.
-3. Start the complete local stack from the project root:
+The exact `tab.url` and supported opened-email content travel over HTTPS to the
+BantAI server for inference. Raw routine inputs remain transient: they are not
+written to application/access logs, activity records, or durable queues. URL
+activity stores only the normalized origin; email activity stores provider,
+sender, and subject metadata, never the routine body.
 
-   .\START_BANTAI.ps1
+Gemini receives only a minimized URL origin after an RF warning or bounded
+email context after best-effort redaction. Full URL feedback, encrypted email
+reports, and opted-in automatic samples remain separate explicit workflows.
+The extension never scans embedded links, HTML, page content, redirects, TLS,
+attachments, or unsupported mail providers.
 
-   The first detector image build includes the frozen runtime model artifacts
-   and may take several minutes. Later starts reuse the built image.
+SERVER DEPLOYMENT
+-----------------
+The production Compose stack contains:
 
-4. Verify both services:
+- `gateway`: public Caddy HTTPS endpoint on ports 80/443;
+- `platform`: authenticated public application API, private behind Caddy;
+- `detector`: private one-worker RF/XLM-R/indicator/fusion service;
+- `mysql`: private shared database.
 
-   http://127.0.0.1:8000/health  (RF/XLM-R detector Companion)
-   http://127.0.0.1:8080/health  (shared platform API)
+Only Caddy publishes ports. The detector and database live on separate internal
+networks reachable through the platform. The detector has a narrowly separated
+egress network for backend-only Gemini calls. Caddy and Uvicorn access logging
+are disabled for request inputs.
 
-5. Load the `extension` folder unpacked in Chrome/Edge 127 or newer and refresh
-   Gmail, Outlook, and Yahoo.
+Before building, place the exact frozen runtime artifacts at the documented
+`models/` paths and run:
 
-TEST
-----
-  python scripts\verify_project.py
-  python -m unittest discover -s tests -v
+  .\.venv\Scripts\python.exe scripts\verify_models.py
 
-Automated tests do not make a real Gemini request. Full detector inference needs
-the user's frozen local model files.
+The detector Dockerfile copies only calibration/config, tokenizer files, the
+two safetensors shards and index, the RF artifact, and its manifest. Offline
+Transformer variables prevent runtime downloads. `.dockerignore` excludes
+rollback models, training checkpoints, optimizer files, private datasets, and
+unrelated artifacts. Do not publish the model-containing detector image to a
+public registry.
 
-MODEL MIGRATION
----------------
-The dual-detector behavior remains the foundation. The active email detector is
-the calibrated `full_taglish_xlmr_512_headtail_seed13` release; its predecessor
-is retained locally for explicit rollback only. URL scope, supported email
-providers, and provider extractors remain unchanged. The active URL detector is
-BantAI RF Grouped v1.0.0; its V4-B predecessor is deprecated and available only
-for explicit rollback/audit.
+Copy `.env.example` to `.env` on the server and replace every placeholder. A
+real deployment requires:
+
+  BANTAI_API_DOMAIN
+  BANTAI_WEB_ORIGIN
+  BANTAI_EXTENSION_ORIGIN
+  BANTAI_DB_RUNTIME_PASSWORD
+  BANTAI_DB_MIGRATION_PASSWORD
+  BANTAI_DB_ROOT_PASSWORD
+  BANTAI_INTERNAL_API_KEY
+  BANTAI_ENCRYPTION_KEY
+  GEMINI_API_KEY
+
+The domain must resolve to the server and ports 80/443 must be reachable so
+Caddy can obtain and renew a trusted certificate. Then run:
+
+  docker compose config
+  docker compose build detector migration platform
+  docker compose up -d
+  docker compose ps
+  curl https://<BANTAI_API_DOMAIN>/live
+  curl https://<BANTAI_API_DOMAIN>/ready
+
+The separately hosted web interface must set `BANTAI_API_ORIGIN` to
+`https://<BANTAI_API_DOMAIN>` and keep `NEXT_PUBLIC_BANTAI_API_URL=/api/v1`.
+Its worker proxies that same-origin path to the API so session and CSRF cookies
+work without exposing backend credentials. Configure the platform's
+`BANTAI_WEB_ORIGIN` to the exact hosted dashboard origin. Set
+`BANTAI_TRUSTED_PROXY_CIDRS` to the private CIDR or address from which Caddy
+connects to the platform. This value is required because the rate limiter only
+trusts forwarded client identity from that configured proxy source; replace the
+documentation placeholder in `.env.example` with the deployment-specific
+private network and do not use a public client range.
+
+Production uses a short-lived migration service with the migration role before
+the long-running platform starts with the least-privilege runtime role. Migrations
+are supported online against the running MySQL database; offline
+`alembic upgrade --sql` generation is intentionally not supported because some
+compatibility migrations inspect the live schema before changing it. Restart the
+platform, detector, and gateway after updating. `/live` is process liveness;
+`/ready` checks the database and actual server model loading. Do not run multiple
+detector workers unless the host is intentionally sized for multiple complete
+XLM-R copies.
+
+EXTENSION RELEASE CONFIGURATION
+-------------------------------
+One release-time command configures both the extension API base and its narrow
+host/CSP policy:
+
+  .\.venv\Scripts\python.exe scripts\configure_remote_endpoint.py `
+    https://api.example.org/api/v1 --mode release
+  .\.venv\Scripts\python.exe scripts\verify_extension_release.py
+  .\.venv\Scripts\python.exe scripts\package_extension.py `
+    --endpoint https://api.example.org/api/v1 `
+    --output dist\bantai-extension-release.zip
+
+The packaging command stages a copy, regenerates release configuration, runs
+the fail-closed verifier, and only then writes the ZIP. The checked-in
+`.invalid` endpoint intentionally cannot reach a server. Replace it before
+packaging or loading the release extension. Do not use an HTTP URL or silently
+fall back to localhost. For local development, use explicit
+`--mode development --allow-http-loopback` with a localhost or 127.0.0.1
+endpoint. The endpoint may also be supplied through
+`BANTAI_PUBLIC_API_ORIGIN`. After release verification, load the generated
+`extension/` artifact in Chrome or Edge 127+ and reload already-open Gmail,
+Outlook, and Yahoo tabs.
+
+USER CONNECTION FLOW
+--------------------
+1. Sign in to the BantAI web dashboard.
+2. Open Paired Devices and generate a five-minute one-time code.
+3. Open the extension popup and enter the code.
+4. The service worker stores only the revocable device credential and restricts
+   Chrome storage access to trusted extension contexts.
+5. The dashboard reports Browser extension connected separately from Server
+   models ready. CORS and host permissions do not replace server authorization.
+6. Revoke the device from Paired Devices or disconnect it in the popup. Account
+   suspension and revocation reject subsequent requests.
+
+Content scripts only extract supported visible email content and message the
+trusted service worker. They never receive the device credential or contact the
+remote API.
+
+ACTIVITY, EXPLANATIONS, REPORTS, AND COLLECTION
+-----------------------------------------------
+The server records each completed detection idempotently. It retains only
+permitted origin/email metadata and accurate cloud COMPLETE, SKIPPED, or
+UNAVAILABLE state. A bounded ten-minute process-memory store reuses transient
+input for explanations. If context expires, is evicted, is lost on restart, or
+the request reaches another worker, the response clearly uses metadata-only
+fallback. No raw-content retry queue exists.
+
+Feedback is bound to the authenticated account/device and exact detection ID.
+Explicit report bodies remain encrypted and unavailable through administrator
+body APIs. For opted-in automatic contribution, the server checks current
+consent and makes the 10% decision at most once per detection. Selected
+prediction samples remain separate from human-approved labels. Opt-out stops
+collection and deletes that user's automatic samples.
+
+DEVELOPMENT AND TESTING
+-----------------------
+Legacy direct detector/Companion tooling remains for clearly marked development
+and rollback diagnostics only; it is not part of end-user setup or the default
+production request path.
+
+For an explicit loopback integration environment, use
+`docker compose -f docker-compose.local.yml up -d --build` and configure
+`web/.env.local` with `BANTAI_API_ORIGIN=http://127.0.0.1:8080` plus
+`BANTAI_ALLOW_HTTP_LOOPBACK=true`. This exception accepts loopback hosts only;
+it is never enabled by the production Compose stack.
+
+Run all checks from the project root:
+
+  .\.venv\Scripts\python.exe scripts\verify_models.py
+  .\.venv\Scripts\python.exe scripts\verify_project.py
+  .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+  .\.venv\Scripts\python.exe -m unittest discover -s shared_platform\tests -v
+  node --check extension\background\service-worker.js
+  node --check extension\content\gmail-extractor.js
+  node --check extension\content\outlook-extractor.js
+  node --check extension\content\yahoo-extractor.js
+  node --check extension\popup\popup.js
+  Push-Location web; npm run lint; npm test; Pop-Location
+
+Automated tests use synthetic data and mocked cloud/detector transport. They
+must never make a real Gemini request. A real production domain, external host,
+and published extension identity are required for final deployment acceptance;
+repository tests do not prove public deployment or browser behavior.

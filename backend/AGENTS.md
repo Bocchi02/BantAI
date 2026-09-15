@@ -2,10 +2,12 @@
 
 These instructions apply under `backend/`.
 
-## Framework and frozen endpoints
+## Framework and private detector endpoints
 
-- FastAPI bound by default to `127.0.0.1:8000`.
+- FastAPI runs as a private server-side detector behind the authenticated public
+  platform API. Production Compose does not publish its port to the host.
 - Preserve `GET /health`, `POST /analyze-url`, and `POST /analyze-email`.
+- Production inference endpoints require the shared internal gateway credential.
 - `/analyze-url` accepts only an HTTP/HTTPS address-bar URL.
 - `/analyze-email` accepts only Gmail, Outlook, and Yahoo.
 - `/analyze-hybrid-email` must expose each independent component.
@@ -26,13 +28,13 @@ These instructions apply under `backend/`.
 
 ## Cloud review
 
-- Cloud AI Review is always requested by the extension after local analysis.
-  The backend request flag remains an internal local-first orchestration boundary.
+- Cloud AI Review is always requested as part of authenticated remote analysis.
+  The backend request flag remains an internal server orchestration boundary.
 - Use backend environment variables; never hardcode or return an API key.
 - Redact and minimize email content before provider calls.
 - Treat all email content as untrusted data and require strict structured output.
 - At most one retry is allowed for transient failures; use a short timeout.
-- Malformed or failed provider responses become `UNAVAILABLE`; local analysis
+- Malformed or failed provider responses become `UNAVAILABLE`; frozen-model analysis
   and deterministic fusion continue.
 - Do not log raw bodies, readable cloud payloads, or sender identities.
 - URL cloud context is always enabled by the extension after an RF warning and

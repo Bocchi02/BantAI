@@ -1,0 +1,33 @@
+test_id,module,scenario,expected_result,actual_result,status,severity_if_failed,finding_id,notes
+T-001,System,Run project verifier,Verifier passes,All 8 verifier groups passed,PASS,,,No source changes made
+T-002,System,Verify frozen model artifacts,Artifacts and hashes match frozen contract,Email and RF model verification passed,PASS,,,No weights or thresholds changed
+T-003,Python,Compile active Python modules,No syntax errors,py_compile exited 0,PASS,,,
+T-004,Extension,Check MV3 JavaScript syntax,No syntax errors,All required extension scripts plus workers passed node --check,PASS,,,
+T-005,Backend,Run root unittest suite,All applicable tests pass,144 tests passed 0 failed,PASS,,,Synthetic/mock tests only
+T-006,Platform,Run shared platform unittest suite,All platform tests pass,38 tests passed 0 failed,PASS,,,Synthetic SQLite/TestClient tests
+T-007,Web,Run ESLint with installed local binary,No lint errors,eslint exited 0,PASS,,,Direct local binary used because npm launcher is broken
+T-008,Web,Build production web bundle,Build completes,vinext build completed successfully,PASS,,,Warnings only about future Vite native config behavior
+T-009,Web,Run rendered HTML tests,All tests pass,6 tests passed 0 failed,PASS,,,
+T-010,Tooling,Run documented npm run lint,Command executes,Global npm shim failed before invoking script,NOT TESTABLE,,,Environment issue; direct eslint passed
+T-011,Tooling,Run documented npm test,Command executes,Global npm shim failed before invoking script,NOT TESTABLE,,,Direct build plus node --test equivalent passed
+T-012,Tooling,Run documented npm run build,Command executes,Global npm shim failed before invoking script,NOT TESTABLE,,,Direct vinext build passed
+T-013,Database,Inspect migration head,One current Alembic head,0014_centralized_rate_limits is sole head,PASS,,,
+T-014,Database,Generate offline migration SQL,Offline SQL generation completes,Generation stops at migration 0011 inspect(bind),PARTIAL,MEDIUM,DB-F001,Offline mode is not the production startup path
+T-015,Deployment,Render production Compose using root example env,Compose configuration resolves,Interpolation fails because BANTAI_TRUSTED_PROXY_CIDRS is absent from root .env.example,FAIL,HIGH,FUNC-001,No services started
+T-016,Deployment,Render explicit local Compose,Compose configuration resolves,Local Compose config rendered successfully,PASS,,,No local services started
+T-017,Extension,Run release extension verifier,Release endpoint/policy passes,Verifier rejects development mode with loopback enabled,FAIL,HIGH,EXT-F001,Current config is not a releasable artifact
+T-018,Web UI,Open local landing page,Landing page renders without account,Rendered successfully with non-guarantee and privacy wording,PASS,,,
+T-019,Web UI,Open local login route,Login screen renders,Rendered successfully,PASS,,,
+T-020,Web UI,Open local register route in closed-pilot config,Registration is unavailable or clearly disabled,Registration form and Create account CTA render,FAIL,MEDIUM,AUTH-F001,No form submitted
+T-021,Auth,Closed-pilot registration API call,API rejects public registration safely,Existing shared-platform test confirms 403,PASS,,,No real account created
+T-022,Pairing,Pair valid/invalid/revoked device,Credential and ownership behavior correct,Existing platform tests pass,PASS,,,
+T-023,URL,Analyze synthetic reserved/safe URL path,Correct address-bar URL contract and state,Model/fusion contract tests pass,PASS,,,No live phishing URL visited
+T-024,Email,Analyze synthetic Gmail/Outlook/Yahoo fixtures,Provider extraction and unsupported states correct,Parser and sender-authentication tests pass,PASS,,,No private email used
+T-025,NLP,Run calibrated synthetic email inference,Model contract and threshold are honored,Model load/preprocess/calibration tests pass,PASS,,,This is functional contract evidence, not accuracy evidence
+T-026,Indicators,Exercise implemented marker rules,Markers/evidence/context are deterministic,Indicator suite passed,PASS,,,
+T-027,Fusion,Exercise local/cloud combinations,Rules preserve independent evidence and failure states,Fusion and partial-failure suites passed,PASS,,,
+T-028,Cloud,Exercise fake provider outcomes,Redaction/schema/failure handling correct,Mock cloud suites passed,PASS,,,No real LLM request
+T-029,Failure Handling,Detector/cloud/model unavailable paths,Failure is not SAFE,Gateway/fusion tests pass,PASS,,,
+T-030,State,Exercise stale response and popup dedup invariants,Old result cannot overwrite current state,Static invariant tests pass,PASS,,,Live tab race not exercised
+T-031,Privacy,Check routine body/history handling,Raw bodies excluded from routine persistence/logging,Privacy/invariant tests pass,PASS,,,Synthetic data only
+T-032,Browser,Load extension in Chrome/Edge and test provider DOM,Interactive Chromium validation performed,Not performed,NOT TESTABLE,INFORMATIONAL,,Required limitation explicitly recorded

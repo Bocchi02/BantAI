@@ -1,115 +1,100 @@
-# BantAI web platform MVP
+# BantAI remote web platform
 
 ## Components
 
-- `web/`: responsive React, TypeScript, and Tailwind account/dashboard UI.
-- `shared_platform/`: FastAPI, SQLAlchemy, Alembic, and MySQL service.
-- `backend/`: frozen RF/XLM-R detector, Companion pairing state, and bounded
-  event outbox, packaged as the Docker `detector` service.
-- `companion/`: legacy Windows tray packaging retained for development and
-  migration; it is not started in the default Docker deployment.
-- `extension/`: pairing UI and terminal-result submission.
+- `web/`: responsive account, activity, reporting, and administration UI.
+- `shared_platform/`: authenticated public API, SQLAlchemy/Alembic persistence,
+  detector gateway, server-side sampling, and transient context ownership.
+- `backend/`: private frozen RF/XLM-R detector, indicators, Gemini coordination,
+  and deterministic fusion.
+- `extension/`: exact address-bar and supported visible-email orchestration.
+- `companion/`: legacy development packaging only; not an end-user dependency.
 
-The account experience includes separate first, optional middle, and last name
-fields, an editable Profile page, authenticated password changes, and explicit
-sign-out from the Profile page. New accounts are active immediately; email
-verification and email-based password recovery are excluded from this version.
+The hosted web worker proxies same-origin `/api/v1` requests to its configured
+HTTPS `BANTAI_API_ORIGIN`. This keeps session and CSRF cookies usable on the
+dashboard origin while the extension contacts the API directly.
 
-The personal dashboard includes a live Protection connections panel for the
-local RF/XLM-R models, the paired browser extension/device credential, and the
-shared Cloud AI gateway. It checks readiness without sending a test LLM prompt
-or exposing provider credentials.
+Production uses Caddy for public HTTPS. Platform, detector, and MySQL ports are
+not published. The internal gateway key authenticates platform-to-detector
+traffic; device credentials authenticate extension-to-platform traffic.
 
-The authenticated **AI message check** page lets a user paste an email body,
-SMS, chat, or other message for an explicit one-time review with
-`gemini-3.5-flash-lite`. Submission requires visible text, a consent checkbox,
-and a separate button press. The shared platform applies BantAI's existing
-sensitive-data redaction and context limit before it contacts Gemini. The page
-shows the assessment, observable indicators, and suggested action while making
-clear that sender identity, headers, links, attachments, and the local XLM-R
-model were not checked. It never saves the pasted text or outcome to activity,
-reports, browser storage, or training data, and it never presents the
-cloud-only signal as the final hybrid email result.
+## Account and device flow
 
-Users may explicitly review a completed URL result from the dashboard,
-activity history, or manually opened extension popup. The interface requires a
-selected response and a separate submit action; it never infers feedback from
-an older report for the same origin. Incorrect feedback requires the user to
-choose a corrected legitimate or suspicious classification. The exact current
-address travels through the Companion only with that explicit feedback action.
-The shared service verifies that its origin matches the referenced detection,
-then encrypts the complete address for administrator review.
+Dashboard sessions use secure cookies and CSRF validation. Pairing codes are
+single use and expire after five minutes. Consuming a code creates a random
+device credential whose hash is stored by the server. The extension keeps only
+that credential in Chrome storage restricted to trusted extension contexts.
+Content scripts never receive it.
 
-Administrators have two related pages:
+Every remote detection, activity-linked feedback request, and device explanation
+checks credential validity, account status, device ownership, and revocation.
+Paired Devices can revoke access. Account suspension also blocks device calls.
+CORS and extension host permissions remain narrow but are not authorization.
 
-- **User reviews** displays complete URL addresses that users intentionally
-  submitted, along with the detector result and structured feedback, so an
-  administrator can approve, reject, or mark each review inconclusive.
-- **Training data** inventories approved, de-identified URL candidates for a
-  future offline RF training cycle. It provides label filters, evidence totals,
-  model-version context, and individual addresses without reporter identity.
-  Administrators have separate URL CSV and email CSV export buttons. Each file
-  contains only its candidate type's columns and respects the approved-label
-  filter. Both exports neutralize spreadsheet-formula prefixes and exclude
-  reporter IDs and fingerprints.
+## Detection and privacy boundary
 
-Users also have an explicit **Email reports** form. It collects provider,
-sender, subject, body, the displayed detector outcome, the user's proposed
-label, and optional context only after the user checks a consent box and
-submits. This is not triggered automatically by opening or detecting an email.
-The service immediately stores the body as authenticated ciphertext rather
-than plaintext.
+The extension sends exact `tab.url` values and supported Gmail/Outlook/Yahoo
+opened-email content over HTTPS to `/api/v1/detections/url` or
+`/api/v1/detections/email`. The public API forwards input transiently to the
+private detector. Raw inference input is never written to routine activity,
+logs, durable retry queues, or public download routes.
 
-The manually opened extension popup also offers email-result feedback for a
-completed supported-email detection. Submission requires an answer and an
-encrypted-report consent checkbox. At submit time the service worker asks the
-provider extractor for the currently opened email, verifies that its local
-fingerprint matches the displayed result, and forwards it through Companion.
-The raw body is never placed in Chrome storage.
+Routine activity contains only:
 
-The administrator **Email reports** page shows sender and subject metadata,
-labels, body character count, and review status, but it cannot open, return, or
-decrypt the actual email body. Approval moves the already encrypted body and
-curated metadata into a de-identified email candidate inventory with no user
-identifier. The **Training data** page can confirm that encrypted body content
-is present while never displaying it. Its CSV manifest includes a candidate ID
-and body-present metadata, never plaintext/ciphertext body content. A future
-restricted training process may use the candidate ID to decrypt approved body
-content in memory; the administrator download, logs, and temporary files remain
-body-free. These workflows do not re-train, replace, or change either frozen
-production model.
+- URL: encrypted normalized origin, final outcome, cloud state, and time.
+- Email: encrypted sender/subject metadata, provider, final outcome, cloud
+  state, and time; never the routine body.
 
-## Privacy boundary
+The server records completions idempotently by device and client event ID. URL
+cloud context is origin-only and runs only after an RF warning. Email cloud
+context is redacted and bounded. The frozen models, scan scope, provider scope,
+fusion rules, shadow mode, and no-guarantee wording are unchanged.
 
-The extension sends exact address-bar URLs and opened email content only to the
-detector container exposed on host loopback at `127.0.0.1:8000`. The frozen
-models and deterministic fusion run inside that local container. The detector
-uses the private Docker network to reach the shared platform service, where
-redacted/origin-only cloud review is performed. MySQL, platform, and detector
-start together through Docker Compose; only ports 8000 and 8080 are bound to
-host loopback.
+## Explanations
 
-Dashboard activity contains only:
+The platform reuses the input it already received in a bounded ten-minute
+process-memory store keyed by account, device, and detection ID. Website
+explanations always use the stored origin only. Email explanations use full
+context only while available. Expiry, eviction, restart, or routing to another
+worker returns `EXPIRED_OR_UNAVAILABLE` and falls back to stored provider,
+sender, and subject metadata. Neither source context nor generated explanation
+is persisted.
 
-- URL: minimized origin, final outcome, cloud availability, and time.
-- Email: provider, sender, subject, final outcome, cloud availability, and time.
+## Feedback and reporting
 
-The shared database encrypts the origin, sender, and subject and removes events
-after 90 days. Admin endpoints return aggregate outcome counts and account data,
-never personal activity. Narrowly scoped exceptions are content the user
-explicitly submits for review: a complete URL is visible in the URL-review
-workflow, while an email body is retained only as authenticated ciphertext and
-is never visible through the user or administrator interfaces. Approved
-candidates are stored without reporter identity.
+URL/email feedback is created only after an explicit answer and submit action
+and must match the completed detection. Full URL reports and email bodies are
+encrypted in their existing authorized review workflows. Administrator APIs do
+not return email bodies or reporter identities. Approved training candidates
+remain separate and do not modify either frozen production model.
+
+## Automatic contribution
+
+Profile consent remains explicit and versioned. During the first successful
+server-side completion transaction, each eligible opted-in detection receives a
+10% independent selection decision. The activity row records that the decision
+was made, so retries cannot resample it. Selected content is encrypted in the
+automatic-sample inventory and remains separate from human-approved labels and
+body-free exports. Opt-out stops future collection and deletes the user's
+automatic samples.
+
+## User interface
+
+The landing page and Help page explain that exact addresses and supported opened
+emails are sent securely to the BantAI server for transient checking. Dashboard
+status distinguishes Browser extension connected from Server models ready.
+Failures display Service unavailable and never imply a completed or safe check.
+The three primary outcome labels and accessibility behavior remain unchanged.
 
 ## Release prerequisites
 
-- Confirm redistribution rights for both frozen models.
-- Confirm the deployment host provides sufficient memory for both frozen
-  models and configures Docker to start automatically.
-- Configure production MySQL, HTTPS, encryption key, allowed origins, and
-  Gemini credentials in the shared service.
-- Keep the detector-to-platform address on the private Docker network and
-  expose detector port 8000 to host loopback only.
-- Perform the documented Chrome/Edge acceptance flow before claiming browser
-  verification.
+- Confirm redistribution/deployment rights for both frozen models.
+- Configure a real DNS name, trusted HTTPS, strong secrets, exact allowed
+  origins, MySQL, encryption, and backend-only Gemini credentials.
+- Run Alembic through `0012_remote_server_inference` and restart services.
+- Configure the extension release endpoint with
+  `scripts/configure_remote_endpoint.py` and a stable extension identity.
+- Keep the detector image private and run a single detector worker unless the
+  host is sized for additional full model copies.
+- Complete synthetic Chrome/Edge acceptance against the separately hosted test
+  API before claiming browser or deployment verification.

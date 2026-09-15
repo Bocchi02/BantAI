@@ -1875,10 +1875,7 @@
           "Extension context invalidated"
         )
       ) {
-        console.debug(
-          "[BantAI Outlook] sendMessage failed:",
-          message
-        );
+        console.debug("[BantAI Outlook] SEND_MESSAGE_FAILED");
       }
     }
   }
@@ -1911,7 +1908,8 @@
         return result;
       }
 
-      const fingerprint =
+      const authenticationFingerprint = await globalThis.BantAISenderAuthentication?.attach(result) || "{}";
+      const fingerprint = authenticationFingerprint +
         fingerprintEmail(
           result
         );
@@ -1927,30 +1925,7 @@
       lastFingerprint =
         fingerprint;
 
-      console.info(
-        "[BantAI Outlook] EMAIL_EXTRACTED",
-        {
-          extractor_version:
-            result.extractor_version,
-          provider:
-            result.provider,
-          subject:
-            result.subject,
-          sender:
-            result.sender_email ||
-            result.sender_name ||
-            null,
-          body_char_count:
-            result.diagnostics
-              .body_char_count,
-          subject_strategy:
-            result.diagnostics
-              .subject_strategy,
-          sender_strategy:
-            result.diagnostics
-              .sender_strategy
-        }
-      );
+      console.info("[BantAI Outlook] EMAIL_EXTRACTED");
 
       await sendExtractedEmail(
         result
@@ -2124,16 +2099,7 @@
       debugMetadataCandidates
     });
 
-  console.info(
-    "[BantAI Outlook] Extractor loaded:",
-    EXTRACTOR_VERSION,
-    {
-      host:
-        location.hostname,
-      url:
-        location.href
-    }
-  );
+  console.info("[BantAI Outlook] EXTRACTOR_LOADED");
 
   scheduleScanBurst();
 })();

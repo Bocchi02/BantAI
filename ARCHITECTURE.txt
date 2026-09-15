@@ -1,117 +1,118 @@
-BantAI v1.1.0 Hybrid AI Decision-Support Architecture
+BantAI v1.1.0 Remote Hybrid AI Decision-Support Architecture
 
-LOCAL DOCKER DEPLOYMENT
+PRODUCTION REQUEST PATH
 -----------------------
-Browser extension -> 127.0.0.1:8000 -> detector container
-                                           |
-                                           +-- BantAI RF Grouped v1.0.0 (shadow/non-blocking)
-                                           +-- calibrated XLM-R email model
-                                           +-- indicator engine + deterministic fusion
-                                           +-- Companion pairing/outbox state volume
-                                           |
-                                           +-- private Docker network
-                                                   |
-                                                   +-- platform container :8080
-                                                           |
-                                                           +-- MySQL container :3306
-                                                           +-- backend-only Cloud AI gateway
+Browser extension -> public HTTPS BantAI API (Caddy TLS gateway)
+Web dashboard -> same-origin /api/v1 hosting-worker proxy -> public HTTPS API
+        -> authenticated account or revocable device credential
+        -> platform API (activity, reporting, consent, transient context)
+            -> private inference network
+                -> detector service, one worker
+                    -> BantAI RF Grouped v1.0.0 (shadow/non-blocking)
+                    -> calibrated XLM-R email model
+                    -> Philippine Scam Indicator Engine
+                    -> deterministic Rules A-H
+                    -> backend-only Gemini client when required
+            -> private data network
+                -> MySQL
 
-Docker exposes detector port 8000 and platform port 8080 on host loopback only.
-The database is not published to the host. All three services use
-`restart: unless-stopped` and start in dependency/health-check order.
+Only the TLS gateway publishes ports. The platform, detector, and database use
+segmented Compose networks. The detector image contains only the exact runtime
+weights, tokenizer, calibration/config, RF artifact, and RF manifest. Offline
+Transformer settings prevent runtime model downloads. Training checkpoints,
+optimizer state, rollback models, datasets, and other model artifacts are not
+part of the image. Model-containing images are private deployment artifacts.
 
-ACTIVE TAB
-    |
-    +-- exact tab.url ----------------> BantAI RF Grouped v1.0.0
-    |                                      |
-    |                                      +-- independent SAFE / SUSPICIOUS
-    |                                      +-- optional minimized URL AI context
-    |                                              |
-    |                                              +-- always enabled; RF warnings only
-    |                                              +-- origin only; no path/page content
-    |                                              +-- HIGH-confidence clean -> NO STRONG WARNING SIGNS
-    |                                              +-- lower-confidence disagreement -> NEEDS CAUTION
-    |
-    +-- Gmail / Outlook / Yahoo only
-            |
-            +-- provider extractor: sender + subject + visible current body
-                    |
-                    +-- Calibrated XLM-R Email Model
-                    |       |
-                    |       +-- 512-token subject/head-tail encoding
-                    |       +-- logits / temperature -> softmax(class 1)
-                    |
-                    +-- Explainable Philippine Scam Indicator Engine
-                    |
-                    +-- Cloud AI Review always enabled
-                    |       |
-                    |       +-- redact + minimize + strict LLM schema
-                    |                    |
-                    |                    +-- valid result or UNAVAILABLE
-                    |
-                    +-- Deterministic Email Fusion (Rules A-H)
-                            |
-                            +-- NO STRONG WARNING SIGNS
-                            +-- NEEDS CAUTION
-                            +-- SUSPICIOUS SIGNS FOUND
+`GET /live` proves that a process is alive. `GET /ready` verifies the database
+and actual detector model readiness. The detector's own `/ready` requires the
+shared internal key in remote mode. The detector runs one Uvicorn worker so the
+large XLM-R model is not unintentionally duplicated in memory.
 
-The URL signal is shown independently and never enters email fusion. A SAFE
-webmail URL cannot downgrade an email warning.
+AUTHENTICATION AND CONNECTION
+-----------------------------
+1. A user signs in to the dashboard with a cookie session and CSRF protection.
+2. The user creates a five-minute, single-use pairing code.
+3. The trusted extension service worker consumes the code over HTTPS.
+4. The API returns one random, revocable device credential. Only its hash is
+   stored by the server; only the credential is stored by the extension.
+5. Chrome storage access is restricted to trusted extension contexts. Content
+   scripts receive neither the credential nor public API access duties.
+6. Every detection, feedback, explanation, and status request validates the
+   credential, active account, device ownership, and revocation state.
 
-DETERMINISTIC RULES A-H
------------------------
-A. Clean XLM-R + clean LLM + no strong/critical marker -> NO STRONG WARNING SIGNS.
-B. Local/LLM disagreement -> NEEDS CAUTION.
-C. LLM suspicious without local corroboration -> NEEDS CAUTION.
-D. XLM-R suspicious while LLM is clear -> NEEDS CAUTION unless a local marker
-   supplies the second suspicious source.
-E. A lone strong/critical marker -> NEEDS CAUTION.
-F. Any two independent suspicious sources -> SUSPICIOUS SIGNS FOUND.
-G. Other ambiguous/incomplete combinations -> NEEDS CAUTION.
-H. With cloud OFF/UNAVAILABLE: local clean -> NO STRONG WARNING SIGNS; one local
-   warning source -> NEEDS CAUTION; XLM-R plus strong/critical marker ->
-   SUSPICIOUS SIGNS FOUND.
+CORS and host permissions are narrow transport policy, not authentication.
+Account suspension and device revocation immediately reject later requests.
+Signing in does not imply that an extension is connected or server models are
+ready.
 
-No rule produces an overall numeric risk score.
+The hosted dashboard keeps browser requests on `/api/v1` and proxies them to
+the configured HTTPS API origin. This preserves host-only web-session and CSRF
+cookies on the dashboard origin; the extension still calls the HTTPS API
+directly with its device credential.
 
-COMPLETE-RESULT POPUP FLOW
---------------------------
-1. A new supported email or eligible address change starts a sequence-bound request.
-2. Local results are stored without opening the automatic popup.
-3. The applicable redacted/origin-only cloud request runs automatically.
-4. The popup opens for approximately five seconds only after both outputs have
-   complete assessment states.
-5. Cloud CHECKING or UNAVAILABLE states never trigger an automatic popup.
-6. A result fingerprint opens automatically at most once; focus, tab clicks,
-   repeated extraction, and page-complete events do not reopen it.
-7. Manually opening the toolbar popup never schedules a five-second close.
+DETECTION FLOW
+--------------
+The extension reads only the exact HTTP/HTTPS `tab.url`. Supported provider
+content scripts extract only the visible sender, subject, and opened body in
+Gmail, Outlook, or Yahoo and pass it to the trusted service worker. The worker
+sends the exact URL and supported email content to the public API over HTTPS.
 
-Cloud URL requests for the same normalized hostname are coalesced while in
-flight. Provider quota/time-limit responses start a short backend cooldown;
-subsequent URL scans return the cached operational state immediately while the
-frozen local detector continues to apply.
+The public API authenticates the device, forwards raw input transiently to the
+private detector, validates the completed response, and records the completion
+idempotently. It never logs or writes routine raw input. URL activity stores an
+encrypted normalized origin only. Email activity stores encrypted provider,
+sender, and subject metadata only, never the routine body.
 
-Gemini model failover is backend-only. A quota response from the configured
-primary model causes the same minimized review to be attempted once with the
-configured fallback model. A successful fallback becomes the active model for
-the remainder of that backend process. Other provider errors never switch models.
+URL analysis remains independent from email guidance. URL cloud review runs
+only after the frozen RF warns and receives only scheme/hostname/explicit port.
+Email cloud review receives only bounded beginning/ending context after
+best-effort redaction of OTPs, phone numbers, email addresses, cards, and
+account identifiers. The provider key remains backend-only.
 
-PRIVACY BOUNDARY
-----------------
-- The extension stores only transient results and the cloud preference Boolean.
-- Raw email bodies are sent only to the local backend and are never logged/stored.
-- The cloud payload retains semantic context after best-effort sensitive-value
-  redaction and beginning/ending truncation.
-- Only normalized hashes and validated results are cached in backend memory.
-- URL cloud review caches only a normalized hostname fingerprint and validated result.
+Rules A-H remain deterministic. Two independent suspicious email sources are
+required for SUSPICIOUS SIGNS FOUND. No rule produces an overall numeric risk
+score. A SAFE webmail origin cannot lower an email warning.
+
+POPUP AND STALE-RESPONSE RULES
+------------------------------
+- Each tab URL and opened email has a sequence and content fingerprint.
+- A delayed response cannot overwrite a newer tab URL or opened email.
+- Automatic result popups open only for a completed server-model result and a
+  completed required cloud assessment; CHECKING or UNAVAILABLE never opens one.
+- Each result fingerprint opens automatically at most once.
+- Automatic popups last approximately five seconds; manually opened toolbar
+  popups follow normal browser behavior.
+- Service failures produce UNAVAILABLE, never a successful or safe result.
+
+TRANSIENT EXPLANATION CONTEXT
+-----------------------------
+The platform retains the already received raw context in a bounded, process-
+memory store for ten minutes by default. Keys include account, device, and
+detection ID. No durable raw-content queue is introduced. A full-context email
+explanation is available only while that entry exists. After expiry, restart,
+eviction, or routing to another worker, the API clearly reports
+EXPIRED_OR_UNAVAILABLE and uses stored provider/sender/subject metadata only.
+Website explanations always send the stored origin only.
+
+ACTIVITY, FEEDBACK, AND AUTOMATIC CONTRIBUTION
+----------------------------------------------
+Completed detections are unique by device and client event ID. Explicit URL or
+email feedback must match that completion and remains an independent consented
+reporting workflow. Full URL reports and email bodies are encrypted; report
+bodies remain unavailable through user/admin APIs.
+
+For opted-in users, the server makes the 10% sampling decision during the first
+successful completion transaction and records that it was decided. Retries
+cannot resample the same detection. Selected content is encrypted in the
+automatic-sample inventory, separate from human-approved labels. Opt-out stops
+future acceptance and deletes the user's automatic samples.
 
 STRICTLY OUT OF SCOPE
 ---------------------
 - embedded email link extraction or scoring
-- webpage crawling or HTML submission
+- webpage/DOM/HTML scanning or crawling
 - automatic link opening or navigation
-- redirect following or analysis
-- TLS analysis
-- sender authentication
+- redirect following or TLS analysis
+- attachment analysis or sender authentication
 - overall numeric risk score
-- model retraining or threshold changes
+- model retraining, threshold changes, or automatic fallback models

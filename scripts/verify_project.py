@@ -10,9 +10,18 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from configure_remote_endpoint import validated_endpoint
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def configured_api_origin() -> str:
+    config = (ROOT / "extension/config.js").read_text(encoding="utf-8")
+    match = re.search(r'apiBase:\s*"([^"]+)"', config)
+    if not match:
+        raise ValueError("Extension API configuration is missing.")
+    return validated_endpoint(match.group(1), "allowHttpLoopback: true" in config)[1]
 
 EXPECTED_EMAIL_THRESHOLD = "0.6923658179915227"
 EXPECTED_EMAIL_TEMPERATURE = "2.2198894341340183"
@@ -39,6 +48,11 @@ def read(relative: str) -> str:
 def check_python() -> None:
     paths = sorted((ROOT / "backend").rglob("*.py"))
     paths.extend(sorted((ROOT / "tests").rglob("*.py")))
+    paths.extend(sorted((ROOT / "shared_platform" / "app").rglob("*.py")))
+    paths.extend(sorted((ROOT / "shared_platform" / "alembic").rglob("*.py")))
+    paths.extend(sorted((ROOT / "shared_platform" / "tests").rglob("*.py")))
+    paths.append(ROOT / "scripts" / "configure_remote_endpoint.py")
+    paths.append(ROOT / "scripts" / "package_extension.py")
 
     for path in paths:
         py_compile.compile(
@@ -57,6 +71,7 @@ def check_javascript() -> None:
     paths = [
         ROOT / "extension" / "background" / "service-worker.js",
         ROOT / "extension" / "content" / "gmail-extractor.js",
+        ROOT / "extension" / "content" / "sender-authentication.js",
         ROOT / "extension" / "content" / "outlook-extractor.js",
         ROOT / "extension" / "content" / "yahoo-extractor.js",
         ROOT / "extension" / "popup" / "popup.js",
@@ -112,12 +127,16 @@ def check_manifest() -> None:
         "https://mail.google.com/*",
         "https://mail.yahoo.com/*",
         "https://outlook.live.com/*",
-        "http://127.0.0.1:8000/*",
+        f"{configured_api_origin()}/*",
     }
 
     require(
         required_hosts.issubset(host_permissions),
         "Required narrowly scoped host permissions are missing.",
+    )
+    require(
+        not any(origin.startswith("http://") and origin != f"{configured_api_origin()}/*" for origin in host_permissions),
+        "Released extension host permissions must not include cleartext HTTP origins.",
     )
 
 
@@ -255,7 +274,9 @@ def check_backend_invariants() -> None:
 
 def check_extension_invariants() -> None:
     worker = read("extension/background/service-worker.js")
+    extension_config = read("extension/config.js")
     popup_html = read("extension/popup/popup.html")
+    popup_css = read("extension/popup/popup.css")
 
     require(
         "AUTO_POPUP_DURATION_MS" in worker
@@ -267,18 +288,31 @@ def check_extension_invariants() -> None:
         "URL scanning on tab switching is missing.",
     )
     require(
-        "/analyze-url" in worker
-        and "/analyze-hybrid-email" in worker,
-        "Current URL or hybrid email API call is missing.",
+        '"/detections/url"' in worker
+        and '"/detections/email"' in worker,
+        "Authenticated remote URL or email detection call is missing.",
+    )
+    require(
+        "Authorization: `Bearer ${token}`" in worker
+        and 'accessLevel: "TRUSTED_CONTEXTS"' in worker
+        and '"BANTAI_PAIR_EXTENSION"' in worker,
+        "Extension device authentication or protected credential storage is missing.",
+    )
+    require(
+        bool(configured_api_origin())
+        and "http://127.0.0.1" not in worker
+        and "http://localhost" not in worker,
+        "Extension must use the release-configured HTTPS API without localhost fallback.",
     )
     require(
         "payload.links" not in worker,
         "Embedded email link payload was reintroduced.",
     )
     require(
-        "fonts.googleapis.com" in popup_html
-        and "Roboto" in popup_html,
-        "Roboto Google Fonts reference is missing.",
+        "fonts.googleapis.com" not in popup_html
+        and "fonts.gstatic.com" not in popup_html
+        and "Roboto" in popup_css,
+        "Popup must use the local/system Roboto font stack without remote font requests.",
     )
     require(
         "bantai_cloud_ai_review_enabled" not in worker
@@ -301,6 +335,40 @@ def check_extension_invariants() -> None:
             "extractEmailLinks" not in extractor,
             f"{provider} extractor must not extract embedded email links.",
         )
+
+
+def check_remote_deployment() -> None:
+    compose = read("docker-compose.yml")
+    caddy = read("deploy/Caddyfile")
+    detector_dockerfile = read("backend/Dockerfile")
+    platform = read("shared_platform/app/main.py")
+
+    require(
+        "BANTAI_REMOTE_SERVER_MODE: \"true\"" in compose
+        and "BANTAI_DETECTOR_URL: http://detector:8000" in compose
+        and "BANTAI_INTERNAL_API_KEY" in compose,
+        "Private authenticated detector routing is missing from the deployment stack.",
+    )
+    require(
+        '"80:80"' in compose
+        and '"443:443"' in compose
+        and "BANTAI_API_DOMAIN" in caddy
+        and "reverse_proxy platform:8080" in caddy,
+        "Public HTTPS gateway configuration is incomplete.",
+    )
+    require(
+        "bantai_rf_grouped_v1.0.0.joblib" in detector_dockerfile
+        and "full_taglish_xlmr_512_headtail_seed13" in detector_dockerfile
+        and "model-00001-of-00002.safetensors" in detector_dockerfile
+        and "model-00002-of-00002.safetensors" in detector_dockerfile,
+        "Frozen detector artifacts are not explicitly packaged into the detector image.",
+    )
+    require(
+        '@app.get("/ready")' in platform
+        and '@app.get("/live")' in platform
+        and "detector_gateway.readiness()" in platform,
+        "Public liveness/readiness probes must reflect detector availability.",
+    )
 
 
 def check_codex_files() -> None:
@@ -406,6 +474,7 @@ def main() -> int:
         ("Manifest", check_manifest),
         ("Backend invariants", check_backend_invariants),
         ("Extension invariants", check_extension_invariants),
+        ("Remote deployment", check_remote_deployment),
         ("Codex files", check_codex_files),
         ("Private artifacts", check_private_artifacts),
     ]

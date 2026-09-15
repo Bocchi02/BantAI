@@ -1,0 +1,27 @@
+{$BANTAI_API_DOMAIN} {
+    encode zstd gzip
+
+    request_body {
+        max_size 256KB
+    }
+
+    reverse_proxy platform:8080 {
+        # Replace, never append, browser-supplied forwarding headers. The API
+        # accepts this address only when the immediate source is trusted.
+        header_up -X-Forwarded-For
+        header_up X-Forwarded-For {remote_host}
+        header_up -Forwarded
+        header_up -X-Real-IP
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 50s
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+}

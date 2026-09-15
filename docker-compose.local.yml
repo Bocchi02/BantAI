@@ -1,0 +1,89 @@
+# Explicit local integration stack. Production uses docker-compose.yml and
+# never publishes the detector or database. This file keeps loopback ports only
+# so the web preview can exercise the migrated authenticated server path.
+name: bantai
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: bantai
+      MYSQL_USER: bantai
+      MYSQL_PASSWORD: bantai-development
+      MYSQL_ROOT_PASSWORD: bantai-root-development
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    volumes:
+      - bantai_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ubantai -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  detector:
+    image: bantai-detector:local
+    restart: unless-stopped
+    init: true
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      BANTAI_MODEL_DIR: /app/models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13
+      BANTAI_RF_MODEL_PATH: /app/models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib
+      BANTAI_URL_MODEL_ENFORCEMENT_ENABLED: "false"
+      BANTAI_REMOTE_SERVER_MODE: "true"
+      BANTAI_INTERNAL_API_KEY: bantai-local-internal-service-key-2026
+      TRANSFORMERS_OFFLINE: "1"
+      HF_HUB_OFFLINE: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/ready',headers={'X-BantAI-Internal-Key':'bantai-local-internal-service-key-2026'}); urllib.request.urlopen(r,timeout=5)"]
+      interval: 15s
+      timeout: 8s
+      retries: 20
+      start_period: 120s
+    stop_grace_period: 30s
+
+  platform:
+    image: bantai-platform:local
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: shared_platform/Dockerfile
+    env_file:
+      - path: ./shared_platform/.env
+        required: false
+    environment:
+      BANTAI_DATABASE_URL: mysql+pymysql://bantai:bantai-development@mysql:3306/bantai
+      BANTAI_DETECTOR_URL: http://detector:8000
+      BANTAI_INTERNAL_API_KEY: bantai-local-internal-service-key-2026
+      BANTAI_REMOTE_RUNTIME_REQUIRED: "false"
+      BANTAI_WEB_ORIGIN: http://localhost:3000
+      BANTAI_COOKIE_SECURE: "false"
+      BANTAI_CREATE_SCHEMA: "false"
+      BANTAI_DETECTOR_READINESS_TIMEOUT_SECONDS: "5"
+      BANTAI_DETECTOR_INFERENCE_TIMEOUT_SECONDS: "45"
+      BANTAI_MAX_REQUEST_BYTES: "262144"
+    command: ["sh", "-c", "python -m alembic -c shared_platform/alembic.ini upgrade head && exec uvicorn shared_platform.app.main:app --host 0.0.0.0 --port 8080 --no-access-log"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      detector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ready',timeout=8)"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  bantai_mysql:

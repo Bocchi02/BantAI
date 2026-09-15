@@ -71,6 +71,19 @@ class QuotaProvider(FakeProvider):
 
 
 class LLMCacheTests(unittest.TestCase):
+    def test_authentication_change_refreshes_cloud_without_changing_model_inputs(self):
+        provider = FakeProvider()
+        coordinator = LLMReviewCoordinator(provider)
+        arguments = self.arguments()
+        coordinator.review_email(**arguments)
+        authentication = {'source': 'SENDER_DETAILS', 'signed_by': 'example.com'}
+        result = coordinator.review_email(**arguments, sender_authentication=authentication)
+        self.assertFalse(result['cached'])
+        self.assertEqual(2, provider.calls)
+        self.assertEqual('example.com', provider.last_payload['sender_authentication']['signed_by'])
+        self.assertTrue(coordinator.review_email(**arguments, sender_authentication=authentication)['cached'])
+        self.assertEqual(2, provider.calls)
+
     @staticmethod
     def arguments() -> dict:
         return {

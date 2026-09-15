@@ -23,7 +23,7 @@ AUTOMATED / STATIC
 [ ] Redaction removes sensitive values but preserves intent
 [ ] Prompt-injection content remains untrusted evidence
 [ ] Malformed LLM output becomes UNAVAILABLE
-[ ] Cloud failure continues local analysis
+[ ] Cloud failure preserves completed frozen server-model analysis
 [ ] LLM alone cannot produce a red result
 [ ] Each two-source suspicious combination produces SUSPICIOUS SIGNS FOUND
 [ ] Disagreement produces NEEDS CAUTION
@@ -37,15 +37,32 @@ AUTOMATED / STATIC
 [ ] Pasted-message text and result are not persisted to activity, reports, or training data
 [ ] Pasted-message review recognizes contextual Taglish scam requests without flagging language alone
 [ ] Pasted-message response can return detailed reasoning, practical actions, and up to six supported indicators
+[ ] Profile loads/saves top-level training-consent fields and reverts the toggle after a failed save
+[ ] Enabling collection requires explicit confirmed=true; disabling deletes that user's automatic samples
+[ ] Deterministic sampling covers accepted, not-selected, duplicate, oversized, invalid, unavailable, and stale-consent outcomes
+[ ] Raw inference and selected content never enter a durable retry queue
+[ ] Activity accepts COMPLETE, SKIPPED, and UNAVAILABLE, with bounded failure category and duration
+[ ] A URL-analysis failure preserves the completed email-model result and deterministic guidance
+[ ] Fresh and existing isolated databases upgrade through Alembic revision 0012
+[ ] Remote detection requires an active, owned, non-revoked device credential
+[ ] Production extension source and manifest contain no localhost detector dependency
+[ ] Production Compose publishes only HTTPS gateway ports; detector and database remain private
+[ ] Detector readiness requires both frozen models to be loaded and internal authentication
+[ ] Server completion is idempotent and makes the 10% sampling decision at most once
+[ ] Transient explanation context is account/device/detection scoped and expires clearly
+[ ] Activity search is limited to retained origin/sender/subject metadata
+[ ] Historical model provenance is retained; new email records use full_taglish_xlmr_512_headtail_seed13
+[ ] Review history includes reason, reviewer, timestamp, and conflict information
+[ ] Admin operations are aggregates and do not label feedback as measured accuracy
 
 MANUAL CHROME / EDGE
 --------------------
-[ ] /health reports version 1.1.0 and every component/disabled scope
+[ ] Public /live responds and /ready reports actual database/server-model readiness
 [ ] Ordinary browsing scans only the address bar; Cloud URL Review runs automatically
     only after an RF warning
 [ ] Gmail, Outlook, and Yahoo extraction still shows correct sender/subject/body result
 [ ] Opening a new supported email runs current URL and hybrid email checks
-[ ] Automatic popup waits for complete local and cloud assessment outputs
+[ ] Automatic popup waits for complete server-model and cloud assessment outputs
 [ ] Cloud CHECKING and UNAVAILABLE states do not trigger an automatic popup
 [ ] Clicking/focusing the same tab does not reopen or restart the five-second popup
 [ ] A completed eligible result popup closes after approximately five seconds
@@ -55,11 +72,11 @@ MANUAL CHROME / EDGE
 [ ] URL cloud payload contains origin only, without path, query, fragment, or page content
 [ ] HIGH-confidence clean URL AI with no strong/critical indicator produces
     NO STRONG WARNING SIGNS; lower-confidence disagreement produces NEEDS CAUTION
-[ ] OFF text says the email uses local detectors only
+[ ] Service unavailable never displays a successful or safe result
 [ ] Email cloud review still uses the limited, redacted payload
 [ ] No API key appears in extension storage or developer tools source
 [ ] AI Review moves through CHECKING to a structured outcome or UNAVAILABLE
-[ ] A slow/failing cloud request does not delay local guidance indefinitely
+[ ] A slow/failing service request ends in an accurate UNAVAILABLE state
 [ ] Opening Email B before Email A's cloud response prevents stale overwrite
 [ ] Reopening the same email during cache TTL does not incur another LLM call
 [ ] The popup shows one final email decision without a standalone AI Review card
@@ -99,6 +116,12 @@ MANUAL CHROME / EDGE
 [ ] AI message check clearly states that sender, headers, links, attachments, and XLM-R were not checked
 [ ] AI message check displays Cloud AI failure without echoing or retaining the pasted text
 [ ] AI message check outcome is labeled as a cloud-only text signal, not a final email result
+[ ] Help is keyboard reachable and documents model readiness, verified extension path, pairing/revocation, limits, outcomes, and troubleshooting
+[ ] Activity search, refresh, per-row explanation, cloud state, and feedback/review status work at desktop and 200% zoom
+[ ] Profile collection status shows 10% probabilistic selection, counts, last accepted time, and opt-out deletion
+[ ] Admin queues show pending count/age, conflict notice, reason history, exact model identifiers, and body-free exports
+[ ] Dashboard distinguishes Browser extension connected, Server models ready, and Service unavailable
+[ ] A separately hosted synthetic test API works with no detector process on the browser machine
 
 Do not mark browser items complete unless they were actually tested in a supported
 Chromium browser. Do not make a real Gemini call as part of automated testing.

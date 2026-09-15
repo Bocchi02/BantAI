@@ -40,6 +40,7 @@ class RemotePlatformProvider(LLMProvider):
                     {
                         "provider": payload.get("provider"),
                         "redacted_sender": sender,
+                        "sender_authentication": payload.get("sender_authentication") or {},
                         "redacted_subject": payload.get("subject") or "",
                         "redacted_context": payload.get("email_body") or "",
                         "email_model": payload.get("email_model") or {},

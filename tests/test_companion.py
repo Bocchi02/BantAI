@@ -10,10 +10,36 @@ from unittest.mock import patch
 BACKEND = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(BACKEND))
 
-from companion import CompanionManager
+from companion import CompanionManager, CompanionRequestError
 
 
 class CompanionManagerTests(unittest.TestCase):
+    def test_collection_diagnostics_persist_without_sample_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory, patch(
+            "companion.platform.system", return_value="Linux"
+        ):
+            state_path = Path(temporary_directory) / "companion.dat"
+            manager = CompanionManager()
+            manager.state_path = state_path
+            manager._save(
+                {
+                    **manager._empty(),
+                    "device_id": "device-1",
+                    "device_token": "synthetic-device-token",
+                }
+            )
+            manager._record_collection_outcome("ACCEPTED", accepted=True)
+
+            restarted = CompanionManager()
+            restarted.state_path = state_path
+            status = restarted.status()["automatic_collection"]
+            stored_text = state_path.read_text()
+
+        self.assertEqual("ACCEPTED", status["last_outcome"])
+        self.assertIsNotNone(status["last_accepted_at"])
+        self.assertNotIn("url", stored_text.lower())
+        self.assertNotIn("body", stored_text.lower())
+
     def test_automatic_training_sampling_only_forwards_randomly_selected_content(self) -> None:
         sample = {
             "client_event_id": "automatic-url-sample-0001",
@@ -23,6 +49,9 @@ class CompanionManagerTests(unittest.TestCase):
             "occurred_at": "2026-08-25T10:00:00+08:00",
         }
         manager = CompanionManager()
+        temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_directory.cleanup)
+        manager.state_path = Path(temporary_directory.name) / "companion.dat"
         manager._training_consent_cache = {
             "expires_at": float("inf"),
             "enabled": True,
@@ -41,6 +70,77 @@ class CompanionManagerTests(unittest.TestCase):
         self.assertFalse(skipped["selected"])
         self.assertEqual("NOT_SELECTED", skipped["reason"])
         request.assert_not_called()
+
+    def test_automatic_collection_rejects_invalid_oversized_and_stale_consent_inputs(self) -> None:
+        manager = CompanionManager()
+        temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_directory.cleanup)
+        manager.state_path = Path(temporary_directory.name) / "companion.dat"
+        with patch.object(manager, "_request") as request:
+            invalid = manager.submit_automatic_training_sample({
+                "client_event_id": "invalid-sample-0001",
+                "event_type": "EMAIL",
+                "provider": "gmail",
+                "body": "   ",
+            })
+            oversized = manager.submit_automatic_training_sample({
+                "client_event_id": "oversized-sample-0001",
+                "event_type": "URL",
+                "url": "https://example.test/" + ("a" * 2049),
+            })
+        self.assertEqual("INVALID", invalid["reason"])
+        self.assertEqual("OVERSIZED", oversized["reason"])
+        request.assert_not_called()
+
+        manager._training_consent_cache = {
+            "expires_at": float("inf"),
+            "enabled": True,
+            "sample_rate_percent": 100,
+        }
+        valid = {
+            "client_event_id": "stale-consent-sample-0001",
+            "event_type": "URL",
+            "url": "https://example.test/synthetic",
+            "outcome": "NEEDS_CAUTION",
+            "occurred_at": "2026-08-25T10:00:00+08:00",
+        }
+        with patch("companion.secrets.randbelow", return_value=0), patch.object(
+            manager,
+            "_request",
+            side_effect=CompanionRequestError("Consent changed.", status_code=409),
+        ):
+            rejected = manager.submit_automatic_training_sample(valid)
+        self.assertTrue(rejected["selected"])
+        self.assertFalse(rejected["submitted"])
+        self.assertEqual("CONSENT_VERSION_MISMATCH", rejected["reason"])
+        self.assertEqual(0.0, manager._training_consent_cache["expires_at"])
+        self.assertEqual("CONSENT_VERSION_MISMATCH", manager.status()["automatic_collection"]["last_outcome"])
+
+    def test_expired_temporary_detail_context_uses_minimized_fallback(self) -> None:
+        manager = CompanionManager()
+        context = {
+            "client_event_id": "email:expired:details:123456",
+            "event_type": "EMAIL",
+            "provider": "gmail",
+            "sender": "sender@example.test",
+            "subject": "Synthetic notice",
+            "body": "Synthetic body that must remain memory-only.",
+            "outcome": "NEEDS_CAUTION",
+        }
+        with patch("companion.monotonic", return_value=100.0):
+            manager.remember_detail_context(context)
+        with patch("companion.monotonic", return_value=100.0 + manager.detail_context_ttl_seconds + 1), patch.object(
+            manager,
+            "_request",
+            return_value={"status": "COMPLETE", "full_context_available": False},
+        ) as request:
+            result = manager.explain_activity(
+                "00000000-0000-0000-0000-000000000001",
+                context["client_event_id"],
+            )
+        self.assertFalse(result["full_context_available"])
+        self.assertEqual("/cloud-review/activity-explanation-fallback", request.call_args.args[0])
+        self.assertNotIn("body", request.call_args.args[1])
 
     def test_windows_pairing_falls_back_to_dpapi_when_credential_manager_is_unavailable(self) -> None:
         pairing_result = {

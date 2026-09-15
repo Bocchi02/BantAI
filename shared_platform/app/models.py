@@ -80,6 +80,7 @@ class Outcome(str, enum.Enum):
 
 class CloudStatus(str, enum.Enum):
     COMPLETE = "COMPLETE"
+    SKIPPED = "SKIPPED"
     UNAVAILABLE = "UNAVAILABLE"
 
 
@@ -103,6 +104,9 @@ class User(Base):
     training_collection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     training_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     training_consent_version: Mapped[str | None] = mapped_column(String(20))
+
+    explanation_window_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    explanation_request_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     sessions: Mapped[list[WebSession]] = relationship(back_populates="user", cascade="all, delete-orphan")
     devices: Mapped[list[PairedDevice]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -147,6 +151,17 @@ class PairedDevice(Base):
     user: Mapped[User] = relationship(back_populates="devices")
 
 
+class RateLimitBucket(Base):
+    """Opaque, shared counters; no address, token, or account text is stored."""
+
+    __tablename__ = "rate_limit_buckets"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ActivityEvent(Base):
     __tablename__ = "activity_events"
     __table_args__ = (
@@ -165,6 +180,7 @@ class ActivityEvent(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     device_id: Mapped[str] = mapped_column(ForeignKey("paired_devices.id", ondelete="CASCADE"), index=True)
     client_event_id: Mapped[str] = mapped_column(String(128))
+    inference_fingerprint: Mapped[str | None] = mapped_column(String(64))
     event_type: Mapped[EventType] = mapped_column(Enum(EventType))
     provider: Mapped[str | None] = mapped_column(String(20))
     origin_encrypted: Mapped[str | None] = mapped_column(Text)
@@ -172,6 +188,10 @@ class ActivityEvent(Base):
     subject_encrypted: Mapped[str | None] = mapped_column(Text)
     outcome: Mapped[Outcome] = mapped_column(Enum(Outcome), index=True)
     cloud_status: Mapped[CloudStatus] = mapped_column(Enum(CloudStatus))
+    cloud_failure_category: Mapped[str | None] = mapped_column(String(64))
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    automatic_sample_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    automatic_sample_selected: Mapped[bool | None] = mapped_column(Boolean)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -204,7 +224,7 @@ class AutomaticTrainingSample(Base):
     content_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     body_character_count: Mapped[int | None] = mapped_column(Integer)
     detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
-    detector_model_version: Mapped[str] = mapped_column(String(40))
+    detector_model_version: Mapped[str] = mapped_column(String(128))
     consent_version: Mapped[str] = mapped_column(String(20))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -239,10 +259,11 @@ class UrlReport(Base):
     feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
     feedback_source: Mapped[FeedbackSource] = mapped_column(Enum(FeedbackSource), default=FeedbackSource.MANUAL_ENTRY)
     training_status: Mapped[TrainingStatus] = mapped_column(Enum(TrainingStatus), default=TrainingStatus.PENDING)
-    detector_model_version: Mapped[str] = mapped_column(String(40), default="BantAI RF Grouped v1.0.0")
+    detector_model_version: Mapped[str] = mapped_column(String(128), default="BantAI RF Grouped v1.0.0")
     status: Mapped[UrlReportStatus] = mapped_column(Enum(UrlReportStatus), default=UrlReportStatus.PENDING)
     admin_assessment: Mapped[AdminUrlAssessment | None] = mapped_column(Enum(AdminUrlAssessment))
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    review_reason: Mapped[str | None] = mapped_column(Text)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -266,7 +287,7 @@ class UrlTrainingCandidate(Base):
     approved_label: Mapped[AdminUrlAssessment] = mapped_column(Enum(AdminUrlAssessment))
     feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
     feedback_source: Mapped[FeedbackSource] = mapped_column(Enum(FeedbackSource))
-    detector_model_version: Mapped[str] = mapped_column(String(40))
+    detector_model_version: Mapped[str] = mapped_column(String(128))
     evidence_count: Mapped[int] = mapped_column(Integer, default=1)
     first_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -276,6 +297,7 @@ class EmailReport(Base):
     __tablename__ = "email_reports"
     __table_args__ = (
         UniqueConstraint("user_id", "body_fingerprint", name="uq_email_report_user_body"),
+        UniqueConstraint("user_id", "activity_event_id", name="uq_email_report_user_activity"),
         CheckConstraint(
             "(status = 'PENDING' AND admin_assessment IS NULL AND reviewed_at IS NULL) OR "
             "(status = 'REVIEWED' AND admin_assessment IS NOT NULL AND reviewed_at IS NOT NULL)",
@@ -287,6 +309,10 @@ class EmailReport(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    activity_event_id: Mapped[str | None] = mapped_column(
+        ForeignKey("activity_events.id", ondelete="SET NULL"),
+        index=True,
+    )
     provider: Mapped[str] = mapped_column(String(20))
     sender_encrypted: Mapped[str] = mapped_column(Text)
     subject_encrypted: Mapped[str] = mapped_column(Text)
@@ -299,10 +325,11 @@ class EmailReport(Base):
     user_classification: Mapped[UrlReportClassification] = mapped_column(Enum(UrlReportClassification))
     feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
     training_status: Mapped[TrainingStatus] = mapped_column(Enum(TrainingStatus), default=TrainingStatus.PENDING)
-    detector_model_version: Mapped[str] = mapped_column(String(40), default="XLM-R V1")
+    detector_model_version: Mapped[str] = mapped_column(String(128), default="full_taglish_xlmr_512_headtail_seed13")
     status: Mapped[UrlReportStatus] = mapped_column(Enum(UrlReportStatus), default=UrlReportStatus.PENDING)
     admin_assessment: Mapped[AdminUrlAssessment | None] = mapped_column(Enum(AdminUrlAssessment))
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    review_reason: Mapped[str | None] = mapped_column(Text)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -328,7 +355,7 @@ class EmailTrainingCandidate(Base):
     detector_outcome: Mapped[Outcome] = mapped_column(Enum(Outcome))
     approved_label: Mapped[AdminUrlAssessment] = mapped_column(Enum(AdminUrlAssessment))
     feedback_reason: Mapped[FeedbackReason | None] = mapped_column(Enum(FeedbackReason))
-    detector_model_version: Mapped[str] = mapped_column(String(40))
+    detector_model_version: Mapped[str] = mapped_column(String(128))
     evidence_count: Mapped[int] = mapped_column(Integer, default=1)
     first_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

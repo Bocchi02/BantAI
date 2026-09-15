@@ -67,6 +67,8 @@ class ActivityExplanationTests(unittest.TestCase):
 
         payload = provider.review.call_args.args[0]
         self.assertEqual("ACTIVITY_EXPLANATION", payload["analysis_type"])
+        self.assertEqual("example.test", payload["sender_domain"])
+        self.assertNotIn("victim@example.test", str(payload))
         self.assertIn("Paki-send", payload["email_body"])
         self.assertIn("[OTP_REDACTED]", payload["email_body"])
         self.assertIn("[PHONE_REDACTED]", payload["email_body"])
@@ -78,7 +80,7 @@ class ActivityExplanationTests(unittest.TestCase):
         self.assertTrue(result["full_context_available"])
         self.assertTrue(result["body_context_sent_to_provider"])
 
-    def test_full_url_path_query_and_fragment_are_included_without_browsing(self) -> None:
+    def test_url_explanation_sends_origin_only_without_browsing(self) -> None:
         from backend.llm.schemas import LLMReview
         from shared_platform.app.cloud import explain_activity
 
@@ -96,18 +98,16 @@ class ActivityExplanationTests(unittest.TestCase):
             result = explain_activity({
                 "event_type": "URL",
                 "recorded_outcome": "NEEDS_CAUTION",
-                "full_url": "https://example.test/account/login?next=wallet#verify",
-                "content_scope": "FULL_URL",
+                "url_origin": "https://example.test",
+                "content_scope": "WEBSITE_ORIGIN_ONLY",
             })
 
         payload = provider.review.call_args.args[0]
-        self.assertEqual(
-            "https://example.test/account/login?next=wallet#verify",
-            payload["full_url"],
-        )
-        self.assertEqual("FULL_URL", result["analysis_scope"])
+        self.assertEqual("https://example.test", payload["url_origin"])
+        self.assertNotIn("full_url", payload)
+        self.assertEqual("WEBSITE_ORIGIN_ONLY", result["analysis_scope"])
         self.assertFalse(result["stored"])
-        self.assertTrue(result["full_context_available"])
+        self.assertFalse(result["full_context_available"])
 
     def test_minimized_fallback_does_not_invent_missing_url_or_email_content(self) -> None:
         from backend.llm.schemas import LLMReview

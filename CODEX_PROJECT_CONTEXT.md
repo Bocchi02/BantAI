@@ -10,21 +10,25 @@ phishing judgment.
 
 ## Current website flow
 
-For any HTTP/HTTPS tab, the service worker sends the exact `tab.url` to the
-local `/analyze-url` endpoint. BantAI RF Grouped v1.0.0 returns an independent SAFE or
+For any HTTP/HTTPS tab, the service worker sends the exact `tab.url` over HTTPS
+to the authenticated public BantAI API. The API calls the private server-side
+detector, where BantAI RF Grouped v1.0.0 returns an independent SAFE or
 SUSPICIOUS module signal. It runs on URL changes, page completion, tab switches,
 window focus, and new supported emails. Cloud URL Review runs automatically only
-after an RF warning and sends only the minimized scheme/hostname origin.
+after an RF warning and receives only the minimized scheme/hostname origin.
+Routine activity retains the encrypted normalized origin, not the browsing path.
 
 ## Opened email flow
 
 On Gmail, Outlook, or Yahoo Mail:
 
 1. The unchanged provider extractor sends visible sender, subject, and current
-   message body to the local backend.
-2. The calibrated BantAI XLM-R model and local Philippine Scam Indicator Engine run.
+   message body to the trusted extension service worker. The service worker sends
+   it over HTTPS with its revocable browser-device credential.
+2. The authenticated public API calls the private server detector, where the
+   calibrated BantAI XLM-R model and Philippine Scam Indicator Engine run.
 3. The exact address-bar URL is independently checked by BantAI RF Grouped v1.0.0.
-4. Local Rules A-H produce initial guidance without opening the automatic popup.
+4. Deterministic Rules A-H produce initial guidance without opening the automatic popup.
 5. A limited redacted payload is automatically reviewed by the configured LLM.
    A current, validated result opens the five-second popup once.
 6. Cloud CHECKING and UNAVAILABLE states do not trigger automatic opening.
@@ -51,11 +55,22 @@ and deterministic email guidance around those modules.
 
 ## Cloud configuration
 
-The backend automatically loads the ignored local `backend/.env` file, while
-preserving any values already set in the operating-system environment. It reads
-`BANTAI_LLM_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL`,
-`GEMINI_FALLBACK_MODEL`, timeout, retry, character-limit, and cache-TTL variables.
-Cloud email and URL reviews are always enabled and have no stored preferences.
+Production uses Caddy as the public HTTPS gateway, an authenticated platform API,
+a private one-worker detector, and a private database. The detector image includes
+only the exact frozen model runtime artifacts and runs Transformers offline. The
+platform validates account/device ownership before every extension request, and
+the detector validates a separate internal gateway credential. Gemini, database,
+encryption, and administrative credentials remain backend-only. Cloud email and
+URL reviews are always enabled and have no user-facing stored preferences.
+
+Routine raw detection inputs are never written to activity records or durable
+queues. A bounded, expiring process-memory store may retain recent account/device/
+detection-scoped context for explanations. Explicit encrypted reports and opted-in
+10% training contributions remain separate consented workflows.
+
+End users need only their BantAI account and the configured browser extension.
+They do not install Python, Docker, model files, a local FastAPI service, or
+BantAI Companion. Legacy local tooling is development-only.
 
 ## Known limitations
 

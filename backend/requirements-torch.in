@@ -1,0 +1,6 @@
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
+# Frozen runtime version used by the detector container. Keep this separate
+# because PyTorch publishes its CPU wheels from its own package index.
+torch==2.8.0

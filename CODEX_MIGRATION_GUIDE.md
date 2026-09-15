@@ -80,10 +80,11 @@ Expected result:
 BantAI Codex migration verification: PASS
 ```
 
-## Store models inside the local project
+## Stage models in the deployment source checkout
 
-The Codex-ready project now contains local model folders. Copy the existing
-trained models with:
+This developer/deployment checkout contains ignored model folders used to build
+the private detector image. These files are not installed on an end user's
+computer. Stage the existing frozen artifacts with:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force

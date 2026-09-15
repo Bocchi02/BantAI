@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 from collections import OrderedDict
 from ctypes import wintypes
+from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -28,6 +29,14 @@ CREDENTIAL_SERVICE = "BantAI Companion"
 
 class CompanionError(RuntimeError):
     """Safe local companion failure without sensitive payload content."""
+
+
+class CompanionRequestError(CompanionError):
+    """Shared-service rejection with only a bounded, privacy-safe detail."""
+
+    def __init__(self, message: str, *, status_code: int = 0) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class _DataBlob(ctypes.Structure):
@@ -74,6 +83,9 @@ def _unprotect(data: bytes) -> bytes:
 class CompanionManager:
     max_outbox_entries = 500
     max_detail_contexts_per_type = 20
+    detail_context_ttl_seconds = 10 * 60
+    automatic_url_max_chars = 2048
+    automatic_email_body_max_chars = 10_000
 
     def __init__(self) -> None:
         local_data = os.getenv("LOCALAPPDATA") or str(Path.home())
@@ -83,8 +95,13 @@ class CompanionManager:
         self.platform_url = os.getenv("BANTAI_PLATFORM_API", "").rstrip("/")
         self._lock = threading.RLock()
         self._training_consent_cache = {"expires_at": 0.0, "enabled": False, "sample_rate_percent": 0}
-        # Full addresses and email bodies are deliberately memory-only. They
-        # are available for an explicit dashboard explanation, but never enter
+        self._collection_diagnostics = {
+            "last_outcome": "NOT_ATTEMPTED",
+            "last_attempt_at": None,
+            "last_accepted_at": None,
+        }
+        # Email bodies are deliberately memory-only; website explanation
+        # context is reduced to an origin by the API boundary. Neither enters
         # the encrypted activity outbox or the Companion state file.
         self._detail_contexts: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
@@ -96,7 +113,35 @@ class CompanionManager:
             "user_email": None,
             "credential_storage": None,
             "outbox": [],
+            "last_activity_sync_at": None,
+            "automatic_collection": {
+                "last_outcome": "NOT_ATTEMPTED",
+                "last_attempt_at": None,
+                "last_accepted_at": None,
+            },
         }
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _record_collection_outcome(self, reason: str, *, accepted: bool = False) -> None:
+        diagnostics = dict(self._collection_diagnostics)
+        diagnostics.update({"last_outcome": reason, "last_attempt_at": self._now_iso()})
+        if accepted:
+            diagnostics["last_accepted_at"] = diagnostics["last_attempt_at"]
+        self._collection_diagnostics = diagnostics
+        # These bounded status values contain no submitted content. Preserve
+        # them across Companion restarts only when pairing state already exists.
+        if self.state_path.is_file():
+            try:
+                state = self._load()
+                state["automatic_collection"] = diagnostics
+                self._save(state)
+            except (OSError, CompanionError):
+                # Operational diagnostics are best-effort and must never make
+                # a completed detection or direct sample submission fail.
+                pass
 
     def _load(self) -> dict[str, Any]:
         if not self.state_path.is_file():
@@ -158,7 +203,7 @@ class CompanionManager:
                     message = detail
             except (ValueError, UnicodeDecodeError):
                 pass
-            raise CompanionError(message) from exc
+            raise CompanionRequestError(message, status_code=exc.code) from exc
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
             raise CompanionError("The shared BantAI service is unavailable.") from exc
 
@@ -271,9 +316,25 @@ class CompanionManager:
                         if windows
                         else "FILESYSTEM_ONLY"
                     ),
+                    "automatic_collection": {
+                        "last_outcome": "NOT_ATTEMPTED",
+                        "last_attempt_at": None,
+                        "last_accepted_at": None,
+                    },
                 }
             )
             self._save(state)
+            self._detail_contexts.clear()
+            self._training_consent_cache = {
+                "expires_at": 0.0,
+                "enabled": False,
+                "sample_rate_percent": 0,
+            }
+            self._collection_diagnostics = {
+                "last_outcome": "NOT_ATTEMPTED",
+                "last_attempt_at": None,
+                "last_accepted_at": None,
+            }
             return self.status()
 
     def status(self) -> dict[str, Any]:
@@ -289,6 +350,17 @@ class CompanionManager:
                     if windows
                     else "FILESYSTEM_ONLY"
                 )
+            consent_seconds = max(
+                0,
+                int(float(self._training_consent_cache.get("expires_at", 0.0)) - monotonic()),
+            )
+            persisted_collection = state.get("automatic_collection") or {}
+            collection_diagnostics = (
+                persisted_collection
+                if self._collection_diagnostics.get("last_attempt_at") is None
+                and persisted_collection.get("last_attempt_at") is not None
+                else self._collection_diagnostics
+            )
             return {
                 "paired": bool(state.get("device_id") and self._credential(state)),
                 "device_id": state.get("device_id"),
@@ -298,6 +370,11 @@ class CompanionManager:
                 "platform_configured": bool(self.platform_url),
                 "credential_protection": credential_protection,
                 "outbox_protection": "WINDOWS_DPAPI" if windows else "FILESYSTEM_ONLY",
+                "last_activity_sync_at": state.get("last_activity_sync_at"),
+                "automatic_collection": {
+                    **collection_diagnostics,
+                    "consent_cache_seconds_remaining": consent_seconds,
+                },
             }
 
     def access_status(self) -> dict[str, Any]:
@@ -321,6 +398,12 @@ class CompanionManager:
         if platform_status["reachable"] and authenticated:
             message = "This device is paired with an active BantAI account."
         elif platform_status["reachable"]:
+            self._detail_contexts.clear()
+            self._training_consent_cache = {
+                "expires_at": 0.0,
+                "enabled": False,
+                "sample_rate_percent": 0,
+            }
             message = "This device connection is expired or revoked. Disconnect it, then pair it again."
         else:
             message = "This device remains paired. Local detection is available while the shared service reconnects."
@@ -354,6 +437,16 @@ class CompanionManager:
                     ) from exc
             self._save(self._empty())
             self._detail_contexts.clear()
+            self._training_consent_cache = {
+                "expires_at": 0.0,
+                "enabled": False,
+                "sample_rate_percent": 0,
+            }
+            self._collection_diagnostics = {
+                "last_outcome": "NOT_ATTEMPTED",
+                "last_attempt_at": None,
+                "last_accepted_at": None,
+            }
             return self.status()
 
     @property
@@ -381,23 +474,37 @@ class CompanionManager:
         with self._lock:
             client_event_id = str(context["client_event_id"])
             event_type = str(context["event_type"])
+            bounded = dict(context)
+            if event_type == "EMAIL":
+                body = str(bounded.get("body") or "")
+                if len(body) > self.automatic_email_body_max_chars:
+                    marker = "\n\n[...TEMPORARY CONTEXT TRUNCATED...]\n\n"
+                    remaining = self.automatic_email_body_max_chars - len(marker)
+                    head = int(remaining * 0.7)
+                    bounded["body"] = f"{body[:head]}{marker}{body[-(remaining - head):]}"
             self._detail_contexts.pop(client_event_id, None)
-            self._detail_contexts[client_event_id] = dict(context)
+            self._detail_contexts[client_event_id] = {
+                "expires_at": monotonic() + self.detail_context_ttl_seconds,
+                "payload": bounded,
+            }
             same_type_ids = [
                 context_id
-                for context_id, saved_context in self._detail_contexts.items()
-                if saved_context.get("event_type") == event_type
+                for context_id, record in self._detail_contexts.items()
+                if (record.get("payload") or {}).get("event_type") == event_type
             ]
             while len(same_type_ids) > self.max_detail_contexts_per_type:
                 self._detail_contexts.pop(same_type_ids.pop(0), None)
             return {"remembered": True, "stored": False}
 
     def explain_activity(self, activity_id: str, client_event_id: str) -> dict[str, Any]:
-        """Forward explicit full context for an owner-checked activity."""
+        """Forward bounded RAM context for an owner-checked activity."""
 
         with self._lock:
-            context = self._detail_contexts.get(client_event_id)
-            if context is None:
+            record = self._detail_contexts.get(client_event_id)
+            if record is not None and float(record.get("expires_at", 0.0)) <= monotonic():
+                self._detail_contexts.pop(client_event_id, None)
+                record = None
+            if record is None:
                 return self._request(
                     "/cloud-review/activity-explanation-fallback",
                     {
@@ -406,7 +513,7 @@ class CompanionManager:
                     },
                 )
             payload = {
-                **context,
+                **record["payload"],
                 "activity_id": activity_id,
                 "client_event_id": client_event_id,
             }
@@ -442,12 +549,34 @@ class CompanionManager:
         """Randomly forward opted-in content without placing it in the retry outbox."""
 
         with self._lock:
+            event_type = str(sample.get("event_type") or "").upper()
+            if event_type == "URL":
+                url = str(sample.get("url") or "")
+                if not url:
+                    self._record_collection_outcome("INVALID")
+                    return {"selected": False, "submitted": False, "reason": "INVALID"}
+                if len(url) > self.automatic_url_max_chars:
+                    self._record_collection_outcome("OVERSIZED")
+                    return {"selected": False, "submitted": False, "reason": "OVERSIZED"}
+            elif event_type == "EMAIL":
+                body = str(sample.get("body") or "")
+                if not sample.get("provider") or not body.strip():
+                    self._record_collection_outcome("INVALID")
+                    return {"selected": False, "submitted": False, "reason": "INVALID"}
+                if len(body) > self.automatic_email_body_max_chars:
+                    self._record_collection_outcome("OVERSIZED")
+                    return {"selected": False, "submitted": False, "reason": "OVERSIZED"}
+            else:
+                self._record_collection_outcome("INVALID")
+                return {"selected": False, "submitted": False, "reason": "INVALID"}
+
             now = monotonic()
             consent = self._training_consent_cache
             if now >= float(consent.get("expires_at", 0)):
                 try:
                     result = self._get("/training-consent/device")
                 except CompanionError:
+                    self._record_collection_outcome("CONSENT_UNAVAILABLE")
                     return {"selected": False, "submitted": False, "reason": "CONSENT_UNAVAILABLE"}
                 consent = {
                     "expires_at": now + 60,
@@ -456,15 +585,33 @@ class CompanionManager:
                 }
                 self._training_consent_cache = consent
             if not consent.get("enabled"):
+                self._record_collection_outcome("NOT_ENABLED")
                 return {"selected": False, "submitted": False, "reason": "NOT_ENABLED"}
             rate = max(0, min(100, int(consent.get("sample_rate_percent") or 0)))
             if secrets.randbelow(10_000) >= rate * 100:
+                self._record_collection_outcome("NOT_SELECTED")
                 return {"selected": False, "submitted": False, "reason": "NOT_SELECTED"}
             try:
                 result = self._request("/training-samples", sample)
+            except CompanionRequestError as exc:
+                reason_by_status = {
+                    403: "NOT_ENABLED",
+                    409: "CONSENT_VERSION_MISMATCH",
+                    413: "OVERSIZED",
+                    422: "INVALID",
+                }
+                reason = reason_by_status.get(exc.status_code, "SERVICE_UNAVAILABLE")
+                if exc.status_code in {403, 409}:
+                    self._training_consent_cache["expires_at"] = 0.0
+                self._record_collection_outcome(reason)
+                return {"selected": True, "submitted": False, "reason": reason}
             except CompanionError:
+                self._record_collection_outcome("SERVICE_UNAVAILABLE")
                 return {"selected": True, "submitted": False, "reason": "SERVICE_UNAVAILABLE"}
-            return {"selected": True, "submitted": bool(result.get("accepted")), **result}
+            accepted = bool(result.get("accepted"))
+            reason = str(result.get("reason") or ("ACCEPTED" if accepted else "DUPLICATE" if result.get("duplicate") else "INVALID"))
+            self._record_collection_outcome(reason, accepted=accepted)
+            return {"selected": True, "submitted": accepted, **result, "reason": reason}
 
     def flush(self) -> dict[str, Any]:
         with self._lock:
@@ -477,6 +624,7 @@ class CompanionManager:
             except CompanionError:
                 return {"submitted": False, "queued": True, "remaining": len(pending)}
             state["outbox"] = pending[100:]
+            state["last_activity_sync_at"] = self._now_iso()
             self._save(state)
             return {"submitted": True, "queued": bool(state["outbox"]), "remaining": len(state["outbox"]), **result}
 

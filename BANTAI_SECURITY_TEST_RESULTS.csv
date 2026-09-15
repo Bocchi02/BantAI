@@ -1,0 +1,49 @@
+test_id,category,endpoint,role,scenario,expected,actual,result,finding_id,notes
+ARCH-001,architecture,production Compose,n/a,inspect port publication and networks,detector and MySQL not host published,only gateway publishes ports and inference/data are internal,PASS,,Static review
+AUTH-001,authentication,/api/v1/auth/login,synthetic user,valid and invalid login paths,secure hash and generic invalid response,Argon2 session flow and generic invalid detail verified,PASS,AUTH-SEC-001,Timing fast path found separately by static review
+AUTH-002,authentication,/api/v1/auth/login,synthetic suspended user,suspended login rejected and sessions revoked,platform suspension test passed,PASS,,Synthetic test
+SESSION-001,session,/api/v1/auth/logout,synthetic user,logout invalidates session,stored session revoked and cookie cleared,PASS,,Static plus platform test coverage
+SESSION-002,session,/api/v1/profile/change-password,synthetic user,password change revokes other sessions,update query revokes other active sessions,PASS,,Static plus platform test coverage
+DEVICE-001,device auth,/api/v1/pairing/consume,synthetic user/code,valid pairing creates revocable device credential,pairing and device lifecycle tests passed,PASS,,No real credentials
+DEVICE-002,device auth,/api/v1/extension/status,random bearer,random/revoked device denied,current_device checks bearer hash and revocation,PASS,,Synthetic platform coverage
+IDOR-001,authorization,/api/v1/devices/{id},user A,attempt revoke another user's device,404 or denial without foreign mutation,owner predicate verified,PASS,,Synthetic platform test
+IDOR-002,authorization,/api/v1/activities/{id}/explanation,user A/device B,attempt cross-user and cross-device explanation,foreign context denied,owner/device predicates and tests passed,PASS,,Synthetic platform test
+IDOR-003,authorization,/api/v1/*-reports,user A,feedback/report must bind to own matching event,foreign report/detection denied,exact matching-record checks and tests passed,PASS,,Synthetic platform test
+ADMIN-001,authorization,/api/v1/admin/*,normal user/device,admin routes denied,403 from admin dependency,PASS,,Synthetic platform test
+ADMIN-002,authorization,/api/v1/admin/*,admin,admin review allowed with CSRF,admin review workflow passed,PASS,,Synthetic platform test
+CSRF-001,csrf,/api/v1/message-review,synthetic user,missing CSRF rejected,403 returned,PASS,,Synthetic platform test
+CSRF-002,csrf,all cookie mutations,synthetic user,session-bound CSRF required,csrf_protected compares cookie header and stored hash,PASS,,Static review
+CORS-001,cors,/api/v1/profile,approved origin,credential preflight allowed,200 ACAO=http://localhost:3000 and credentials=true,PASS,,Controlled TestClient
+CORS-002,cors,/api/v1/profile,attacker and null origins,unapproved preflight denied,400 and no ACAO for attacker/null,PASS,,Controlled TestClient
+RATE-001,rate limit,/api/v1/auth/login,synthetic identities,shared account/network limits and expiry work,platform test passed,PASS,,No high-volume load
+RATE-002,trusted proxy,rate middleware,synthetic direct/proxy peers,untrusted XFF ignored and trusted XFF accepted,platform test passed,PASS,,Controlled unit test
+RATE-003,rate limit,/api/v1/pairing,authenticated user,pairing-code generation has a bucket,route omitted from rate_limit_keys,CONDITION,,Hardening item only
+INPUT-001,input validation,/api/v1/detections/email,unauthenticated oversized request,413 before routing/authentication,413 returned,PASS,,Synthetic platform test
+INPUT-002,input validation,security-sensitive models,all roles,unknown privileged fields rejected,StrictModel extra=forbid used,PASS,,Static and existing schema tests
+SQLI-001,injection,database routes,all roles,no dynamic user SQL,ORM/parameterized predicates only,PASS,,Static review; no destructive payload
+INJECT-001,command/template injection,runtime code,all roles,no user-controlled shell/eval/template sink,no applicable runtime sink found,PASS,,Static review
+XSS-001,xss,web and popup,synthetic payload review,no unsafe runtime HTML sink,no innerHTML/dangerouslySetInnerHTML sink found,PASS,CSP-SEC-001,CSP defense-in-depth condition
+SSRF-001,ssrf,/api/v1/detections/url,device,URL is not fetched/resolved,static parser/model only; fixed detector gateway HTTP client,PASS,,No target URL contacted
+MASS-001,mass assignment,profile/admin/report models,user/admin,unexpected role/status/owner fields rejected,explicit strict request schemas,PASS,,Static review
+DATA-001,sensitive data,admin email reports,admin,email body not returned/decrypted,platform test passed,PASS,,Synthetic data only
+DATA-002,sensitive data,Outlook/Yahoo extractor,local browser,do not log sender/subject/page URL,raw metadata and location.href console logs present,FAIL,DATA-SEC-001,Static source evidence
+CLOUD-001,cloud boundary,/api/v1/cloud-review/email,fake provider,provider receives redacted/minimized content,platform boundary test passed,PASS,,No real provider used
+CLOUD-002,cloud failure,detector/cloud mock,device,malformed/failed provider becomes unavailable,tests passed and local evidence retained,PASS,,Synthetic mocks
+PROMPT-001,prompt injection,mock provider,synthetic hostile message,untrusted evidence cannot change instructions/schema,tests passed,PASS,,No real provider used
+ERROR-001,error handling,platform/detector failure paths,all roles,no stack trace/secrets in response,privacy-safe errors tested/reviewed,PASS,,Production reverse-proxy errors not tested
+HEADERS-001,security headers,web worker,HTTPS request,CSP/frame/no-sniff/referrer/permissions/HSTS set,worker tests/build passed,PASS,CSP-SEC-001,unsafe-inline remains
+EXT-001,extension release,extension artifact,n/a,release requires HTTPS no loopback,current validator failed as designed,FAIL,CONFIG-SEC-001,Do not package current artifact
+EXT-002,extension messaging,service worker/content scripts,hostile webpage model,no external privileged bridge,no externally_connectable or window postMessage bridge found,PASS,,Static review
+SECRET-001,secrets,repository,n/a,no real secret committed,static scan/gitignore check passed,PASS,,Placeholders/local-only test keys excluded
+INFRA-001,private detector,docker-compose,n/a,detector/database private and key-gated,Compose and invariant test passed,PASS,,Live network validation required
+DB-001,database privilege,platform startup,n/a,runtime DML credential separated from migration DDL,same app credential runs alembic upgrade head,FAIL,DB-SEC-001,Static design evidence; live grants not tested
+LOG-001,security logging,platform/detector,n/a,privacy-safe security event coverage available,no structured audit event stream found,FAIL,LOG-SEC-001,Static review
+DEP-001,dependency audit,shared_platform requirements lock,n/a,no critical/high production advisory,pip-audit found 7 unique cryptography advisory IDs including critical PYSEC-2026-36,FAIL,DEP-SEC-001,Read-only registry lookup
+DEP-002,dependency audit,backend detector lock,n/a,no known detector dependency advisory,pip-audit found idna 3.13 PYSEC-2026-215,FAIL,DEP-SEC-002,Read-only registry lookup
+DEP-003,dependency audit,web package lock,n/a,no high/critical production web advisory,npm audit found 0 vulnerabilities,PASS,,Read-only registry lookup
+REG-001,regression,project root,n/a,project invariant verifier passes,verify_project.py passed,PASS,,Python via local .venv
+REG-002,regression,model artifacts,n/a,frozen model artifacts verify,verify_models.py passed,PASS,,No model mutation
+REG-003,regression,core tests,n/a,all synthetic core tests pass,147 tests passed,PASS,,No real provider/account
+REG-004,regression,shared platform tests,n/a,all synthetic API tests pass,39 tests passed,PASS,,SQLite synthetic fixture
+REG-005,regression,web build/test/lint,n/a,web verification passes,build tests and lint passed,PASS,,Vite future config-loader warning only
+REG-006,regression,extension syntax,n/a,all requested JS checks pass,node --check passed for worker extractors and popup,PASS,,No interactive browser test

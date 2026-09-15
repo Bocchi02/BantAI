@@ -25,6 +25,9 @@ secrets*.json
 checkpoint-*/
 models/**/checkpoint-*/*
 models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/*
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/EMAIL_MODEL_MANIFEST.json
 !models/README.md
 !models/**/PLACE_*.txt
 *.safetensors

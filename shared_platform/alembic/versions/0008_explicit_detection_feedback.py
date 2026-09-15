@@ -27,7 +27,11 @@ def upgrade() -> None:
         for constraint in sa.inspect(bind).get_unique_constraints("url_reports")
     }
     if "uq_url_report_user_origin" in constraints:
-        op.drop_constraint("uq_url_report_user_origin", "url_reports", type_="unique")
+        if bind.dialect.name == "sqlite":
+            with op.batch_alter_table("url_reports") as batch:
+                batch.drop_constraint("uq_url_report_user_origin", type_="unique")
+        else:
+            op.drop_constraint("uq_url_report_user_origin", "url_reports", type_="unique")
     else:
         indexes = {
             index["name"]: index
@@ -49,8 +53,15 @@ def downgrade() -> None:
     }
     indexes = {index["name"] for index in sa.inspect(bind).get_indexes("url_reports")}
     if "uq_url_report_user_origin" not in constraints | indexes:
-        op.create_unique_constraint(
-            "uq_url_report_user_origin",
-            "url_reports",
-            ["user_id", "origin_fingerprint"],
-        )
+        if bind.dialect.name == "sqlite":
+            with op.batch_alter_table("url_reports") as batch:
+                batch.create_unique_constraint(
+                    "uq_url_report_user_origin",
+                    ["user_id", "origin_fingerprint"],
+                )
+        else:
+            op.create_unique_constraint(
+                "uq_url_report_user_origin",
+                "url_reports",
+                ["user_id", "origin_fingerprint"],
+            )

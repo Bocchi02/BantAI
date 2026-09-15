@@ -1,8 +1,19 @@
+importScripts("../config.js");
+
 const VERSION =
   "1.1.0";
 
-const API_BASE =
-  "http://127.0.0.1:8000";
+const API_BASE = String(
+  globalThis.BANTAI_CONFIG?.apiBase || ""
+).replace(/\/$/, "");
+
+const apiEndpoint = new URL(API_BASE);
+const localDockerApi = globalThis.BANTAI_CONFIG?.allowHttpLoopback === true
+  && apiEndpoint.protocol === "http:"
+  && ["localhost", "127.0.0.1"].includes(apiEndpoint.hostname);
+if (apiEndpoint.protocol !== "https:" && !localDockerApi) {
+  throw new Error("BantAI remote API configuration must use HTTPS.");
+}
 
 const STORAGE_KEYS = {
   tabStates:
@@ -12,7 +23,11 @@ const STORAGE_KEYS = {
   autoPopup:
     "bantai_v110_auto_popup",
   access:
-    "bantai_v110_access"
+    "bantai_v110_access",
+  collectionDiagnostics:
+    "bantai_v110_collection_diagnostics",
+  deviceCredential:
+    "bantai_v110_device_credential"
 };
 
 const AUTO_POPUP_DURATION_MS =
@@ -132,6 +147,64 @@ const COMPLETE_CLOUD_STATUSES =
 function nowIso() {
   return new Date()
     .toISOString();
+}
+
+
+async function restrictCredentialStorage() {
+  try {
+    await chrome.storage.local.setAccessLevel({
+      accessLevel: "TRUSTED_CONTEXTS"
+    });
+    await chrome.storage.session.setAccessLevel({
+      accessLevel: "TRUSTED_CONTEXTS"
+    });
+  } catch {
+    // Chrome 127+ supports these APIs. Detection remains off if the credential
+    // cannot subsequently be read by the trusted service worker.
+  }
+}
+
+
+async function deviceCredential() {
+  const stored = await chrome.storage.local.get(STORAGE_KEYS.deviceCredential);
+  return String(stored[STORAGE_KEYS.deviceCredential] || "");
+}
+
+
+async function authenticatedFetch(path, options = {}) {
+  const token = await deviceCredential();
+  if (!token) {
+    throw new PairingRequiredError();
+  }
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (response.status === 401 || response.status === 403) {
+    await chrome.storage.local.remove(STORAGE_KEYS.deviceCredential);
+    throw new PairingRequiredError(
+      response.status === 403
+        ? "This BantAI account is unavailable."
+        : "This extension connection was revoked. Connect it again."
+    );
+  }
+  return response;
+}
+
+
+async function responseProblem(response, fallback) {
+  try {
+    const problem = await response.json();
+    if (typeof problem?.detail === "string" && problem.detail.length <= 200) {
+      return problem.detail;
+    }
+  } catch {
+    // Return the privacy-safe fallback for non-JSON gateway failures.
+  }
+  return fallback;
 }
 
 
@@ -500,8 +573,8 @@ async function checkDetectionAccess(
 
       try {
         const response =
-          await fetch(
-            `${API_BASE}/companion/status`,
+          await authenticatedFetch(
+            "/extension/status",
             {
               cache:
                 "no-store",
@@ -512,16 +585,15 @@ async function checkDetectionAccess(
 
         if (!response.ok) {
           throw new Error(
-            `Companion status HTTP ${response.status}`
+            `BantAI server status HTTP ${response.status}`
           );
         }
 
         const status =
           await response.json();
         const enabled =
-          status
-            ?.detection_enabled ===
-          true;
+          status?.connected === true &&
+          status?.service_ready === true;
         const message =
           status?.access_message ||
           "Pair this device with a BantAI account to enable detection.";
@@ -537,6 +609,8 @@ async function checkDetectionAccess(
             [STORAGE_KEYS.access]: {
               enabled,
               message,
+              user_email: status?.user_email || null,
+              service_ready: status?.service_ready === true,
               checked_at:
                 nowIso()
             }
@@ -549,9 +623,11 @@ async function checkDetectionAccess(
         }
 
         return enabled;
-      } catch {
+      } catch (error) {
         const message =
-          "BantAI cannot verify a paired account. Start the Companion and check the shared service.";
+          isPairingRequiredError(error)
+            ? error.message
+            : "Browser extension connected status could not be verified. The BantAI service is unavailable.";
 
         detectionAccessCache
           .enabled = false;
@@ -608,8 +684,8 @@ async function disableDetectionForPairing(
 async function checkServer() {
   try {
     const response =
-      await fetch(
-        `${API_BASE}/health`,
+      await authenticatedFetch(
+        "/extension/status",
         {
           cache:
             "no-store"
@@ -624,6 +700,10 @@ async function checkServer() {
 
     const health =
       await response.json();
+
+    if (health.service_ready !== true) {
+      throw new Error("BantAI server models are unavailable.");
+    }
 
     await setServerState(
       "connected",
@@ -671,12 +751,12 @@ function minimizedOrigin(
 }
 
 
-async function submitCompanionActivity(
+async function legacySubmitActivity(
   activity
 ) {
   try {
     await fetch(
-      `${API_BASE}/companion/activity`,
+      `${API_BASE}/legacy-disabled/activity`,
       {
         method: "POST",
         headers: {
@@ -690,13 +770,12 @@ async function submitCompanionActivity(
       }
     );
   } catch {
-    // Local results are authoritative; dashboard delivery is best-effort and
-    // the companion keeps a bounded protected retry outbox when paired.
+    // Unreachable compatibility path retained only while old state migrates.
   }
 }
 
 
-async function rememberCompanionDetailContext(
+async function legacyRememberDetailContext(
   context
 ) {
   for (
@@ -707,7 +786,7 @@ async function rememberCompanionDetailContext(
     try {
       const response =
         await fetch(
-          `${API_BASE}/companion/detail-context`,
+          `${API_BASE}/legacy-disabled/detail-context`,
           {
             method: "POST",
             headers: {
@@ -733,7 +812,7 @@ async function rememberCompanionDetailContext(
         return false;
       }
     } catch {
-      // Retry short local transport interruptions below. Full URLs and email
+      // Retry short transport interruptions below. Full URLs and email
       // bodies remain memory-only and never enter extension storage.
     }
 
@@ -755,9 +834,56 @@ async function rememberCompanionDetailContext(
 async function submitAutomaticTrainingSample(
   sample
 ) {
+  const recordedAt = nowIso();
+  const eventType = String(
+    sample?.event_type ||
+    ""
+  ).toUpperCase();
+  const invalid =
+    (
+      eventType === "URL" &&
+      !String(sample?.url || "")
+    ) ||
+    (
+      eventType === "EMAIL" &&
+      (
+        !String(sample?.provider || "") ||
+        !String(sample?.body || "").trim()
+      )
+    ) ||
+    ![
+      "URL",
+      "EMAIL"
+    ].includes(eventType);
+  const oversized =
+    (
+      eventType === "URL" &&
+      String(sample?.url || "").length > 2048
+    ) ||
+    (
+      eventType === "EMAIL" &&
+      String(sample?.body || "").length > 10000
+    );
+
+  if (invalid || oversized) {
+    const diagnostics = {
+      reason:
+        oversized
+          ? "OVERSIZED"
+          : "INVALID",
+      selected: false,
+      accepted: false,
+      checked_at: recordedAt
+    };
+    await chrome.storage.session.set({
+      [STORAGE_KEYS.collectionDiagnostics]: diagnostics
+    });
+    return diagnostics;
+  }
+
   try {
-    await fetch(
-      `${API_BASE}/companion/training-sample`,
+    const response = await fetch(
+      `${API_BASE}/legacy-disabled/training-sample`,
       {
         method: "POST",
         headers: {
@@ -770,9 +896,39 @@ async function submitAutomaticTrainingSample(
           )
       }
     );
+    let result = null;
+    try {
+      result = await response.json();
+    } catch {
+      result = null;
+    }
+    const reason = String(
+      result?.reason ||
+      (response.ok ? "INVALID" : response.status === 422 ? "INVALID" : "SERVICE_UNAVAILABLE")
+    ).toUpperCase();
+    const diagnostics = {
+      reason,
+      selected: result?.selected === true,
+      accepted: result?.submitted === true || result?.accepted === true,
+      checked_at: recordedAt
+    };
+    await chrome.storage.session.set({
+      [STORAGE_KEYS.collectionDiagnostics]: diagnostics
+    });
+    return diagnostics;
   } catch {
     // Automatic samples are never placed in the retry outbox because they can
     // contain a complete URL or email body. A missed sample stays missed.
+    const diagnostics = {
+      reason: "SERVICE_UNAVAILABLE",
+      selected: false,
+      accepted: false,
+      checked_at: recordedAt
+    };
+    await chrome.storage.session.set({
+      [STORAGE_KEYS.collectionDiagnostics]: diagnostics
+    });
+    return diagnostics;
   }
 }
 
@@ -870,10 +1026,7 @@ async function updateBadge(
           ""
       });
   } catch (error) {
-    console.debug(
-      "[BantAI v1.1.0] Badge update failed:",
-      error
-    );
+    console.debug("[BantAI v1.1.0] BADGE_UPDATE_FAILED");
   }
 }
 
@@ -918,7 +1071,7 @@ function defaultEmailState(
 
 async function fetchUrlAnalysis(
   currentUrl,
-  cloudAiReview
+  clientEventId
 ) {
   const controller =
     new AbortController();
@@ -928,13 +1081,13 @@ async function fetchUrlAnalysis(
       () => {
         controller.abort();
       },
-      30000
+      50000
     );
 
   try {
     const response =
-      await fetch(
-        `${API_BASE}/analyze-url`,
+      await authenticatedFetch(
+        "/detections/url",
         {
           method:
             "POST",
@@ -946,8 +1099,10 @@ async function fetchUrlAnalysis(
             JSON.stringify({
               url:
                 currentUrl,
-              cloud_ai_review:
-                cloudAiReview
+              client_event_id:
+                clientEventId,
+              occurred_at:
+                nowIso()
             }),
           signal:
             controller.signal
@@ -955,18 +1110,8 @@ async function fetchUrlAnalysis(
       );
 
     if (!response.ok) {
-      const detail =
-        await response.text();
-
-      if (
-        response.status === 401 ||
-        response.status === 403
-      ) {
-        throw new PairingRequiredError();
-      }
-
       throw new Error(
-        `URL detector HTTP ${response.status}: ${detail}`
+        await responseProblem(response, "The BantAI server could not complete this website check.")
       );
     }
 
@@ -979,7 +1124,7 @@ async function fetchUrlAnalysis(
 }
 
 
-async function scanCurrentTabUrl(
+async function legacyLocalScanCurrentTabUrl(
   tab,
   {
     force = false,
@@ -1002,6 +1147,9 @@ async function scanCurrentTabUrl(
   ) {
     return null;
   }
+
+  const startedAt =
+    Date.now();
 
   const currentUrl =
     String(
@@ -1221,7 +1369,7 @@ async function scanCurrentTabUrl(
 
       await checkServer();
 
-      await rememberCompanionDetailContext({
+      await legacyRememberDetailContext({
         client_event_id:
           activityEventId,
         event_type:
@@ -1232,7 +1380,7 @@ async function scanCurrentTabUrl(
           result.final_result
       });
 
-      await submitCompanionActivity({
+      await legacySubmitActivity({
         client_event_id:
           activityEventId,
         event_type:
@@ -1250,7 +1398,15 @@ async function scanCurrentTabUrl(
         outcome:
           result.final_result,
         cloud_status:
-          "COMPLETE",
+          "SKIPPED",
+        duration_ms:
+          Math.min(
+            120000,
+            Math.max(
+              0,
+              Date.now() - startedAt
+            )
+          ),
         occurred_at:
           state?.url_detector
             ?.completed_at ||
@@ -1300,10 +1456,10 @@ async function scanCurrentTabUrl(
               enabled: true,
               status: "CHECKING",
               reasoning_summary:
-                "A local URL warning was found. Only the website origin is being reviewed; page content is not shared."
+                "A server URL-model warning was found. Only the website origin is being reviewed; page content is not shared."
             },
             message:
-              "A local warning was found. Preparing the final hybrid result...",
+              "A server-model warning was found. Preparing the final hybrid result...",
             reason,
             activity_event_id:
               activityEventId,
@@ -1395,6 +1551,15 @@ async function scanCurrentTabUrl(
         return null;
       }
 
+      const unavailableReview = {
+        enabled: true,
+        status: "UNAVAILABLE",
+        reasoning_summary:
+          "Cloud URL Review could not be completed. The server URL-model warning remains available.",
+        failure_reason:
+          "PROVIDER_UNAVAILABLE"
+      };
+
       state =
         await patchTabState(
           tabId,
@@ -1403,19 +1568,24 @@ async function scanCurrentTabUrl(
             url_detector: {
               ...current.url_detector,
               state:
-                "error",
+                "complete",
               signal:
-                "UNAVAILABLE",
+                result.final_result ||
+                result.signal,
               result:
-                null,
-              cloud_review: {
-                enabled: true,
-                status: "UNAVAILABLE",
-                reasoning_summary:
-                  "The final hybrid URL review could not be completed. Try the check again."
-              },
+                {
+                  ...result,
+                  llm_review:
+                    unavailableReview,
+                  message:
+                    "The server URL model found warning signs. Cloud review is unavailable, so verify the website independently."
+                },
+              cloud_review:
+                unavailableReview,
               message:
-                "The complete hybrid website result is unavailable. Try again shortly."
+                "The server URL model found warning signs. Cloud review is unavailable, so verify the website independently.",
+              completed_at:
+                nowIso()
             }
           })
         );
@@ -1425,9 +1595,6 @@ async function scanCurrentTabUrl(
         state?.url_detector
       );
 
-      return state
-        ?.url_detector ||
-        null;
     }
 
     const finalUrlResult =
@@ -1435,7 +1602,7 @@ async function scanCurrentTabUrl(
         ?.result ||
       result;
 
-    await rememberCompanionDetailContext({
+    await legacyRememberDetailContext({
       client_event_id:
         activityEventId,
       event_type:
@@ -1448,7 +1615,7 @@ async function scanCurrentTabUrl(
         "SUSPICIOUS_SIGNS_FOUND"
     });
 
-    await submitCompanionActivity({
+    await legacySubmitActivity({
       client_event_id:
         activityEventId,
       event_type:
@@ -1474,6 +1641,20 @@ async function scanCurrentTabUrl(
         )
           ? "COMPLETE"
           : "UNAVAILABLE",
+      cloud_failure_category:
+        cloudReviewIsComplete(
+          state?.url_detector?.cloud_review
+        )
+          ? null
+          : state?.url_detector?.cloud_review?.failure_reason || "PROVIDER_UNAVAILABLE",
+      duration_ms:
+        Math.min(
+          120000,
+          Math.max(
+            0,
+            Date.now() - startedAt
+          )
+        ),
       occurred_at:
         state?.url_detector
           ?.completed_at ||
@@ -1565,10 +1746,158 @@ async function scanCurrentTabUrl(
 }
 
 
+async function scanCurrentTabUrl(
+  tab,
+  {
+    force = false,
+    reason = "unknown"
+  } = {}
+) {
+  const tabId = tab?.id;
+  if (!Number.isInteger(tabId)) {
+    return null;
+  }
+  if (!await checkDetectionAccess()) {
+    return null;
+  }
+
+  const currentUrl = String(tab?.url || "");
+  const provider = providerForUrl(currentUrl);
+  if (!canScanAddressBarUrl(currentUrl)) {
+    const state = await patchTabState(tabId, (current) => ({
+      ...current,
+      current_url: currentUrl,
+      hostname: "",
+      provider: provider?.id || null,
+      provider_label: provider?.label || null,
+      url_detector: {
+        state: "unavailable",
+        signal: "UNAVAILABLE",
+        message: "BantAI checks regular HTTP and HTTPS websites only.",
+        reason
+      },
+      email_detector: defaultEmailState(provider, current.email_detector)
+    }));
+    await updateBadge(tabId, state?.url_detector);
+    return state?.url_detector || null;
+  }
+
+  const states = await getTabStates();
+  const existing = states[String(tabId)];
+  if (
+    !force &&
+    ["analyzing", "complete"].includes(existing?.url_detector?.state) &&
+    (existing?.url_detector?.result?.current_url || existing?.current_url) === currentUrl
+  ) {
+    return existing.url_detector;
+  }
+  const clientEventId =
+    existing?.current_url === currentUrl && existing?.url_detector?.activity_event_id
+      ? existing.url_detector.activity_event_id
+      : `url:${tabId}:${compactHash(currentUrl)}:${Date.now()}`;
+  const sequence = (urlSequences.get(tabId) || 0) + 1;
+  urlSequences.set(tabId, sequence);
+
+  await patchTabState(tabId, (current) => ({
+    ...current,
+    current_url: currentUrl,
+    hostname: hostnameForUrl(currentUrl),
+    provider: provider?.id || null,
+    provider_label: provider?.label || null,
+    url_detector: {
+      state: "analyzing",
+      signal: "ANALYZING",
+      message: "Checking this address with the BantAI server...",
+      reason,
+      activity_event_id: clientEventId,
+      requested_at: nowIso()
+    },
+    email_detector: defaultEmailState(provider, current.email_detector)
+  }));
+
+  try {
+    const result = await fetchUrlAnalysis(currentUrl, clientEventId);
+    if (urlSequences.get(tabId) !== sequence) {
+      return null;
+    }
+    const currentTab = await chrome.tabs.get(tabId);
+    if (currentTab.url !== currentUrl) {
+      return null;
+    }
+    const finalResult = String(result?.final_result || "").toUpperCase();
+    if (!COMPLETE_CLOUD_STATUSES.has(finalResult)) {
+      throw new Error("The BantAI server returned an incomplete website result.");
+    }
+    if (result.signal === "SUSPICIOUS" && !cloudReviewIsComplete(result.llm_review)) {
+      throw new Error("The website cloud assessment has not completed.");
+    }
+    const completedAt = nowIso();
+    const state = await patchTabState(tabId, (current) => ({
+      ...current,
+      current_url: result.current_url || currentUrl,
+      hostname: result.hostname || hostnameForUrl(currentUrl),
+      url_detector: {
+        state: "complete",
+        signal: finalResult,
+        result,
+        cloud_review: result.llm_review,
+        reason,
+        activity_event_id: result.client_event_id || clientEventId,
+        detection_id: result.detection_id || null,
+        completed_at: completedAt
+      }
+    }));
+    if (result.automatic_collection) {
+      await chrome.storage.session.set({
+        [STORAGE_KEYS.collectionDiagnostics]: {
+          ...result.automatic_collection,
+          checked_at: completedAt
+        }
+      });
+    }
+    await updateBadge(tabId, state?.url_detector);
+    await setServerState("connected", {service_ready: true});
+    if (
+      tab &&
+      shouldAutomaticallyOpenForUrl(reason) &&
+      cloudReviewIsComplete(result.llm_review)
+    ) {
+      await openFiveSecondPopup(tab, currentUrl, "url_review_complete");
+    }
+    return state?.url_detector || null;
+  } catch (error) {
+    if (isPairingRequiredError(error)) {
+      await disableDetectionForPairing(error);
+      return null;
+    }
+    if (urlSequences.get(tabId) !== sequence) {
+      return null;
+    }
+    const state = await patchTabState(tabId, (current) => ({
+      ...current,
+      current_url: currentUrl,
+      url_detector: {
+        state: "error",
+        signal: "UNAVAILABLE",
+        result: null,
+        message: "Service unavailable. BantAI could not complete this website check.",
+        error: String(error?.message || error),
+        reason,
+        activity_event_id: clientEventId
+      }
+    }));
+    await setServerState("unavailable", "Service unavailable");
+    await updateBadge(tabId, state?.url_detector);
+    return state?.url_detector || null;
+  }
+}
+
+
 async function fetchHybridEmail(
   payload,
   currentUrl,
-  cloudAiReview
+  clientEventId,
+  restoreOnly = false
 ) {
   const controller =
     new AbortController();
@@ -1578,15 +1907,13 @@ async function fetchHybridEmail(
       () => {
         controller.abort();
       },
-      cloudAiReview
-        ? 15000
-        : 30000
+      50000
     );
 
   try {
     const response =
-      await fetch(
-        `${API_BASE}/analyze-hybrid-email`,
+      await authenticatedFetch(
+        restoreOnly ? "/detections/email/context" : "/detections/email",
         {
           method:
             "POST",
@@ -1598,6 +1925,7 @@ async function fetchHybridEmail(
             JSON.stringify({
               provider:
                 payload.provider,
+              sender_authentication: payload.sender_authentication || {},
               sender:
                 payload.sender ||
                 null,
@@ -1609,8 +1937,10 @@ async function fetchHybridEmail(
                 "",
               current_url:
                 currentUrl,
-              cloud_ai_review:
-                cloudAiReview
+              client_event_id:
+                clientEventId,
+              occurred_at:
+                nowIso()
             }),
           signal:
             controller.signal
@@ -1618,17 +1948,8 @@ async function fetchHybridEmail(
       );
 
     if (!response.ok) {
-      if (
-        response.status === 401 ||
-        response.status === 403
-      ) {
-        throw new PairingRequiredError();
-      }
-
       throw new Error(
-        `Hybrid detector HTTP ${
-          response.status
-        }`
+        await responseProblem(response, "The BantAI server could not complete this email check.")
       );
     }
 
@@ -1681,6 +2002,31 @@ async function emailRequestIsCurrent(
 }
 
 
+async function senderAuthenticationFingerprint(authentication = {}) {
+  // Keep only extractor observations; never retain header text or email content.
+  const minimized = {};
+  for (const key of ["source", "mailed_by", "signed_by", "spf_domain", "dkim_domain", "dmarc_domain", "spf", "dkim", "dmarc"]) {
+    if (typeof authentication[key] === "string") minimized[key] = authentication[key];
+  }
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(minimized)));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+
+function minimizedSenderAuthentication(authentication = {}) {
+  if (!authentication || !["SENDER_DETAILS", "MESSAGE_HEADERS"].includes(authentication.source)) return {};
+  const result = {source: authentication.source};
+  for (const key of ["mailed_by", "signed_by", "spf_domain", "dkim_domain", "dmarc_domain"]) {
+    const value = String(authentication[key] || "").trim().toLowerCase().replace(/\.$/, "");
+    if (value.length <= 253 && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value)) result[key] = value;
+  }
+  for (const key of ["spf", "dkim", "dmarc"]) {
+    const value = String(authentication[key] || "").toLowerCase();
+    if (["pass", "fail", "softfail", "neutral", "none", "temperror", "permerror"].includes(value)) result[key] = value;
+  }
+  return Object.keys(result).length > 1 ? result : {};
+}
+
 async function analyzeOpenedEmail(
   payload,
   tab,
@@ -1706,6 +2052,9 @@ async function analyzeOpenedEmail(
     return null;
   }
 
+  const startedAt =
+    Date.now();
+
   const provider =
     providerForUrl(
       tab?.url
@@ -1728,6 +2077,21 @@ async function analyzeOpenedEmail(
       payload
     );
 
+  const existingStates =
+    await getTabStates();
+  const existingState =
+    existingStates[String(tabId)];
+  const authenticationFingerprint = await senderAuthenticationFingerprint(payload.sender_authentication || {});
+  const previousAuthenticationFingerprint = existingState?.email_detector?.authentication_fingerprint ??
+    (popupFingerprints.get(tabId)?.fingerprint === fingerprint
+      ? popupFingerprints.get(tabId)?.authenticationFingerprint : undefined);
+  const authenticationChanged = existingState?.email_detector?.fingerprint === fingerprint && previousAuthenticationFingerprint !== authenticationFingerprint;
+  const clientEventId =
+    !authenticationChanged && existingState?.email_detector?.fingerprint === fingerprint &&
+    existingState?.hybrid_analysis_id
+      ? existingState.hybrid_analysis_id
+      : `email:${tabId}:${fingerprint}:${crypto.randomUUID()}`;
+
   const priorPopup =
     popupFingerprints.get(
       tabId
@@ -1736,7 +2100,7 @@ async function analyzeOpenedEmail(
   if (
     !force &&
     priorPopup?.fingerprint ===
-      fingerprint
+      fingerprint && !authenticationChanged
   ) {
     return null;
   }
@@ -1745,6 +2109,7 @@ async function analyzeOpenedEmail(
     tabId,
     {
       fingerprint,
+      authenticationFingerprint,
       timestamp:
         Date.now()
     }
@@ -1822,12 +2187,12 @@ async function analyzeOpenedEmail(
         enabled: true,
         status: "CHECKING",
         message:
-          "Cloud AI Review runs only when the local email model finds warning signs."
+          "Cloud AI Review runs automatically with the server-model email analysis."
       },
       fusion: null,
       local_fusion: null,
       hybrid_analysis_id:
-        null,
+        clientEventId,
       hybrid_ready:
         false
     })
@@ -1846,7 +2211,7 @@ async function analyzeOpenedEmail(
       await fetchHybridEmail(
         payload,
         currentUrl,
-        true
+        clientEventId
       );
 
     if (
@@ -1887,15 +2252,10 @@ async function analyzeOpenedEmail(
         hybridResult
           .llm_review
       );
-
-    const cloudReviewSkipped =
-      String(
-        hybridResult
-          ?.llm_review
-          ?.status ||
-        ""
-      ).toUpperCase() ===
-        "OFF";
+    const urlResult = hybridResult.url_model || {};
+    const urlReviewCompleted = COMPLETE_CLOUD_STATUSES.has(urlResult.final_result) &&
+      (urlResult.signal === "SAFE" || cloudReviewIsComplete(urlResult.llm_review));
+    const urlUnavailable = urlResult.signal === "UNAVAILABLE" || urlResult.llm_review?.status === "UNAVAILABLE";
 
     const completedState =
       await patchTabState(
@@ -1915,11 +2275,8 @@ async function analyzeOpenedEmail(
               currentUrl
             ),
           url_detector: {
-            state: "complete",
-            signal:
-              hybridResult.url_model
-                ?.signal ||
-              "UNAVAILABLE",
+            state: urlReviewCompleted ? "complete" : urlUnavailable ? "error" : "analyzing",
+            signal: urlReviewCompleted ? urlResult.final_result : urlUnavailable ? "UNAVAILABLE" : "CHECKING",
             result:
               hybridResult.url_model,
             reason:
@@ -1946,6 +2303,8 @@ async function analyzeOpenedEmail(
             result:
               hybridResult.email_model,
             fingerprint,
+            authentication_fingerprint: authenticationFingerprint,
+            sender_authentication: minimizedSenderAuthentication(payload.sender_authentication),
             completed_at:
               completedAt
           },
@@ -1958,7 +2317,7 @@ async function analyzeOpenedEmail(
           local_fusion:
             null,
           hybrid_analysis_id:
-            hybridResult.analysis_id,
+            hybridResult.client_event_id || hybridResult.analysis_id || clientEventId,
           hybrid_ready:
             true
         })
@@ -1971,7 +2330,7 @@ async function analyzeOpenedEmail(
     );
 
     if (
-      showAutomaticPopup &&
+      showAutomaticPopup && !authenticationChanged && urlReviewCompleted &&
       cloudReviewCompleted
     ) {
       await openFiveSecondPopup(
@@ -1981,82 +2340,14 @@ async function analyzeOpenedEmail(
       );
     }
 
-    await rememberCompanionDetailContext({
-      client_event_id:
-        hybridResult
-          .analysis_id,
-      event_type:
-        "EMAIL",
-      provider:
-        provider.id,
-      sender:
-        String(
-          payload?.sender ||
-          ""
-        ).slice(0, 320),
-      subject:
-        String(
-          payload?.subject ||
-          ""
-        ).slice(0, 500),
-      body:
-        String(
-          payload?.body ||
-          ""
-        ).slice(0, 50000),
-      outcome:
-        finalEmailOutcome
-    });
-
-    await submitCompanionActivity({
-      client_event_id:
-        hybridResult
-          .analysis_id,
-      event_type:
-        "EMAIL",
-      origin:
-        null,
-      provider:
-        provider.id,
-      sender:
-        payload?.sender ||
-        null,
-      subject:
-        payload?.subject ||
-        "",
-      outcome:
-        finalEmailOutcome,
-      cloud_status:
-        cloudReviewCompleted ||
-        cloudReviewSkipped
-          ? "COMPLETE"
-          : "UNAVAILABLE",
-      occurred_at:
-        completedAt
-    });
-
-    await submitAutomaticTrainingSample({
-      client_event_id:
-        hybridResult
-          .analysis_id,
-      event_type:
-        "EMAIL",
-      provider:
-        provider.id,
-      sender:
-        payload?.sender ||
-        "",
-      subject:
-        payload?.subject ||
-        "",
-      body:
-        payload?.body ||
-        "",
-      outcome:
-        finalEmailOutcome,
-      occurred_at:
-        completedAt
-    });
+    if (hybridResult.automatic_collection) {
+      await chrome.storage.session.set({
+        [STORAGE_KEYS.collectionDiagnostics]: {
+          ...hybridResult.automatic_collection,
+          checked_at: completedAt
+        }
+      });
+    }
   } catch (error) {
     if (
       isPairingRequiredError(
@@ -2086,17 +2377,12 @@ async function analyzeOpenedEmail(
         tabId,
         (current) => ({
         ...current,
-        url_detector: {
-          ...current.url_detector,
-          state:
-            "error",
-          signal:
-            "UNAVAILABLE",
-          result:
-            null,
-          message:
-            "The complete hybrid result is unavailable. Try again shortly."
-        },
+        // An email transport failure is not a website detection result.
+        url_detector: current.url_detector?.state === "complete"
+          ? current.url_detector
+          : existingState?.url_detector?.result?.current_url === currentUrl
+            ? existingState.url_detector
+            : current.url_detector,
         llm_review: {
           enabled: true,
           status: "UNAVAILABLE",
@@ -2130,6 +2416,10 @@ async function analyzeOpenedEmail(
       failedState
         ?.url_detector
     );
+
+    // Retry the exact address-bar URL through its independent endpoint. This
+    // reason does not open an automatic result popup.
+    await scanCurrentTabUrl(tab, {force: true, reason: "email_request_failed"});
 
     return null;
   }
@@ -2231,6 +2521,13 @@ async function extractCurrentEmailForFeedback(
     );
   }
 
+  try {
+    payload.sender_authentication = await chrome.tabs.sendMessage(tab.id, {
+      type: "BANTAI_GET_SENDER_AUTHENTICATION", payload
+    }) || {};
+  } catch {
+    payload.sender_authentication = payload.sender_authentication || {};
+  }
   return payload;
 }
 
@@ -2362,30 +2659,12 @@ async function restoreCurrentEmailDetailContext(
       return false;
     }
 
-    return rememberCompanionDetailContext({
-      client_event_id:
-        clientEventId,
-      event_type:
-        "EMAIL",
-      provider:
-        provider.id,
-      sender:
-        String(
-          payload.sender ||
-          ""
-        ).slice(0, 320),
-      subject:
-        String(
-          payload.subject ||
-          ""
-        ).slice(0, 500),
-      body:
-        String(
-          payload.body ||
-          ""
-        ).slice(0, 50000),
-      outcome
-    });
+    // Re-submit the matching request so expired server memory is restored.
+    // The stable event ID keeps history deduplicated; this path opens no popup.
+    // Replay the original authentication observation, not an expired UI cache.
+    payload.sender_authentication = state.email_detector.sender_authentication || payload.sender_authentication || {};
+    await fetchHybridEmail(payload, String(tab.url || ""), clientEventId, true);
+    return true;
   } catch {
     return false;
   }
@@ -2505,9 +2784,37 @@ async function submitCurrentEmailFeedback(
     );
   }
 
-  const response =
-    await fetch(
-      `${API_BASE}/companion/email-feedback`,
+  const reportPayload = {
+    client_event_id:
+      clientEventId,
+    provider:
+      provider.id,
+    sender:
+      payload.sender ||
+      "",
+    subject:
+      payload.subject ||
+      "",
+    verdict:
+      message.verdict,
+    classification:
+      message.verdict ===
+      "INCORRECT"
+        ? message.classification
+        : undefined,
+    reason:
+      message.verdict ===
+      "INCORRECT" &&
+      message.reason
+        ? message.reason
+        : undefined,
+    confirmed:
+      true
+  };
+
+  let response =
+    await authenticatedFetch(
+      "/email-reports/from-device-activity",
       {
         method:
           "POST",
@@ -2516,37 +2823,20 @@ async function submitCurrentEmailFeedback(
             "application/json"
         },
         body:
-          JSON.stringify({
-            client_event_id:
-              clientEventId,
-            provider:
-              provider.id,
-            sender:
-              payload.sender ||
-              "",
-            subject:
-              payload.subject ||
-              "",
-            body:
-              payload.body,
-            verdict:
-              message.verdict,
-            classification:
-              message.verdict ===
-                "INCORRECT"
-                ? message.classification
-                : undefined,
-            reason:
-              message.verdict ===
-                "INCORRECT" &&
-              message.reason
-                ? message.reason
-                : undefined,
-            confirmed:
-              true
-          })
+          JSON.stringify(reportPayload)
       }
     );
+
+  if (response.status === 428) {
+    response = await authenticatedFetch(
+      "/email-reports/from-device-activity",
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({...reportPayload, body: payload.body})
+      }
+    );
+  }
 
   if (
     !response.ok
@@ -2566,7 +2856,7 @@ async function submitCurrentEmailFeedback(
           problem.detail;
       }
     } catch {
-      // Keep the short local error for non-JSON failures.
+      // Keep the short client-side error for non-JSON failures.
     }
 
     throw new Error(
@@ -2575,6 +2865,113 @@ async function submitCurrentEmailFeedback(
   }
 
   return response.json();
+}
+
+
+async function submitCurrentUrlFeedback(message) {
+  if (
+    !["CORRECT", "INCORRECT", "UNSURE"].includes(message?.verdict) ||
+    (message?.verdict === "INCORRECT" && !["LEGITIMATE", "SUSPICIOUS"].includes(message?.classification))
+  ) {
+    throw new Error("Select your website feedback before submitting.");
+  }
+  const tabId = Number(message?.tab_id);
+  const states = await getTabStates();
+  const state = states[String(tabId)];
+  const clientEventId = state?.url_detector?.activity_event_id;
+  const currentUrl = state?.current_url;
+  if (
+    !Number.isInteger(tabId) ||
+    state?.url_detector?.state !== "complete" ||
+    !clientEventId ||
+    clientEventId !== message?.client_event_id ||
+    currentUrl !== message?.url
+  ) {
+    throw new Error("This website result changed. Review the current result instead.");
+  }
+  const tab = await chrome.tabs.get(tabId);
+  if (tab.url !== currentUrl) {
+    throw new Error("This website result changed. Review the current result instead.");
+  }
+  const reportPayload = {
+    client_event_id: clientEventId,
+    verdict: message.verdict,
+    classification: message.verdict === "INCORRECT" ? message.classification : undefined,
+    reason: message.verdict === "INCORRECT" ? message.reason : undefined,
+    confirmed: true
+  };
+  let response = await authenticatedFetch("/url-reports/from-device-activity", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(reportPayload)
+  });
+  if (response.status === 428) {
+    response = await authenticatedFetch("/url-reports/from-device-activity", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({...reportPayload, url: currentUrl})
+    });
+  }
+  if (!response.ok) {
+    throw new Error(await responseProblem(response, "BantAI could not submit this website feedback."));
+  }
+  return response.json();
+}
+
+
+async function pairExtension(code, deviceLabel) {
+  if (new URL(API_BASE).hostname.endsWith(".invalid")) {
+    throw new Error("This extension has no BantAI server configured. Ask the administrator to configure the public API address and reload the extension.");
+  }
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/extension/pair`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({code, device_label: deviceLabel}),
+      signal: AbortSignal.timeout(30000)
+    });
+  } catch {
+    throw new Error("Cannot reach the BantAI pairing server. Check your connection and the extension's configured API address, then try again.");
+  }
+  if (!response.ok) {
+    const fallback = response.status >= 500
+      ? "The BantAI pairing service is unavailable. Try again shortly."
+      : response.status === 404
+        ? "The configured server does not provide BantAI extension pairing. Ask the administrator to check the API address and server version."
+        : "BantAI could not pair this device. Generate a fresh code from the dashboard and try again.";
+    throw new Error(await responseProblem(response, fallback));
+  }
+  const result = await response.json();
+  if (!result?.device_token) {
+    throw new Error("BantAI did not return a device credential.");
+  }
+  await restrictCredentialStorage();
+  await chrome.storage.local.set({[STORAGE_KEYS.deviceCredential]: result.device_token});
+  detectionAccessCache.checkedAt = 0;
+  await checkDetectionAccess(true);
+  return {device_id: result.device_id, user_email: result.user_email};
+}
+
+
+async function disconnectExtension() {
+  try {
+    const response = await authenticatedFetch("/extension/device", {method: "DELETE"});
+    if (!response.ok) {
+      throw new Error("The BantAI server could not revoke this extension connection.");
+    }
+  } catch (error) {
+    // A missing/revoked credential is already disconnected. On transport
+    // failures retain the credential so the user can retry server revocation.
+    if (!isPairingRequiredError(error)) {
+      throw error;
+    }
+  }
+  await chrome.storage.local.remove(STORAGE_KEYS.deviceCredential);
+  detectionAccessCache.enabled = false;
+  detectionAccessCache.checkedAt = 0;
+  await clearDetectionState("Connect this browser extension to your BantAI account.");
+  return {disconnected: true};
 }
 
 
@@ -2703,10 +3100,7 @@ async function openFiveSecondPopup(
         }
       });
   } catch (error) {
-    console.warn(
-      "[BantAI v1.1.0] Automatic popup state could not be stored:",
-      error
-    );
+      console.warn("[BantAI v1.1.0] AUTO_POPUP_STATE_STORE_FAILED");
     return false;
   }
 
@@ -2755,10 +3149,7 @@ async function openFiveSecondPopup(
       // No-op fallback.
     }
 
-    console.warn(
-      "[BantAI v1.1.0] Automatic popup could not be opened:",
-      error
-    );
+      console.warn("[BantAI v1.1.0] AUTO_POPUP_OPEN_FAILED");
 
     return false;
   }
@@ -2798,6 +3189,7 @@ async function injectProviderScript(
             false
         },
         files: [
+          "content/sender-authentication.js",
           provider.scriptFile
         ]
       });
@@ -2813,12 +3205,7 @@ async function injectProviderScript(
         "Cannot access"
       )
     ) {
-      console.debug(
-        `[BantAI v1.1.0] ${
-          provider.label
-        } injection:`,
-        message
-      );
+      console.debug("[BantAI v1.1.0] PROVIDER_INJECTION_MESSAGE");
     }
   }
 }
@@ -2896,6 +3283,7 @@ async function initializeExistingTabs() {
 chrome.runtime.onInstalled
   .addListener(
     () => {
+      void restrictCredentialStorage();
       void checkServer();
       void initializeExistingTabs();
     }
@@ -2905,6 +3293,7 @@ chrome.runtime.onInstalled
 chrome.runtime.onStartup
   .addListener(
     () => {
+      void restrictCredentialStorage();
       void checkServer();
       void initializeExistingTabs();
     }
@@ -3070,6 +3459,26 @@ chrome.runtime.onMessage
       sender,
       sendResponse
     ) => {
+      if (message?.type === "BANTAI_RAW_SENDER_AUTHENTICATION") {
+        void (async () => {
+          const rawTab = sender.tab;
+          if (providerForUrl(rawTab?.url)?.id !== "yahoo" || !Number.isInteger(rawTab?.openerTabId)) return;
+          const tab = await chrome.tabs.get(rawTab.openerTabId);
+          const provider = providerForUrl(tab.url);
+          if (provider?.id !== "yahoo") return;
+          const payload = await extractCurrentEmailForFeedback(tab, provider, 50000);
+          if (String(payload.sender || "").toLowerCase() !== String(message.sender_address || "").toLowerCase() || payload.subject !== message.subject) return;
+          const states = await getTabStates();
+          if (states[String(tab.id)]?.email_detector?.fingerprint !== buildEmailFingerprint(payload)) return;
+          payload.sender_authentication = message.authentication || {};
+          const accepted = await chrome.tabs.sendMessage(tab.id, {
+            type: "BANTAI_REMEMBER_SENDER_AUTHENTICATION", url: tab.url, payload
+          });
+          if (accepted) await analyzeOpenedEmail(payload, tab, {showAutomaticPopup: false});
+        })().catch(() => {});
+        sendResponse({received: true});
+        return false;
+      }
       const extractedTypes =
         new Set([
           "BANTAI_GMAIL_EMAIL_EXTRACTED",
@@ -3152,6 +3561,66 @@ chrome.runtime.onMessage
         });
 
         return false;
+      }
+
+      if (
+        message?.type ===
+          "BANTAI_GET_CONNECTION"
+      ) {
+        void checkDetectionAccess(true).then(async () => {
+          const stored = await chrome.storage.session.get(STORAGE_KEYS.access);
+          const access = stored[STORAGE_KEYS.access] || {};
+          const token = await deviceCredential();
+          sendResponse({
+            ok: true,
+            connected: Boolean(token),
+            detection_enabled: access.enabled === true,
+            access_message: access.message || "Connect this browser extension to your BantAI account.",
+            user_email: access.user_email || null
+          });
+        }).catch((error) => sendResponse({
+          ok: false,
+          connected: false,
+          detection_enabled: false,
+          detail: String(error?.message || error)
+        }));
+        return true;
+      }
+
+      if (
+        message?.type ===
+          "BANTAI_PAIR_EXTENSION"
+      ) {
+        void pairExtension(message.code, message.device_label).then(
+          (result) => sendResponse({ok: true, result})
+        ).catch(
+          (error) => sendResponse({ok: false, detail: String(error?.message || error)})
+        );
+        return true;
+      }
+
+      if (
+        message?.type ===
+          "BANTAI_DISCONNECT_EXTENSION"
+      ) {
+        void disconnectExtension().then(
+          (result) => sendResponse({ok: true, result})
+        ).catch(
+          (error) => sendResponse({ok: false, detail: String(error?.message || error)})
+        );
+        return true;
+      }
+
+      if (
+        message?.type ===
+          "BANTAI_SUBMIT_URL_FEEDBACK"
+      ) {
+        void submitCurrentUrlFeedback(message).then(
+          (result) => sendResponse({ok: true, result})
+        ).catch(
+          (error) => sendResponse({ok: false, detail: String(error?.message || error)})
+        );
+        return true;
       }
 
       if (
@@ -3290,10 +3759,10 @@ chrome.runtime.onMessage
     }
   );
 
+void restrictCredentialStorage();
 
-console.log(
-  `[BantAI v${VERSION}] Hybrid AI Decision-Support service worker started.`
-);
+
+console.log("[BantAI] SERVICE_WORKER_STARTED");
 
 void checkServer();
 void initializeExistingTabs();

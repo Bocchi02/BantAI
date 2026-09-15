@@ -1,0 +1,46 @@
+name: Security and dependency checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify source and frozen model contract
+        run: python scripts/verify_project.py
+      - name: Verify fail-closed extension release packaging
+        run: python -m unittest tests.test_extension_release_gate -v
+      - name: Audit locked platform dependencies
+        run: pipx run pip-audit==2.10.0 -r shared_platform/requirements.lock
+      - name: Audit locked detector dependencies
+        run: pipx run pip-audit==2.10.0 -r backend/requirements-detector.lock
+
+  web-security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install locked web dependencies
+        run: npm ci
+      - name: Fail on production dependency advisories
+        run: npm audit --omit=dev --audit-level=high
+      - name: Lint and render the web application
+        run: npm run lint && npm test

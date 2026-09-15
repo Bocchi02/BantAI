@@ -4,7 +4,7 @@ torch
 transformers
 sentencepiece
 safetensors
-idna==3.13
+idna==3.19
 joblib==1.5.3
 numpy==2.5.1
 pandas==3.0.3

@@ -87,10 +87,7 @@
         return null;
       }
 
-      console.error(
-        "[BantAI v0.6] sendMessage failed:",
-        error
-      );
+      console.error("[BantAI Gmail] SEND_MESSAGE_FAILED");
 
       return null;
     }
@@ -442,7 +439,8 @@
       }
     };
 
-    const currentFingerprint =
+    const authenticationFingerprint = await globalThis.BantAISenderAuthentication?.attach(payload) || "{}";
+    const currentFingerprint = authenticationFingerprint +
       makeEmailFingerprint(
         payload
       );

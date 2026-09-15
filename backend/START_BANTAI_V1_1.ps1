@@ -1,3 +1,6 @@
+<# LEGACY DEVELOPMENT ONLY: starts the retired local Companion workflow.
+   End users connect the extension directly to the remote BantAI API. #>
+
 param(
     [string]$TextModelDir = "",
     [string]$RfModelPath = "",

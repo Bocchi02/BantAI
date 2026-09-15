@@ -1,3 +1,6 @@
+<# LEGACY DEVELOPMENT ONLY: starts the local detector and dashboard stack.
+   End users do not run this script; production inference uses the remote API. #>
+
 param([switch]$NoBuild)
 
 $ErrorActionPreference = "Stop"

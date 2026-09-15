@@ -249,9 +249,7 @@ function indicatorLabels(state) {
 }
 
 function simpleEmailMessage(state, result) {
-  if (result === "NO_STRONG_WARNING_SIGNS" || result === "SAFE") {
-    return "BantAI did not find clear scam warning signs in this email. This does not guarantee that the sender or message is legitimate.";
-  }
+  const reassuringResult = result === "NO_STRONG_WARNING_SIGNS" || result === "SAFE";
   if (result === "UNAVAILABLE") {
     return "BantAI could not finish checking this email. Be careful with links, attachments, money requests, and requests for private information.";
   }
@@ -268,16 +266,40 @@ function simpleEmailMessage(state, result) {
   ].includes(cloudStatus);
   const cloudSummary = String(cloudReview.reasoning_summary || "").trim();
   const cloudAction = String(cloudReview.recommended_action || "").trim();
+  const modelSignal = String(state?.email_detector?.result?.signal || state?.email_detector?.signal || "").toUpperCase();
   if (
-    cloudCompleted &&
+    result === "NEEDS_CAUTION" &&
+    modelSignal === "SUSPICIOUS" &&
+    cloudStatus === "NO_STRONG_WARNING_SIGNS" &&
     cloudReview.body_context_sent_to_provider === true &&
     cloudReview.sender_context_sent_to_provider === true &&
     cloudReview.subject_context_sent_to_provider === true &&
     cloudSummary
   ) {
+    const firstSentence = cloudSummary.match(/^.*?[.!?](?=\s|$)/s)?.[0] || `${cloudSummary}.`;
+    return `Cloud review: ${firstSentence} Other checks still raised a warning, so verify through the official app or website before acting.`;
+  }
+  if (
+    cloudCompleted &&
+    cloudReview.body_context_sent_to_provider === true &&
+    cloudReview.sender_context_sent_to_provider === true &&
+    cloudReview.subject_context_sent_to_provider === true &&
+    cloudStatus === (reassuringResult ? "NO_STRONG_WARNING_SIGNS" : result) &&
+    cloudSummary
+  ) {
+    if (reassuringResult) {
+      // Keep the contextual evidence (including sender-domain consistency) and
+      // the required limitation together in the single final explanation.
+      const firstSentence = cloudSummary.match(/^.*?[.!?](?=\s|$)/s)?.[0] || `${cloudSummary}.`;
+      return `${firstSentence} This does not guarantee that the sender or message is legitimate.`;
+    }
     return [cloudSummary, cloudAction]
       .filter(Boolean)
       .join(" ");
+  }
+
+  if (reassuringResult) {
+    return "BantAI did not find clear scam warning signs in this email. This does not guarantee that the sender or message is legitimate.";
   }
 
   const findings = indicatorLabels(state).slice(0, 2);
@@ -309,12 +331,20 @@ function renderServer(server) {
   renderInstalledThresholds();
 }
 
+function websiteDecision(detector) {
+  const result = detector.result || {};
+  if (detector.state === "error" || result.signal === "UNAVAILABLE" || result.llm_review?.status === "UNAVAILABLE") return "UNAVAILABLE";
+  if (detector.state !== "complete") return detector.state === "analyzing" ? "CHECKING" : "WAITING";
+  const completed = ["NO_STRONG_WARNING_SIGNS", "NEEDS_CAUTION", "SUSPICIOUS_SIGNS_FOUND"];
+  if (!completed.includes(result.final_result)) return "CHECKING";
+  if (result.signal === "SUSPICIOUS" && !completed.includes(result.llm_review?.status || result.llm_review?.assessment)) return "CHECKING";
+  return result.final_result;
+}
+
 function renderWebsite(state) {
   const detector = state?.url_detector || {};
   const result = detector.result || {};
-  const finalResult = String(
-    result.final_result || detector.signal || result.signal || "WAITING"
-  ).toUpperCase();
+  const finalResult = websiteDecision(detector);
   const style = FINAL_LABELS[finalResult]
     ? finalStyle(finalResult)
     : technicalStyle(finalResult);
@@ -575,29 +605,23 @@ async function loadStoredState() {
 
 async function loadPairingState() {
   try {
-    const response = await fetch("http://127.0.0.1:8000/companion/status", {cache: "no-store"});
-    if (!response.ok) throw new Error("Companion unavailable");
-    const state = await response.json();
+    const state = await chrome.runtime.sendMessage({type: "BANTAI_GET_CONNECTION"});
+    if (!state?.ok) throw new Error(state?.detail || "Service unavailable");
     const enabled = state.detection_enabled === true;
     setDetectionVisibility(enabled);
     if (enabled) {
       elements.pairingState.textContent = "Connected";
-      elements.pairingMessage.textContent = `Detection and activity are connected to ${state.user_email || "your BantAI account"}.`;
+      elements.pairingMessage.textContent = `Browser extension connected to ${state.user_email || "your BantAI account"}. Server models are ready.`;
       elements.pairingForm.classList.add("hidden");
       elements.unpairButton.classList.remove("hidden");
-    } else if (state.paired) {
-      elements.pairingState.textContent = "Verification needed";
-      elements.pairingMessage.textContent = state.access_message || "This device connection is expired or unavailable. Disconnect it, then pair it again.";
+    } else if (state.connected) {
+      elements.pairingState.textContent = "Service unavailable";
+      elements.pairingMessage.textContent = state.access_message || "Browser extension connected, but the BantAI server is unavailable.";
       elements.pairingForm.classList.add("hidden");
       elements.unpairButton.classList.remove("hidden");
-    } else if (!state.platform_configured) {
-      elements.pairingState.textContent = "Setup needed";
-      elements.pairingMessage.textContent = "Detection is off. Restart BantAI Companion so it can connect to the local web service.";
-      elements.pairingForm.classList.add("hidden");
-      elements.unpairButton.classList.add("hidden");
     } else {
       elements.pairingState.textContent = "Not connected";
-      elements.pairingMessage.textContent = "Detection is off. Generate a pairing code from the BantAI web dashboard, then enter it here.";
+      elements.pairingMessage.textContent = "Generate a one-time code from the BantAI web dashboard, then enter it here.";
       elements.pairingForm.classList.remove("hidden");
       elements.unpairButton.classList.add("hidden");
     }
@@ -605,8 +629,8 @@ async function loadPairingState() {
   } catch {
     setDetectionVisibility(false);
     elements.pairingState.textContent = "Unavailable";
-    elements.pairingMessage.textContent = "Detection is off. Start BantAI Companion before connecting your web account.";
-    elements.pairingForm.classList.add("hidden");
+    elements.pairingMessage.textContent = "Service unavailable. Check your connection and try again.";
+    elements.pairingForm.classList.remove("hidden");
     elements.unpairButton.classList.add("hidden");
     return false;
   }
@@ -638,34 +662,23 @@ elements.reviewForm.addEventListener("submit", async (event) => {
   elements.reviewMessage.textContent = "";
   updateReviewControls();
   try {
-    const response = await fetch("http://127.0.0.1:8000/companion/url-feedback", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        client_event_id: review.clientEventId,
-        url: review.url,
-        verdict,
-        classification: verdict === "INCORRECT" ? classification : undefined,
-        reason: verdict === "INCORRECT" && reason ? reason : undefined,
-        confirmed: true
-      })
+    const response = await chrome.runtime.sendMessage({
+      type: "BANTAI_SUBMIT_URL_FEEDBACK",
+      tab_id: activeTabId,
+      client_event_id: review.clientEventId,
+      url: review.url,
+      verdict,
+      classification: verdict === "INCORRECT" ? classification : undefined,
+      reason: verdict === "INCORRECT" && reason ? reason : undefined,
+      confirmed: true
     });
-    if (!response.ok) {
-      let message = "BantAI could not submit feedback. Try again shortly.";
-      try {
-        const problem = await response.json();
-        message = feedbackErrorMessage(problem);
-      } catch {
-        // Keep the short local error for non-JSON failures.
-      }
-      throw new Error(message);
+    if (!response?.ok) {
+      throw new Error(response?.detail || "BantAI could not submit feedback. Try again shortly.");
     }
     await rememberSubmittedReview(review.clientEventId);
     renderReview(latestState);
   } catch (error) {
-    elements.reviewMessage.textContent = error instanceof TypeError
-      ? "BantAI Companion is unavailable. Start or restart it, then try again."
-      : error instanceof Error
+    elements.reviewMessage.textContent = error instanceof Error
         ? error.message
         : "BantAI could not submit feedback. Try again shortly.";
   } finally {
@@ -727,24 +740,15 @@ elements.pairingForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const code = elements.pairingCode.value.replace(/\s+/g, "").toUpperCase();
   elements.pairingButton.disabled = true;
-  elements.pairingMessage.textContent = "Connecting this computer…";
+  elements.pairingMessage.textContent = "Connecting this browser extension…";
   try {
-    const response = await fetch("http://127.0.0.1:8000/companion/pair", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({code, device_label: `BantAI on ${navigator.platform || "Windows"}`})
+    const response = await chrome.runtime.sendMessage({
+      type: "BANTAI_PAIR_EXTENSION",
+      code,
+      device_label: `BantAI browser extension on ${navigator.platform || "this device"}`
     });
-    if (!response.ok) {
-      let message = "That code is invalid, expired, or the shared service is unavailable.";
-      try {
-        const problem = await response.json();
-        if (typeof problem.detail === "string" && problem.detail.length <= 160) {
-          message = problem.detail;
-        }
-      } catch {
-        // Keep the privacy-safe generic message for non-JSON failures.
-      }
-      throw new Error(message);
+    if (!response?.ok) {
+      throw new Error(response?.detail || "That code is invalid, expired, or the BantAI service is unavailable.");
     }
     elements.pairingCode.value = "";
     const enabled = await loadPairingState();
@@ -764,10 +768,10 @@ elements.pairingForm.addEventListener("submit", async (event) => {
 
 elements.unpairButton.addEventListener("click", async () => {
   elements.unpairButton.disabled = true;
-  elements.pairingMessage.textContent = "Disconnecting this computer…";
+  elements.pairingMessage.textContent = "Disconnecting this browser extension…";
   try {
-    const response = await fetch("http://127.0.0.1:8000/companion/unpair", {method: "POST"});
-    if (!response.ok) throw new Error("Disconnect failed");
+    const response = await chrome.runtime.sendMessage({type: "BANTAI_DISCONNECT_EXTENSION"});
+    if (!response?.ok) throw new Error(response?.detail || "Disconnect failed");
     submittedReviewIds.clear();
     submittedEmailReviewIds.clear();
     reviewEventId = null;
@@ -780,7 +784,7 @@ elements.unpairButton.addEventListener("click", async () => {
     await chrome.runtime.sendMessage({type: "BANTAI_PAIRING_CHANGED"});
   } catch {
     elements.pairingState.textContent = "Try again";
-    elements.pairingMessage.textContent = "BantAI could not remove the local device credential.";
+    elements.pairingMessage.textContent = "BantAI could not disconnect this browser extension.";
   } finally {
     elements.unpairButton.disabled = false;
   }

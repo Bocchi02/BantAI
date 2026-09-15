@@ -13,14 +13,17 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from backend.llm.base import LLMProviderError
 from backend.llm.gemini_provider import GeminiProvider
-from backend.llm.redaction import redact_text, truncate_preserving_ends
+from backend.llm.redaction import redact_text, sender_parts, truncate_preserving_ends
+from backend.llm.authentication import minimize_authentication
 
 
 PASTED_MESSAGE_MODEL = "gemini-3.5-flash-lite"
 PASTED_MESSAGE_MAX_CLOUD_CHARS = 7000
 ACTIVITY_METADATA_MAX_CLOUD_CHARS = 800
 ACTIVITY_EMAIL_MAX_CLOUD_CHARS = 7000
-ACTIVITY_URL_MAX_CLOUD_CHARS = 8192
+ACTIVITY_URL_MAX_CLOUD_CHARS = 512
+DIRECT_EMAIL_METADATA_MAX_CLOUD_CHARS = 500
+DIRECT_EMAIL_MAX_CLOUD_CHARS = 7000
 
 
 _PRIVACY_MARKER_REPLACEMENTS = {
@@ -178,7 +181,7 @@ def unavailable(reason: str = "PROVIDER_UNAVAILABLE") -> dict[str, Any]:
         "confidence": None,
         "indicators": [],
         "reasoning_summary": "Cloud AI Review could not be completed. Local BantAI checks are still available.",
-        "recommended_action": "Use the local detector guidance and verify unexpected requests independently.",
+        "recommended_action": "Use the server-model guidance and verify unexpected requests independently.",
         "failure_reason": reason,
     }
 
@@ -216,6 +219,46 @@ def review(payload: dict[str, Any]) -> dict[str, Any]:
         return unavailable(getattr(exc, "reason_code", "PROVIDER_UNAVAILABLE"))
     except Exception:
         return unavailable()
+
+
+def prepare_direct_email_review_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Create the only email payload allowed to cross the public-provider boundary.
+
+    Request field names such as ``redacted_context`` are not a security control:
+    paired clients may be outdated, modified, or compromised.  Redaction and
+    minimization therefore happen again here, immediately before ``review`` can
+    create a provider request.
+    """
+
+    provider = str(payload.get("provider") or "").strip().lower()
+    sender_display_name, sender_domain = sender_parts(
+        str(payload.get("redacted_sender") or "")
+    )
+    return {
+        "analysis_type": "EMAIL_CONTEXT",
+        "provider": provider,
+        "sender_display_name": truncate_preserving_ends(
+            sender_display_name or "",
+            DIRECT_EMAIL_METADATA_MAX_CLOUD_CHARS,
+        ) or None,
+        "sender_domain": sender_domain,
+        "sender_authentication": minimize_authentication(
+            payload.get("sender_authentication"), provider
+        ),
+        "subject": truncate_preserving_ends(
+            redact_text(str(payload.get("redacted_subject") or "")),
+            DIRECT_EMAIL_METADATA_MAX_CLOUD_CHARS,
+        ),
+        "email_context": truncate_preserving_ends(
+            redact_text(str(payload.get("redacted_context") or "")),
+            DIRECT_EMAIL_MAX_CLOUD_CHARS,
+        ),
+        # These are detector observations, not message content.  Keep only
+        # structured values supplied by the authenticated application flow.
+        "email_model": payload.get("email_model") if isinstance(payload.get("email_model"), dict) else {},
+        "local_indicators": payload.get("local_indicators") if isinstance(payload.get("local_indicators"), dict) else {},
+        "redacted_before_provider": True,
+    }
 
 
 def review_pasted_message(message: str) -> dict[str, Any]:
@@ -291,14 +334,16 @@ def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:
     }
     content_scope = str(payload.get("content_scope") or "")
     if payload.get("event_type") == "URL":
-        url_field = "full_url" if content_scope == "FULL_URL" else "url_origin"
-        review_payload[url_field] = truncate_preserving_ends(
-            str(payload.get(url_field) or ""),
+        review_payload["url_origin"] = truncate_preserving_ends(
+            str(payload.get("url_origin") or ""),
             ACTIVITY_URL_MAX_CLOUD_CHARS,
         )
     else:
+        _, sender_domain = sender_parts(str(payload.get("sender") or ""))
         review_payload.update({
             "provider": str(payload.get("provider") or ""),
+            "sender_domain": sender_domain,
+            "sender_authentication": minimize_authentication(payload.get("sender_authentication"), payload.get("provider")),
             "sender": truncate_preserving_ends(
                 redact_text(str(payload.get("sender") or "")),
                 ACTIVITY_METADATA_MAX_CLOUD_CHARS,
@@ -336,7 +381,7 @@ def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:
             **result,
             "stored": False,
             "analysis_scope": payload.get("content_scope"),
-            "full_context_available": content_scope in {"FULL_URL", "EMAIL_PROVIDER_SENDER_SUBJECT_BODY"},
+            "full_context_available": content_scope == "EMAIL_PROVIDER_SENDER_SUBJECT_BODY",
             "redacted_before_provider": payload.get("event_type") == "EMAIL",
             "body_context_sent_to_provider": (
                 payload.get("event_type") == "EMAIL"
@@ -357,7 +402,7 @@ def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:
         "failure_reason": failure_reason,
         "stored": False,
         "analysis_scope": payload.get("content_scope"),
-        "full_context_available": content_scope in {"FULL_URL", "EMAIL_PROVIDER_SENDER_SUBJECT_BODY"},
+        "full_context_available": content_scope == "EMAIL_PROVIDER_SENDER_SUBJECT_BODY",
         "redacted_before_provider": payload.get("event_type") == "EMAIL",
         "body_context_sent_to_provider": False,
     }

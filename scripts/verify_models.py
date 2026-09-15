@@ -17,6 +17,7 @@ from email_model import (  # noqa: E402
     MODEL_VERSION as EMAIL_MODEL_VERSION,
     PREPROCESSING,
     load_deployment_contract,
+    verify_deployment_manifest,
 )
 
 EMAIL_MODEL_DIR = (
@@ -69,6 +70,7 @@ def main() -> int:
 
     try:
         config = json.loads(config_path.read_text(encoding="utf-8"))
+        verify_deployment_manifest(EMAIL_MODEL_DIR)
         contract = load_deployment_contract(EMAIL_MODEL_DIR)
     except Exception as exc:
         fail(str(exc))
@@ -152,6 +154,7 @@ def main() -> int:
 
     print("PASS: Email model directory")
     print(f"PASS: Email config ({config_path.name})")
+    print("PASS: Email artifact manifest (SHA-256 and size verified)")
     print(
         "PASS: Email label mapping "
         f"({EXPECTED_ID2LABEL[0]}, {EXPECTED_ID2LABEL[1]})"
@@ -173,7 +176,7 @@ def main() -> int:
     )
     print(f"PASS: RF Grouped v1.0.0 ({RF_MODEL_PATH.name}, SHA-256 verified)")
     print()
-    print("BantAI local model verification: PASS")
+    print("BantAI frozen server model artifact verification: PASS")
     return 0
 
 

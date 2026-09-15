@@ -120,6 +120,48 @@ class PairingConsumeRequest(StrictModel):
     device_label: str = Field(min_length=1, max_length=80)
 
 
+class RemoteUrlDetectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    url: str = Field(min_length=8, max_length=2048)
+    occurred_at: datetime
+
+    @field_validator("occurred_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value
+
+
+class RemoteEmailDetectionRequest(BaseModel):
+    sender_authentication: dict[str, str] = Field(default_factory=dict, max_length=10)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    client_event_id: str = Field(min_length=8, max_length=128)
+    provider: Literal["gmail", "outlook", "yahoo"]
+    sender: str | None = Field(default=None, max_length=320)
+    subject: str = Field(default="", max_length=500)
+    body: str = Field(min_length=1, max_length=50_000)
+    current_url: str = Field(min_length=8, max_length=2048)
+    occurred_at: datetime
+
+    @field_validator("body")
+    @classmethod
+    def require_visible_body(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Opened email body is required.")
+        return value
+
+    @field_validator("occurred_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("occurred_at must include a timezone")
+        return value
+
+
 class ActivityInput(StrictModel):
     client_event_id: str = Field(min_length=8, max_length=128)
     event_type: EventType
@@ -129,6 +171,8 @@ class ActivityInput(StrictModel):
     subject: str | None = Field(default=None, max_length=500)
     outcome: Outcome
     cloud_status: CloudStatus
+    cloud_failure_category: str | None = Field(default=None, max_length=64, pattern="^[A-Z][A-Z0-9_]{0,63}$")
+    duration_ms: int | None = Field(default=None, ge=0, le=120_000)
     occurred_at: datetime
 
     @field_validator("occurred_at")
@@ -137,6 +181,14 @@ class ActivityInput(StrictModel):
         if value.tzinfo is None:
             raise ValueError("occurred_at must include a timezone")
         return value
+
+    @model_validator(mode="after")
+    def normalize_cloud_failure_category(self) -> "ActivityInput":
+        if self.cloud_status == CloudStatus.UNAVAILABLE:
+            self.cloud_failure_category = self.cloud_failure_category or "UNSPECIFIED"
+        elif self.cloud_failure_category is not None:
+            raise ValueError("Only unavailable cloud reviews may include a failure category.")
+        return self
 
 
 class ActivityBatchRequest(StrictModel):
@@ -244,7 +296,7 @@ class UrlActivityFeedbackRequest(StrictModel):
 
 class DeviceUrlActivityFeedbackRequest(StrictModel):
     client_event_id: str = Field(min_length=8, max_length=128)
-    url: str = Field(min_length=8, max_length=2048)
+    url: str | None = Field(default=None, min_length=8, max_length=2048)
     verdict: FeedbackVerdict
     classification: UrlReportClassification | None = None
     reason: FeedbackReason | None = None
@@ -270,7 +322,7 @@ class DeviceEmailActivityFeedbackRequest(BaseModel):
     provider: Literal["gmail", "outlook", "yahoo"]
     sender: str = Field(default="", max_length=320)
     subject: str = Field(default="", max_length=500)
-    body: str = Field(min_length=1, max_length=10_000)
+    body: str | None = Field(default=None, min_length=1, max_length=10_000)
     verdict: FeedbackVerdict
     classification: UrlReportClassification | None = None
     reason: FeedbackReason | None = None
@@ -278,7 +330,7 @@ class DeviceEmailActivityFeedbackRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_explicit_email_feedback(self) -> "DeviceEmailActivityFeedbackRequest":
-        if not self.body.strip():
+        if self.body is not None and not self.body.strip():
             raise ValueError("Email body is required.")
         if self.verdict == FeedbackVerdict.INCORRECT:
             if self.classification not in {
@@ -300,6 +352,12 @@ class AdminReviewAction(str, enum.Enum):
 class UrlReportReviewRequest(StrictModel):
     action: AdminReviewAction
     assessment: AdminUrlAssessment | None = None
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def empty_reason_is_none(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def require_assessment_for_training_approval(self) -> "UrlReportReviewRequest":
@@ -312,6 +370,7 @@ class UrlReportReviewRequest(StrictModel):
 
 
 class EmailCloudReviewRequest(StrictModel):
+    sender_authentication: dict[str, str] = Field(default_factory=dict, max_length=10)
     provider: Literal["gmail", "outlook", "yahoo"]
     redacted_sender: str | None = Field(default=None, max_length=320)
     redacted_subject: str = Field(default="", max_length=500)
@@ -333,7 +392,7 @@ class ActivityExplanationRequest(BaseModel):
     client_event_id: str = Field(min_length=8, max_length=128)
     event_type: EventType
     outcome: Outcome
-    url: str | None = Field(default=None, min_length=8, max_length=8192)
+    url: str | None = Field(default=None, min_length=8, max_length=512)
     provider: Literal["gmail", "outlook", "yahoo"] | None = None
     sender: str | None = Field(default=None, max_length=320)
     subject: str | None = Field(default=None, max_length=500)
@@ -343,7 +402,7 @@ class ActivityExplanationRequest(BaseModel):
     def require_matching_explanation_content(self) -> "ActivityExplanationRequest":
         if self.event_type == EventType.URL:
             if not self.url or self.provider or self.sender is not None or self.subject is not None or self.body is not None:
-                raise ValueError("Website explanations require only the full URL.")
+                raise ValueError("Website explanations require only the website origin.")
         elif self.url is not None or not self.provider or not self.body or not self.body.strip():
             raise ValueError("Email explanations require provider and email body content without a URL.")
         return self
