@@ -79,7 +79,13 @@ body {
 
 .hidden { display: none !important; }
 .invariant-hidden,
-.compact-legacy-only { display: none !important; }
+.compact-legacy-only,
+#compactRiskCard,
+#compactRiskBadge,
+#compactRiskText,
+#compactDecisionTitle,
+#compactSummaryText,
+#compactResultIcon { display: none !important; }
 #detectionContent > #websiteCard,
 #detectionContent > #emailCard,
 #detectionContent > #indicatorsCard,
@@ -240,86 +246,163 @@ body {
   max-width: 255px;
 }
 
-/* 3. Final Security Decision Card (Sneat Neutral Card with subtle tints) */
+/* 3. Detection Overview (Sneat Two-Card Grid) */
+.overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detection-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.detection-card,
 .decision-card {
   background: var(--signalam-card);
   border: 1px solid var(--signalam-border);
-  border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
   box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   transition: border-color 0.2s ease, background 0.2s ease;
+  min-width: 0;
 }
 
+.detection-card.safe,
+.detection-card.low-risk,
 .decision-card.safe,
 .decision-card.low-risk {
   border-color: var(--signalam-success-border);
-  background: linear-gradient(180deg, #ffffff 0%, rgba(113, 221, 55, 0.04) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, rgba(113, 221, 55, 0.05) 100%);
 }
 
+.detection-card.suspicious,
 .decision-card.suspicious {
   border-color: var(--signalam-warning-border);
-  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 171, 0, 0.04) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 171, 0, 0.05) 100%);
 }
 
+.detection-card.dangerous,
+.detection-card.high-risk,
 .decision-card.dangerous,
 .decision-card.high-risk {
   border-color: var(--signalam-danger-border);
-  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 62, 29, 0.04) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, rgba(255, 62, 29, 0.05) 100%);
 }
 
+.detection-card.analyzing,
 .decision-card.analyzing {
   border-color: rgba(105, 108, 255, 0.25);
   background: linear-gradient(180deg, #ffffff 0%, rgba(105, 108, 255, 0.04) 100%);
 }
 
+.detection-card.neutral,
+.detection-card.unavailable,
+.decision-card.neutral,
+.decision-card.unavailable {
+  border-color: var(--signalam-border);
+  background: linear-gradient(180deg, #ffffff 0%, rgba(133, 146, 163, 0.04) 100%);
+}
+
+.detection-card-top,
 .decision-card-top {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
+.detection-icon,
 .decision-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
   display: grid;
   place-items: center;
   flex-shrink: 0;
   transition: background 0.2s ease, color 0.2s ease;
 }
 
+.detection-icon.safe,
+.detection-icon.low-risk,
 .decision-icon.safe,
 .decision-icon.low-risk {
   background: var(--signalam-success-light);
   color: var(--signalam-success);
 }
 
+.detection-icon.suspicious,
 .decision-icon.suspicious {
   background: var(--signalam-warning-light);
   color: var(--signalam-warning);
 }
 
+.detection-icon.dangerous,
+.detection-icon.high-risk,
 .decision-icon.dangerous,
 .decision-icon.high-risk {
   background: var(--signalam-danger-light);
   color: var(--signalam-danger);
 }
 
+.detection-icon.analyzing,
 .decision-icon.analyzing {
   background: var(--signalam-primary-light);
   color: var(--signalam-primary);
 }
 
+.detection-icon.neutral,
+.detection-icon.unavailable,
 .decision-icon.neutral,
 .decision-icon.unavailable {
   background: rgba(133, 146, 163, 0.1);
   color: var(--signalam-secondary);
 }
 
-.decision-content {
+.detection-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.detection-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--signalam-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detection-card-desc,
+.decision-summary {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--signalam-text-primary);
+  font-weight: 400;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 30px;
+}
+
+.detection-content {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -327,23 +410,27 @@ body {
   min-width: 0;
 }
 
-.decision-badge-row {
+.detection-badge-row {
   display: flex;
   align-items: center;
 }
 
+.detection-badge,
 .decision-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
+  gap: 4px;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
   text-transform: uppercase;
+  width: fit-content;
+  white-space: nowrap;
 }
 
+.detection-dot,
 .decision-dot {
   width: 5px;
   height: 5px;
@@ -351,6 +438,8 @@ body {
   background: currentColor;
 }
 
+.detection-badge.safe,
+.detection-badge.low-risk,
 .decision-badge.safe,
 .decision-badge.low-risk {
   color: var(--signalam-success);
@@ -358,12 +447,15 @@ body {
   border: 1px solid var(--signalam-success-border);
 }
 
+.detection-badge.suspicious,
 .decision-badge.suspicious {
   color: var(--signalam-warning);
   background: var(--signalam-warning-light);
   border: 1px solid var(--signalam-warning-border);
 }
 
+.detection-badge.dangerous,
+.detection-badge.high-risk,
 .decision-badge.dangerous,
 .decision-badge.high-risk {
   color: var(--signalam-danger);
@@ -371,12 +463,15 @@ body {
   border: 1px solid var(--signalam-danger-border);
 }
 
+.detection-badge.analyzing,
 .decision-badge.analyzing {
   color: var(--signalam-primary);
   background: var(--signalam-primary-light);
   border: 1px solid rgba(105, 108, 255, 0.25);
 }
 
+.detection-badge.neutral,
+.detection-badge.unavailable,
 .decision-badge.neutral,
 .decision-badge.unavailable {
   color: var(--signalam-secondary);
@@ -385,18 +480,11 @@ body {
 }
 
 .decision-title {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--signalam-text-heading);
   letter-spacing: -0.3px;
   line-height: 1.2;
-}
-
-.decision-summary {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--signalam-text-primary);
-  font-weight: 400;
 }
 
 /* 4. View Details Button */

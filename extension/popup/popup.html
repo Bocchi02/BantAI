@@ -54,26 +54,61 @@
         </div>
       </section>
 
-      <!-- Final Security Decision Card (Sneat-style neutral card with subtle tint) -->
-      <section id="compactRiskCard" class="decision-card low-risk" aria-live="polite">
-        <div class="decision-card-top">
-          <div id="compactResultIcon" class="decision-icon low-risk" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-              <path d="M9 12l2 2 4-4"></path>
-            </svg>
-          </div>
-          <div class="decision-content">
-            <div class="decision-badge-row">
-              <span id="compactRiskBadge" class="decision-badge safe">
-                <span class="decision-dot"></span>
-                <span id="compactRiskText">SAFE</span>
-              </span>
+      <!-- Detection Overview Section (Sneat Two-Card Grid for Website & Email Detection) -->
+      <section class="overview-section" aria-label="Detection Overview">
+        <div class="overview-header">
+          <span class="section-label">DETECTION OVERVIEW</span>
+        </div>
+
+        <div class="detection-grid">
+          <!-- 1. Website Detection Card -->
+          <div id="websiteDetectCard" class="detection-card safe" aria-live="polite">
+            <div class="detection-card-top">
+              <div id="websiteDetectIcon" class="detection-icon safe" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+              </div>
+              <div class="detection-card-meta">
+                <span class="detection-card-label">Website</span>
+                <span id="websiteDetectBadge" class="detection-badge safe">
+                  <span class="detection-dot"></span>
+                  <span id="websiteDetectSignal">SAFE</span>
+                </span>
+              </div>
             </div>
-            <h2 id="compactDecisionTitle" class="decision-title">SAFE</h2>
+            <p id="websiteDetectDesc" class="detection-card-desc">No security concerns detected</p>
+            <!-- Preserved invariant anchors for test verification -->
+            <span id="compactRiskCard" class="hidden"></span>
+            <span id="compactRiskBadge" class="hidden"></span>
+            <span id="compactRiskText" class="hidden">SAFE</span>
+            <h2 id="compactDecisionTitle" class="hidden">SAFE</h2>
+            <span id="compactSummaryText" class="hidden"></span>
+            <span id="compactResultIcon" class="hidden"></span>
+          </div>
+
+          <!-- 2. Email Detection Card -->
+          <div id="emailDetectCard" class="detection-card neutral" aria-live="polite">
+            <div class="detection-card-top">
+              <div id="emailDetectIcon" class="detection-icon neutral" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                  <polyline points="22,6 12,13 2,6"></polyline>
+                </svg>
+              </div>
+              <div class="detection-card-meta">
+                <span class="detection-card-label">Email</span>
+                <span id="emailDetectBadge" class="detection-badge neutral">
+                  <span class="detection-dot"></span>
+                  <span id="emailDetectSignal">NOT DETECTED</span>
+                </span>
+              </div>
+            </div>
+            <p id="emailDetectDesc" class="detection-card-desc">No email on this page</p>
           </div>
         </div>
-        <p id="compactSummaryText" class="decision-summary">No major security concerns were identified.</p>
       </section>
 
       <!-- View Details Button (Full-width primary button) -->

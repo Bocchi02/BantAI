@@ -146,6 +146,40 @@ class AnalysisModalTests(unittest.TestCase):
         self.assertIn('>SAFE</span>', popup_html)
         self.assertIn('>SAFE</h2>', popup_html)
 
+    def test_popup_and_modal_support_website_and_email_detection_cards(self) -> None:
+        popup_html = (ROOT / "extension/popup/popup.html").read_text(encoding="utf-8")
+        popup_js = (ROOT / "extension/popup/popup.js").read_text(encoding="utf-8")
+        modal_js = (ROOT / "extension/content/analysis-modal.js").read_text(encoding="utf-8")
+
+        # Popup 2-card Detection Overview
+        self.assertIn('id="websiteDetectCard"', popup_html)
+        self.assertIn('id="emailDetectCard"', popup_html)
+        self.assertIn('id="websiteDetectSignal"', popup_html)
+        self.assertIn('id="emailDetectSignal"', popup_html)
+        self.assertIn("DETECTION OVERVIEW", popup_html)
+
+        # Popup JS handles both Website and Email Detection independently
+        self.assertIn("function mapSecuritySignal(", popup_js)
+        self.assertIn("function mapEmailDetection(", popup_js)
+        self.assertIn("NOT DETECTED", popup_js)
+        self.assertIn("NOT AVAILABLE", popup_js)
+        self.assertIn("UNABLE TO ANALYZE", popup_js)
+
+        # Modal supports both Website Detection and Email Detection sections
+        self.assertIn("Website Detection", modal_js)
+        self.assertIn("Email Detection", modal_js)
+        self.assertIn("What This Means", modal_js)
+        self.assertIn("Recommended Action", modal_js)
+
+    def test_go_back_button_conditional_rendering(self) -> None:
+        modal_js = (ROOT / "extension/content/analysis-modal.js").read_text(encoding="utf-8")
+        self.assertIn("isSafeOverall", modal_js)
+        self.assertIn("showGoBack", modal_js)
+        self.assertIn("signalamBackBtn", modal_js)
+        self.assertIn("Continue Anyway", modal_js)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+

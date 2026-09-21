@@ -127,6 +127,16 @@ const elements = {
   compactDecisionTitle: byId("compactDecisionTitle"),
   compactResultIcon: byId("compactResultIcon"),
   compactSummaryText: byId("compactSummaryText"),
+  websiteDetectCard: byId("websiteDetectCard"),
+  websiteDetectIcon: byId("websiteDetectIcon"),
+  websiteDetectBadge: byId("websiteDetectBadge"),
+  websiteDetectSignal: byId("websiteDetectSignal"),
+  websiteDetectDesc: byId("websiteDetectDesc"),
+  emailDetectCard: byId("emailDetectCard"),
+  emailDetectIcon: byId("emailDetectIcon"),
+  emailDetectBadge: byId("emailDetectBadge"),
+  emailDetectSignal: byId("emailDetectSignal"),
+  emailDetectDesc: byId("emailDetectDesc"),
   viewDetailsBtn: byId("viewDetailsBtn"),
   quickFeedbackBar: byId("quickFeedbackBar"),
   toggleFeedbackBtn: byId("toggleFeedbackBtn")
@@ -617,85 +627,296 @@ function renderEmail(state) {
   renderIndicators(state, fusionResult);
 }
 
+function mapSecuritySignal(outcome) {
+  const norm = String(outcome || "").toUpperCase();
+  let badgeLabel = "SAFE";
+  let titleText = "SAFE";
+  if (norm === "NO_STRONG_WARNING_SIGNS" || norm === "SAFE" || norm === "LOW" || norm === "LOW_RISK") {
+    badgeLabel = "SAFE";
+    titleText = "SAFE";
+    return {
+      signal: badgeLabel,
+      style: "safe",
+      desc: "No security concerns detected",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>'
+    };
+  }
+  if (norm === "NEEDS_CAUTION" || norm === "SUSPICIOUS" || norm === "MEDIUM") {
+    badgeLabel = "SUSPICIOUS";
+    titleText = "SUSPICIOUS";
+    return {
+      signal: badgeLabel,
+      style: "suspicious",
+      desc: "Requires additional caution",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
+    };
+  }
+  if (norm === "SUSPICIOUS_SIGNS_FOUND" || norm === "DANGEROUS" || norm === "HIGH" || norm === "HIGH_RISK") {
+    badgeLabel = "DANGEROUS";
+    titleText = "DANGEROUS";
+    return {
+      signal: badgeLabel,
+      style: "dangerous",
+      desc: "Deceptive or harmful traits",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+    };
+  }
+  if (norm === "ANALYZING" || norm === "CHECKING") {
+    return {
+      signal: "ANALYZING",
+      style: "analyzing",
+      desc: "Checking website address...",
+      iconSvg: '<svg class="spinner" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>'
+    };
+  }
+  if (norm === "UNAVAILABLE") {
+    return {
+      signal: "UNABLE TO ANALYZE",
+      style: "unavailable",
+      desc: "Could not complete check",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+    };
+  }
+  return {
+    signal: "WAITING",
+    style: "neutral",
+    desc: "Waiting for address...",
+    iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="6" x2="12" y2="12"></line><line x1="12" y1="12" x2="16" y2="14"></line></svg>'
+  };
+}
+
+function mapEmailDetection(state) {
+  if (state?.__previewEmail) {
+    const preview = String(state.__previewEmail).toLowerCase();
+    if (preview === "safe") {
+      return {
+        signal: "SAFE",
+        style: "safe",
+        desc: "No security concerns in email",
+        iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>'
+      };
+    }
+    if (preview === "suspicious") {
+      return {
+        signal: "SUSPICIOUS",
+        style: "suspicious",
+        desc: "Requires additional caution",
+        iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
+      };
+    }
+    if (preview === "dangerous") {
+      return {
+        signal: "DANGEROUS",
+        style: "dangerous",
+        desc: "Deceptive message traits",
+        iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+      };
+    }
+    if (preview === "analyzing" || preview === "loading") {
+      return {
+        signal: "ANALYZING",
+        style: "analyzing",
+        desc: "Checking email content...",
+        iconSvg: '<svg class="spinner" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>'
+      };
+    }
+    if (preview === "unable" || preview === "error") {
+      return {
+        signal: "UNABLE TO ANALYZE",
+        style: "unavailable",
+        desc: "Could not check email",
+        iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+      };
+    }
+    if (preview === "not_available" || preview === "unavailable") {
+      return {
+        signal: "NOT AVAILABLE",
+        style: "neutral",
+        desc: "Email check not available",
+        iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>'
+      };
+    }
+    if (preview === "not_detected" || preview === "none") {
+      return {
+        signal: "NOT DETECTED",
+        style: "neutral",
+        desc: "No email on this page",
+        iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>'
+      };
+    }
+  }
+
+  const provider = String(state?.provider || state?.email_detector?.provider || "").toLowerCase();
+  const isSupportedWebmail = SUPPORTED_EMAIL_PROVIDERS.has(provider);
+  const emailDetector = state?.email_detector || {};
+  const emailResult = emailDetector.result || {};
+  const detectorState = String(emailDetector.state || "").toLowerCase();
+  const rawEmailSignal = state?.fusion?.final_result || emailDetector.signal;
+
+  if (!isSupportedWebmail) {
+    return {
+      signal: "NOT DETECTED",
+      style: "neutral",
+      desc: "No email on this page",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>'
+    };
+  }
+
+  if (detectorState === "analyzing") {
+    return {
+      signal: "ANALYZING",
+      style: "analyzing",
+      desc: "Checking email content...",
+      iconSvg: '<svg class="spinner" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>'
+    };
+  }
+
+  if (detectorState === "error" || emailDetector.signal === "UNAVAILABLE") {
+    return {
+      signal: "UNABLE TO ANALYZE",
+      style: "unavailable",
+      desc: "Could not check email",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+    };
+  }
+
+  const hasEmailContent = Boolean(
+    emailDetector.sender ||
+    emailResult.sender ||
+    emailDetector.subject ||
+    emailResult.subject ||
+    emailDetector.state === "complete"
+  );
+
+  if (!hasEmailContent) {
+    return {
+      signal: "NOT DETECTED",
+      style: "neutral",
+      desc: "No open email found",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>'
+    };
+  }
+
+  const norm = String(rawEmailSignal || "").toUpperCase();
+  if (norm === "NO_STRONG_WARNING_SIGNS" || norm === "SAFE" || norm === "LOW") {
+    return {
+      signal: "SAFE",
+      style: "safe",
+      desc: "No security concerns in email",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>'
+    };
+  }
+  if (norm === "NEEDS_CAUTION" || norm === "SUSPICIOUS" || norm === "MEDIUM") {
+    return {
+      signal: "SUSPICIOUS",
+      style: "suspicious",
+      desc: "Requires additional caution",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
+    };
+  }
+  if (norm === "SUSPICIOUS_SIGNS_FOUND" || norm === "DANGEROUS" || norm === "HIGH") {
+    return {
+      signal: "DANGEROUS",
+      style: "dangerous",
+      desc: "Deceptive message traits",
+      iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+    };
+  }
+
+  return {
+    signal: "NOT DETECTED",
+    style: "neutral",
+    desc: "No email on this page",
+    iconSvg: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>'
+  };
+}
+
 function renderCompactUI(state) {
   if (!elements.compactView) return;
 
   const urlDetector = state?.url_detector || {};
   const urlResult = urlDetector.result || {};
   const emailDetector = state?.email_detector || {};
-  const emailResult = emailDetector.result || {};
-  const provider = String(state?.provider || emailDetector.provider || emailResult.provider || "").toLowerCase();
-  const isEmail = SUPPORTED_EMAIL_PROVIDERS.has(provider);
+  const provider = String(state?.provider || emailDetector.provider || "").toLowerCase();
+  const isSupportedWebmail = SUPPORTED_EMAIL_PROVIDERS.has(provider);
 
-  let targetDomain = "Current Webpage";
-  let targetUrl = state?.current_url || urlResult.current_url || "";
-  let scopeLabel = "Address only";
-  let finalOutcome = "WAITING";
+  const targetDomain = urlResult.hostname || state?.hostname || "Current Webpage";
+  const targetUrl = state?.current_url || urlResult.current_url || "";
+  const scopeLabel = isSupportedWebmail
+    ? (emailDetector.provider_label || state?.provider_label || provider.toUpperCase())
+    : "Website";
 
-  if (isEmail) {
-    targetDomain = emailDetector.sender || emailResult.sender || (emailDetector.provider_label || state?.provider_label || "Email message");
-    scopeLabel = emailDetector.provider_label || state?.provider_label || provider.toUpperCase();
-    finalOutcome = state?.fusion?.final_result || (emailDetector.state === "analyzing" ? "ANALYZING" : emailDetector.signal || "WAITING");
-  } else {
-    targetDomain = urlResult.hostname || state?.hostname || "Current Webpage";
-    scopeLabel = "Address only";
-    finalOutcome = websiteDecision(urlDetector);
+  if (elements.compactTargetDomain) {
+    elements.compactTargetDomain.textContent = targetDomain;
+    elements.compactTargetDomain.title = targetDomain;
   }
-
-  let style = "neutral";
-  let badgeLabel = "WAITING";
-  let titleText = "WAITING";
-  let shortSummary = "Waiting for website address...";
-  let iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="6" x2="12" y2="12"></line><line x1="12" y1="12" x2="16" y2="14"></line></svg>';
-
-  if (finalOutcome === "NO_STRONG_WARNING_SIGNS" || finalOutcome === "SAFE") {
-    style = "safe";
-    badgeLabel = "SAFE";
-    titleText = "SAFE";
-    shortSummary = "No major security concerns were identified.";
-    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>';
-  } else if (finalOutcome === "NEEDS_CAUTION") {
-    style = "suspicious";
-    badgeLabel = "SUSPICIOUS";
-    titleText = "SUSPICIOUS";
-    shortSummary = "Signalam recommends caution when interacting with this website.";
-    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
-  } else if (finalOutcome === "SUSPICIOUS_SIGNS_FOUND" || finalOutcome === "SUSPICIOUS") {
-    style = "dangerous";
-    badgeLabel = "DANGEROUS";
-    titleText = "DANGEROUS";
-    shortSummary = "Signalam recommends avoiding sensitive interactions with this website.";
-    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
-  } else if (finalOutcome === "ANALYZING" || finalOutcome === "CHECKING") {
-    style = "analyzing";
-    badgeLabel = "CHECKING";
-    titleText = "ANALYZING WEBSITE";
-    shortSummary = "Signalam is checking this page.";
-    iconSvg = '<svg class="spinner" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>';
-  } else if (finalOutcome === "UNAVAILABLE") {
-    style = "unavailable";
-    badgeLabel = "UNAVAILABLE";
-    titleText = "UNABLE TO ANALYZE";
-    shortSummary = "Signalam could not complete the website analysis.";
-    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
-  }
-
-  elements.compactTargetDomain.textContent = targetDomain;
-  elements.compactTargetDomain.title = targetDomain;
   if (elements.compactTargetUrl) {
     elements.compactTargetUrl.textContent = targetUrl || targetDomain;
     elements.compactTargetUrl.title = targetUrl || targetDomain;
   }
-  elements.compactScopePill.textContent = scopeLabel;
-  elements.compactRiskCard.className = `decision-card ${style}`;
-  elements.compactRiskBadge.className = `decision-badge ${style}`;
-  elements.compactRiskText.textContent = badgeLabel;
-  if (elements.compactDecisionTitle) {
-    elements.compactDecisionTitle.textContent = titleText;
+  if (elements.compactScopePill) {
+    elements.compactScopePill.textContent = scopeLabel;
   }
-  elements.compactSummaryText.textContent = shortSummary;
-  elements.compactResultIcon.className = `decision-icon ${style}`;
-  elements.compactResultIcon.innerHTML = iconSvg;
+
+  // 1. Render Website Detection Card
+  const rawUrlResult = websiteDecision(urlDetector);
+  const webConfig = mapSecuritySignal(rawUrlResult);
+  if (elements.websiteDetectCard) {
+    elements.websiteDetectCard.className = `detection-card ${webConfig.style}`;
+  }
+  if (elements.websiteDetectBadge) {
+    elements.websiteDetectBadge.className = `detection-badge ${webConfig.style}`;
+  }
+  if (elements.websiteDetectSignal) {
+    elements.websiteDetectSignal.textContent = webConfig.signal;
+  }
+  if (elements.websiteDetectDesc) {
+    elements.websiteDetectDesc.textContent = webConfig.desc;
+  }
+  if (elements.websiteDetectIcon) {
+    elements.websiteDetectIcon.className = `detection-icon ${webConfig.style}`;
+    elements.websiteDetectIcon.innerHTML = webConfig.iconSvg;
+  }
+
+  // Preserved invariant hooks for tests
+  if (elements.compactRiskCard) {
+    elements.compactRiskCard.className = `decision-card ${webConfig.style} hidden`;
+  }
+  if (elements.compactRiskBadge) {
+    elements.compactRiskBadge.className = `decision-badge ${webConfig.style} hidden`;
+  }
+  if (elements.compactRiskText) {
+    elements.compactRiskText.textContent = webConfig.signal;
+  }
+  if (elements.compactDecisionTitle) {
+    elements.compactDecisionTitle.textContent = webConfig.signal;
+  }
+  if (elements.compactSummaryText) {
+    elements.compactSummaryText.textContent = webConfig.desc;
+  }
+  if (elements.compactResultIcon) {
+    elements.compactResultIcon.className = `decision-icon ${webConfig.style} hidden`;
+    elements.compactResultIcon.innerHTML = webConfig.iconSvg;
+  }
+
+  // 2. Render Email Detection Card
+  const emailConfig = mapEmailDetection(state);
+  if (elements.emailDetectCard) {
+    elements.emailDetectCard.className = `detection-card ${emailConfig.style}`;
+  }
+  if (elements.emailDetectBadge) {
+    elements.emailDetectBadge.className = `detection-badge ${emailConfig.style}`;
+  }
+  if (elements.emailDetectSignal) {
+    elements.emailDetectSignal.textContent = emailConfig.signal;
+  }
+  if (elements.emailDetectDesc) {
+    elements.emailDetectDesc.textContent = emailConfig.desc;
+  }
+  if (elements.emailDetectIcon) {
+    elements.emailDetectIcon.className = `detection-icon ${emailConfig.style}`;
+    elements.emailDetectIcon.innerHTML = emailConfig.iconSvg;
+  }
 
   const hasReview = reviewableUrlResult(state) || reviewableEmailResult(state);
   if (elements.quickFeedbackBar) {
@@ -717,22 +938,28 @@ function renderRefreshPending() {
   });
 }
 
+function getEmailRecommendation(signal) {
+  if (signal === "DANGEROUS") {
+    return "Do not provide passwords, OTPs, banking information, payment details, or other sensitive information unless you independently verify the sender through an official channel.";
+  }
+  if (signal === "SUSPICIOUS") {
+    return "Verify the sender and any links before providing sensitive information, clicking attachments, or making payments.";
+  }
+  if (signal === "SAFE") {
+    return "No major security concerns were identified. Continue following normal online safety practices.";
+  }
+  return "Exercise standard caution when reviewing online messages.";
+}
+
 function compileModalPayload(state) {
   const urlDetector = state?.url_detector || {};
   const urlResult = urlDetector.result || {};
   const emailDetector = state?.email_detector || {};
   const emailResult = emailDetector.result || {};
   const provider = String(state?.provider || emailDetector.provider || emailResult.provider || "").toLowerCase();
-  const isEmail = SUPPORTED_EMAIL_PROVIDERS.has(provider);
-
-  const finalResult = isEmail
-    ? (state?.fusion?.final_result || emailDetector.signal || "WAITING")
-    : websiteDecision(urlDetector);
 
   const targetUrl = state?.current_url || urlResult.current_url || "";
-  let targetDomain = isEmail
-    ? (emailDetector.sender || emailResult.sender || "Email Message")
-    : (urlResult.hostname || state?.hostname || "");
+  let targetDomain = urlResult.hostname || state?.hostname || "";
   if (!targetDomain && targetUrl) {
     try {
       targetDomain = new URL(targetUrl).hostname;
@@ -740,6 +967,20 @@ function compileModalPayload(state) {
       targetDomain = "Current Webpage";
     }
   }
+
+  const rawUrlResult = websiteDecision(urlDetector);
+  const webMapping = mapSecuritySignal(rawUrlResult);
+
+  const emailMapping = mapEmailDetection(state);
+  const hasEmailContent = Boolean(
+    emailDetector.sender ||
+    emailResult.sender ||
+    emailDetector.subject ||
+    emailResult.subject ||
+    emailDetector.state === "complete" ||
+    (state?.__previewEmail && !["not_detected", "not_available", "none"].includes(String(state.__previewEmail).toLowerCase()))
+  );
+  const rawEmailSignal = state?.fusion?.final_result || emailDetector.signal;
 
   const markers = [
     ...(state?.local_indicators?.markers || []),
@@ -768,29 +1009,48 @@ function compileModalPayload(state) {
     });
   }
 
-  if (isEmail) {
-    const emailMsg = simpleEmailMessage(state, finalResult);
+  const webMsg = simpleWebsiteMessage(rawUrlResult);
+  if (webMsg) {
+    explanations.push({
+      title: "Address Assessment",
+      description: webMsg
+    });
+  }
+
+  if (hasEmailContent) {
+    const emailMsg = simpleEmailMessage(state, rawEmailSignal);
     if (emailMsg && emailMsg !== cloudSummary) {
       explanations.push({
         title: "Email Assessment",
         description: emailMsg
       });
     }
-  } else {
-    const webMsg = simpleWebsiteMessage(finalResult);
-    if (webMsg) {
-      explanations.push({
-        title: "Address Assessment",
-        description: webMsg
-      });
-    }
   }
 
   return {
-    finalDecision: finalResult,
+    finalDecision: hasEmailContent ? (rawEmailSignal || "WAITING") : rawUrlResult,
     targetUrl,
     targetDomain,
-    isEmail,
+    isEmail: hasEmailContent,
+    websiteAnalysis: {
+      signal: webMapping.signal,
+      style: webMapping.style,
+      domain: targetDomain,
+      url: targetUrl,
+      explanation: webMsg || "No major website-related security concerns were detected."
+    },
+    emailAnalysis: {
+      signal: emailMapping.signal,
+      style: emailMapping.style,
+      isDetected: hasEmailContent,
+      provider: emailDetector.provider_label || state?.provider_label || (provider ? provider.toUpperCase() : null),
+      sender: emailDetector.sender || emailResult.sender || "",
+      subject: emailDetector.subject || emailResult.subject || "",
+      explanation: hasEmailContent ? (simpleEmailMessage(state, rawEmailSignal) || "Message was evaluated for suspicious indicators.") : "No email content was found on this page.",
+      indicators: formattedIndicators,
+      recommendation: getEmailRecommendation(emailMapping.signal)
+    },
+    overallDecision: state?.overall_decision || null,
     indicators: formattedIndicators,
     explanations
   };
@@ -1140,42 +1400,158 @@ async function initialize() {
   const urlParams = typeof window !== "undefined" && window.location?.search
     ? new URLSearchParams(window.location.search)
     : null;
+  const previewCase = urlParams?.get("case");
   const previewState = urlParams?.get("state");
+  const previewWeb = urlParams?.get("web");
+  const previewEmail = urlParams?.get("email");
 
-  if (previewState) {
+  if (previewCase || previewState || previewWeb || previewEmail) {
     setDetectionVisibility(true);
     elements.serverStatus.className = "server-status connected";
     elements.serverStatusText.textContent = "Protected";
-    let final_result = "NO_STRONG_WARNING_SIGNS";
-    let detector_state = "complete";
-    if (previewState === "suspicious" || previewState === "caution") {
-      final_result = "NEEDS_CAUTION";
-    } else if (previewState === "high_risk" || previewState === "high" || previewState === "dangerous") {
-      final_result = "SUSPICIOUS_SIGNS_FOUND";
-    } else if (previewState === "safe" || previewState === "low_risk" || previewState === "low") {
-      final_result = "NO_STRONG_WARNING_SIGNS";
-    } else if (previewState === "analyzing" || previewState === "loading") {
-      final_result = "ANALYZING";
-      detector_state = "analyzing";
-    } else if (previewState === "error" || previewState === "unavailable") {
-      final_result = "UNAVAILABLE";
-      detector_state = "error";
+
+    let web = "safe";
+    let email = "not_detected";
+    let domain = "example.com";
+    let url = "https://example.com/login?id=test";
+
+    if (previewCase) {
+      const c = String(previewCase).trim();
+      if (c === "1") { // 1. Website Safe / No Email
+        web = "safe";
+        email = "not_detected";
+        domain = "example-portal.com";
+        url = "https://example-portal.com/login";
+      } else if (c === "2") { // 2. Safe Website / Suspicious Email
+        web = "safe";
+        email = "suspicious";
+        domain = "mail.google.com";
+        url = "https://mail.google.com/mail/u/0/#inbox/msg2";
+      } else if (c === "3") { // 3. Dangerous Website
+        web = "dangerous";
+        email = "not_detected";
+        domain = "secure-bpi-verification.ph";
+        url = "https://secure-bpi-verification.ph/login";
+      } else if (c === "4") { // 4. Suspicious Website / Dangerous Email
+        web = "suspicious";
+        email = "dangerous";
+        domain = "mail.google.com";
+        url = "https://mail.google.com/mail/u/0/#inbox/msg4";
+      } else if (c === "5") { // 5. Both Safe
+        web = "safe";
+        email = "safe";
+        domain = "mail.google.com";
+        url = "https://mail.google.com/mail/u/0/#inbox/msg5";
+      } else if (c === "6") { // 6. Both Dangerous
+        web = "dangerous";
+        email = "dangerous";
+        domain = "mail.google.com";
+        url = "https://mail.google.com/mail/u/0/#inbox/msg6";
+      } else if (c === "7") { // 7. Email Loading
+        web = "safe";
+        email = "analyzing";
+        domain = "mail.google.com";
+        url = "https://mail.google.com/mail/u/0/#inbox/msg7";
+      } else if (c === "8") { // 8. Email Error
+        web = "safe";
+        email = "unable";
+        domain = "mail.google.com";
+        url = "https://mail.google.com/mail/u/0/#inbox/msg8";
+      } else if (c === "9") { // 9. Unsupported Email Analysis
+        web = "safe";
+        email = "not_available";
+        domain = "news-portal.example";
+        url = "https://news-portal.example/article";
+      }
+    } else {
+      if (previewWeb) web = previewWeb;
+      else if (previewState) web = previewState;
+      if (previewEmail) email = previewEmail;
+    }
+
+    let web_final = "NO_STRONG_WARNING_SIGNS";
+    let web_state = "complete";
+    const normWeb = String(web).toLowerCase();
+    if (normWeb === "suspicious" || normWeb === "caution") {
+      web_final = "NEEDS_CAUTION";
+    } else if (normWeb === "dangerous" || normWeb === "high_risk" || normWeb === "high") {
+      web_final = "SUSPICIOUS_SIGNS_FOUND";
+    } else if (normWeb === "safe" || normWeb === "low" || normWeb === "low_risk") {
+      web_final = "NO_STRONG_WARNING_SIGNS";
+    } else if (normWeb === "analyzing" || normWeb === "loading") {
+      web_final = "ANALYZING";
+      web_state = "analyzing";
+    } else if (normWeb === "error" || normWeb === "unavailable") {
+      web_final = "UNAVAILABLE";
+      web_state = "error";
       elements.serverStatus.className = "server-status unavailable";
       elements.serverStatusText.textContent = "Unavailable";
     }
-    renderCompactUI({
-      current_url: "https://example.com/login?id=test",
-      hostname: "example.com",
+
+    const normEmail = String(email).toLowerCase();
+    let email_final = "NO_STRONG_WARNING_SIGNS";
+    let email_state = "complete";
+    let email_sender = undefined;
+    let email_subject = undefined;
+    const isEmailDetected = !["not_detected", "not_available", "none"].includes(normEmail);
+
+    if (normEmail === "dangerous" || normEmail === "high") {
+      email_final = "SUSPICIOUS_SIGNS_FOUND";
+      email_sender = "account-verification@service-security-alert.ph";
+      email_subject = "Action Required: Account Suspended";
+    } else if (normEmail === "suspicious" || normEmail === "caution") {
+      email_final = "NEEDS_CAUTION";
+      email_sender = "payroll-update@company-services.org";
+      email_subject = "Urgent Notice: Review Your Account";
+    } else if (normEmail === "safe") {
+      email_final = "NO_STRONG_WARNING_SIGNS";
+      email_sender = "notifications@trusted-service.com";
+      email_subject = "Your Weekly Account Summary";
+    } else if (normEmail === "analyzing" || normEmail === "loading") {
+      email_final = "ANALYZING";
+      email_state = "analyzing";
+      email_sender = "incoming-message@mail.example";
+      email_subject = "Checking message...";
+    } else if (normEmail === "unable" || normEmail === "error") {
+      email_final = "UNAVAILABLE";
+      email_state = "error";
+    }
+
+    const previewPayloadState = {
+      current_url: url,
+      hostname: domain,
+      provider: isEmailDetected ? "gmail" : undefined,
+      provider_label: isEmailDetected ? "Gmail" : undefined,
       url_detector: {
-        state: detector_state,
-        signal: final_result,
+        state: web_state,
+        signal: web_final,
         result: {
-          hostname: "example.com",
-          current_url: "https://example.com/login?id=test",
-          final_result: final_result
+          hostname: domain,
+          current_url: url,
+          final_result: web_final
         }
-      }
-    });
+      },
+      email_detector: {
+        state: email_state,
+        signal: email_final,
+        provider: isEmailDetected ? "gmail" : undefined,
+        provider_label: isEmailDetected ? "Gmail" : undefined,
+        sender: email_sender,
+        subject: email_subject,
+        result: {
+          provider: isEmailDetected ? "gmail" : undefined,
+          sender: email_sender,
+          subject: email_subject
+        }
+      },
+      fusion: {
+        final_result: email_final
+      },
+      __previewEmail: email
+    };
+
+    latestState = previewPayloadState;
+    renderCompactUI(previewPayloadState);
     return;
   }
 

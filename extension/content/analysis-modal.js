@@ -18,65 +18,96 @@
       .replace(/'/g, "&#039;");
   }
 
-  function getDecisionConfig(rawDecision) {
-    const norm = String(rawDecision || "").toUpperCase();
-    if (norm === "SUSPICIOUS_SIGNS_FOUND" || norm === "HIGH" || norm === "HIGH_RISK" || norm === "DANGEROUS") {
-      return {
-        level: "DANGEROUS",
-        title: "DANGEROUS",
-        statusClass: "dangerous",
-        color: "#ff3e1d",
-        bgLight: "rgba(255, 62, 29, 0.08)",
-        border: "rgba(255, 62, 29, 0.25)",
-        icon: `<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ff3e1d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
-        summary: "Signalam recommends that you avoid providing sensitive information on this website.",
-        explanation: "Signalam identified characteristics commonly associated with unsafe or deceptive websites. Attackers frequently use deceptive address patterns to mislead visitors into sharing credentials or financial details.",
-        recommendation: "Avoid entering passwords, OTPs, payment information, or other sensitive information unless you can independently verify the website through an official channel.",
-        isWarning: true
-      };
-    }
-    if (norm === "NEEDS_CAUTION" || norm === "SUSPICIOUS" || norm === "MEDIUM") {
-      return {
-        level: "SUSPICIOUS",
-        title: "SUSPICIOUS",
-        statusClass: "suspicious",
-        color: "#ffab00",
-        bgLight: "rgba(255, 171, 0, 0.08)",
-        border: "rgba(255, 171, 0, 0.25)",
-        icon: `<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#ffab00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`,
-        summary: "Signalam recommends caution when interacting with this website.",
-        explanation: "Signalam identified characteristics that look unusual or potentially misleading. Check the website address carefully before interacting with forms or buttons.",
-        recommendation: "Proceed carefully. Verify the website before entering passwords, personal information, OTPs, or payment details.",
-        isWarning: true
-      };
-    }
-    if (norm === "NO_STRONG_WARNING_SIGNS" || norm === "LOW" || norm === "LOW_RISK" || norm === "SAFE") {
+  function getStatusConfig(rawSignal) {
+    const norm = String(rawSignal || "").toUpperCase();
+    if (norm === "SAFE" || norm === "NO_STRONG_WARNING_SIGNS" || norm === "LOW" || norm === "LOW_RISK") {
       return {
         level: "SAFE",
         title: "SAFE",
-        statusClass: "safe",
+        badgeClass: "safe",
         color: "#71dd37",
         bgLight: "rgba(113, 221, 55, 0.08)",
         border: "rgba(113, 221, 55, 0.25)",
-        icon: `<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#71dd37" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>`,
-        summary: "No major security concerns were identified.",
-        explanation: "Signalam analyzed the address of this website and did not identify strong warning signs. Please note that this is not a guarantee that the website is legitimate.",
-        recommendation: "No major security concerns were identified. Continue following normal online safety practices.",
-        isWarning: false
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#71dd37" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>`,
+        isWarning: false,
+        isDangerous: false
+      };
+    }
+    if (norm === "SUSPICIOUS" || norm === "NEEDS_CAUTION" || norm === "MEDIUM") {
+      return {
+        level: "SUSPICIOUS",
+        title: "SUSPICIOUS",
+        badgeClass: "suspicious",
+        color: "#ffab00",
+        bgLight: "rgba(255, 171, 0, 0.08)",
+        border: "rgba(255, 171, 0, 0.25)",
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#ffab00" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`,
+        isWarning: true,
+        isDangerous: false
+      };
+    }
+    if (norm === "DANGEROUS" || norm === "SUSPICIOUS_SIGNS_FOUND" || norm === "HIGH" || norm === "HIGH_RISK") {
+      return {
+        level: "DANGEROUS",
+        title: "DANGEROUS",
+        badgeClass: "dangerous",
+        color: "#ff3e1d",
+        bgLight: "rgba(255, 62, 29, 0.08)",
+        border: "rgba(255, 62, 29, 0.25)",
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#ff3e1d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
+        isWarning: true,
+        isDangerous: true
+      };
+    }
+    if (norm === "ANALYZING" || norm === "CHECKING") {
+      return {
+        level: "ANALYZING",
+        title: "ANALYZING",
+        badgeClass: "analyzing",
+        color: "#696cff",
+        bgLight: "rgba(105, 108, 255, 0.08)",
+        border: "rgba(105, 108, 255, 0.25)",
+        icon: `<svg class="spinner" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#696cff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>`,
+        isWarning: false,
+        isDangerous: false
+      };
+    }
+    if (norm === "UNABLE TO ANALYZE" || norm === "UNAVAILABLE" || norm === "ERROR") {
+      return {
+        level: "UNABLE TO ANALYZE",
+        title: "UNABLE TO ANALYZE",
+        badgeClass: "unavailable",
+        color: "#8592a3",
+        bgLight: "rgba(133, 146, 163, 0.08)",
+        border: "rgba(133, 146, 163, 0.25)",
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#8592a3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
+        isWarning: false,
+        isDangerous: false
+      };
+    }
+    if (norm === "NOT AVAILABLE") {
+      return {
+        level: "NOT AVAILABLE",
+        title: "NOT AVAILABLE",
+        badgeClass: "neutral",
+        color: "#8592a3",
+        bgLight: "rgba(133, 146, 163, 0.08)",
+        border: "rgba(133, 146, 163, 0.25)",
+        icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#8592a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
+        isWarning: false,
+        isDangerous: false
       };
     }
     return {
-      level: "ANALYZING",
-      title: norm === "UNAVAILABLE" ? "UNABLE TO ANALYZE" : "ANALYSIS IN PROGRESS",
-      statusClass: "neutral",
+      level: "NOT DETECTED",
+      title: "NOT DETECTED",
+      badgeClass: "neutral",
       color: "#8592a3",
       bgLight: "rgba(133, 146, 163, 0.08)",
       border: "rgba(133, 146, 163, 0.25)",
-      icon: `<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#8592a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`,
-      summary: norm === "UNAVAILABLE" ? "Signalam could not complete the website analysis." : "Signalam is checking this page.",
-      explanation: norm === "UNAVAILABLE" ? "The security service is currently unavailable. Avoid submitting sensitive credentials or financial details until verified." : "Analysis is currently taking place. Please check back shortly.",
-      recommendation: "Exercise standard security precautions. Check that the address matches the expected official website.",
-      isWarning: false
+      icon: `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#8592a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>`,
+      isWarning: false,
+      isDangerous: false
     };
   }
 
@@ -95,7 +126,6 @@
 
     const shadow = host.attachShadow({ mode: "open" });
 
-    const decision = getDecisionConfig(data.finalDecision || data.riskLevel || data.finalResult);
     const targetUrl = data.targetUrl || window.location.href;
     let targetDomain = data.targetDomain || "";
     if (!targetDomain) {
@@ -106,8 +136,76 @@
       }
     }
 
-    const indicators = Array.isArray(data.indicators) ? data.indicators : [];
-    const explanations = Array.isArray(data.explanations) ? data.explanations : [];
+    // Extract Website Analysis
+    const webData = data.websiteAnalysis || {};
+    const rawWebSignal = webData.signal || data.finalDecision || "SAFE";
+    const webConfig = getStatusConfig(rawWebSignal);
+
+    // Extract Email Analysis
+    const emailData = data.emailAnalysis || {};
+    const rawEmailSignal = emailData.signal || (data.isEmail ? data.finalDecision : "NOT DETECTED");
+    const emailConfig = getStatusConfig(rawEmailSignal);
+
+    // Check if overall decision is provided by backend
+    const hasOverall = Boolean(data.overallDecision);
+    const overallConfig = hasOverall ? getStatusConfig(data.overallDecision) : null;
+
+    // Overall warning state
+    const isWarning = webConfig.isWarning || emailConfig.isWarning || (overallConfig && overallConfig.isWarning);
+    const isDangerous = webConfig.isDangerous || emailConfig.isDangerous || (overallConfig && overallConfig.isDangerous);
+
+    // Indicators
+    const indicators = Array.isArray(emailData.indicators) && emailData.indicators.length > 0
+      ? emailData.indicators
+      : (Array.isArray(data.indicators) ? data.indicators : []);
+
+    // Explanations for website
+    let webMeaning = webData.explanation || "";
+    if (!webMeaning) {
+      if (webConfig.level === "SAFE") {
+        webMeaning = "No major website-related security concerns were detected.";
+      } else if (webConfig.level === "SUSPICIOUS") {
+        webMeaning = "Signalam detected characteristics that look unusual or potentially misleading. Check the website address carefully before interacting with forms or buttons.";
+      } else if (webConfig.level === "DANGEROUS") {
+        webMeaning = "Signalam identified characteristics commonly associated with unsafe or deceptive websites. Attackers frequently use deceptive address patterns to mislead visitors into sharing credentials or financial details.";
+      } else if (webConfig.level === "ANALYZING") {
+        webMeaning = "Signalam is currently analyzing this website address.";
+      } else {
+        webMeaning = "Signalam could not complete the website check right now.";
+      }
+    }
+
+    // Explanations for email
+    let emailMeaning = emailData.explanation || "";
+    if (!emailMeaning) {
+      if (emailConfig.level === "SAFE") {
+        emailMeaning = "No major phishing or social engineering concerns were detected in the analyzed message.";
+      } else if (emailConfig.level === "SUSPICIOUS") {
+        emailMeaning = "The analyzed message contains characteristics that require additional caution.";
+      } else if (emailConfig.level === "DANGEROUS") {
+        emailMeaning = "Signalam detected characteristics commonly associated with potentially harmful or deceptive messages.";
+      } else if (emailConfig.level === "ANALYZING") {
+        emailMeaning = "Email content is currently being analyzed...";
+      } else if (emailConfig.level === "UNABLE TO ANALYZE") {
+        emailMeaning = "Signalam could not complete the email analysis.";
+      } else if (emailConfig.level === "NOT AVAILABLE") {
+        emailMeaning = "Email analysis cannot be performed on the current page.";
+      } else {
+        emailMeaning = "No email content found on this page.";
+      }
+    }
+
+    // Recommended Action
+    let recommendedAction = emailData.recommendation || "";
+    if (!recommendedAction) {
+      if (isDangerous) {
+        recommendedAction = "Do not provide passwords, OTPs, banking information, payment details, or other sensitive information unless you independently verify the sender through an official channel.";
+      } else if (isWarning) {
+        recommendedAction = "Verify the sender and destination of links before entering passwords, OTPs, personal information, or payment details.";
+      } else {
+        recommendedAction = "No major security concerns were detected. Continue following normal online safety practices.";
+      }
+    }
 
     const style = document.createElement("style");
     style.textContent = `
@@ -159,8 +257,15 @@
         from { opacity: 0; transform: scale(0.97) translateY(8px); }
         to { opacity: 1; transform: scale(1) translateY(0); }
       }
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      .spinner {
+        animation: spin 1s linear infinite;
+      }
       .signalam-header {
-        padding: 20px 24px;
+        padding: 18px 22px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -225,91 +330,143 @@
         outline-offset: 2px;
       }
       .signalam-body {
-        padding: 24px;
+        padding: 20px 22px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 14px;
       }
-      /* Final Decision Section */
-      .signalam-decision-card {
-        padding: 16px 20px;
+      /* Optional Overall Decision Banner */
+      .signalam-overall-card {
+        padding: 14px 18px;
         border-radius: 10px;
-        border: 1px solid ${decision.border};
-        background: linear-gradient(180deg, #ffffff 0%, ${decision.bgLight} 100%);
+        border: 1px solid ${overallConfig ? overallConfig.border : "transparent"};
+        background: linear-gradient(180deg, #ffffff 0%, ${overallConfig ? overallConfig.bgLight : "transparent"} 100%);
         display: flex;
         align-items: center;
-        gap: 16px;
-        box-shadow: 0 2px 6px 0 rgba(67, 89, 113, 0.08);
+        justify-content: space-between;
+        gap: 14px;
       }
-      .signalam-decision-icon {
-        width: 52px;
-        height: 52px;
+      .signalam-overall-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .signalam-overall-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #384554;
+      }
+      /* Detection Cards (Website & Email) */
+      .signalam-card {
+        background: #ffffff;
+        border: 1px solid #d9dee3;
         border-radius: 10px;
-        background: ${decision.bgLight};
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        box-shadow: 0 2px 6px 0 rgba(67, 89, 113, 0.06);
+      }
+      .signalam-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #f0f2f4;
+      }
+      .signalam-card-title-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .signalam-card-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        background: rgba(105, 108, 255, 0.08);
+        color: #696cff;
         display: grid;
         place-items: center;
         flex-shrink: 0;
       }
-      .signalam-decision-info {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        min-width: 0;
+      .signalam-card-heading {
+        font-size: 14px;
+        font-weight: 700;
+        color: #384554;
       }
-      .signalam-decision-badge {
+      /* Badges */
+      .signalam-badge {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 2px 8px;
+        gap: 5px;
+        padding: 3px 10px;
         border-radius: 6px;
         font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.5px;
-        width: fit-content;
         text-transform: uppercase;
-        background: ${decision.bgLight};
-        color: ${decision.color};
-        border: 1px solid ${decision.border};
+        width: fit-content;
       }
-      .signalam-decision-dot {
+      .signalam-badge-dot {
         width: 6px;
         height: 6px;
         border-radius: 50%;
         background: currentColor;
       }
-      .signalam-decision-title {
-        font-size: 22px;
-        font-weight: 700;
-        color: #384554;
-        line-height: 1.2;
+      .signalam-badge.safe {
+        color: #71dd37;
+        background: rgba(113, 221, 55, 0.08);
+        border: 1px solid rgba(113, 221, 55, 0.25);
       }
-      .signalam-decision-summary {
+      .signalam-badge.suspicious {
+        color: #ffab00;
+        background: rgba(255, 171, 0, 0.08);
+        border: 1px solid rgba(255, 171, 0, 0.25);
+      }
+      .signalam-badge.dangerous {
+        color: #ff3e1d;
+        background: rgba(255, 62, 29, 0.08);
+        border: 1px solid rgba(255, 62, 29, 0.25);
+      }
+      .signalam-badge.analyzing {
+        color: #696cff;
+        background: rgba(105, 108, 255, 0.08);
+        border: 1px solid rgba(105, 108, 255, 0.25);
+      }
+      .signalam-badge.neutral, .signalam-badge.unavailable {
+        color: #8592a3;
+        background: rgba(133, 146, 163, 0.1);
+        border: 1px solid #d9dee3;
+      }
+      /* Section Details */
+      .signalam-subheading {
+        font-size: 11px;
+        font-weight: 700;
+        color: #a1acb8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+      }
+      .signalam-text {
         font-size: 13px;
         color: #566a7f;
         line-height: 1.45;
       }
-      /* Section Cards */
-      .signalam-section-card {
+      .signalam-email-meta {
+        font-size: 12px;
+        color: #8592a3;
         background: #fbfbfd;
+        padding: 6px 10px;
+        border-radius: 6px;
         border: 1px solid #e9ecee;
-        border-radius: 8px;
-        padding: 16px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 2px;
       }
-      .signalam-section-label {
-        font-size: 12px;
-        font-weight: 700;
+      .signalam-email-meta strong {
         color: #384554;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-      .signalam-section-text {
-        font-size: 13px;
-        color: #566a7f;
-        line-height: 1.5;
       }
       .signalam-indicators-list {
         list-style: none;
@@ -327,29 +484,28 @@
       }
       .signalam-indicator-bullet {
         color: #ffab00;
-        font-size: 16px;
+        font-size: 14px;
         line-height: 1;
       }
       .signalam-safe-notice {
         font-size: 11px;
         color: #a1acb8;
         line-height: 1.4;
-        border-top: 1px dashed #e9ecee;
-        padding-top: 8px;
-        margin-top: 4px;
+        text-align: center;
+        padding: 4px 0;
       }
       /* Modal Actions Footer */
       .signalam-footer {
-        padding: 16px 24px;
+        padding: 14px 22px;
         border-top: 1px solid #d9dee3;
         display: flex;
         justify-content: flex-end;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
         background: #ffffff;
       }
       .signalam-btn {
-        padding: 9px 18px;
+        padding: 8px 18px;
         border-radius: 8px;
         font-size: 13px;
         font-weight: 600;
@@ -410,32 +566,76 @@
     let indicatorsHtml = "";
     if (indicators.length > 0) {
       indicatorsHtml = `
-        <ul class="signalam-indicators-list">
-          ${indicators.map(ind => `
-            <li class="signalam-indicator-item">
-              <span class="signalam-indicator-bullet">•</span>
-              <span>${escapeHtml(ind.title || ind.category)}</span>
-            </li>
-          `).join("")}
-        </ul>
+        <div style="margin-top: 6px;">
+          <h4 class="signalam-subheading">Characteristics Identified</h4>
+          <ul class="signalam-indicators-list">
+            ${indicators.map(ind => `
+              <li class="signalam-indicator-item">
+                <span class="signalam-indicator-bullet">•</span>
+                <span>${escapeHtml(ind.title || ind.category)}</span>
+              </li>
+            `).join("")}
+          </ul>
+        </div>
       `;
     }
 
-    // Explanations HTML if any
-    let explanationsHtml = "";
-    if (explanations.length > 0) {
-      explanationsHtml = explanations.map(exp => `
-        <p class="signalam-section-text">${escapeHtml(exp.description)}</p>
-      `).join("");
+    // Email metadata snippet if provided
+    let emailMetaHtml = "";
+    if (emailData.sender || emailData.subject) {
+      emailMetaHtml = `
+        <div class="signalam-email-meta">
+          ${emailData.sender ? `<div><strong>Sender:</strong> ${escapeHtml(emailData.sender)}</div>` : ""}
+          ${emailData.subject ? `<div><strong>Subject:</strong> ${escapeHtml(emailData.subject)}</div>` : ""}
+        </div>
+      `;
+    }
+
+    // Overall Detection section (only if present)
+    let overallHtml = "";
+    if (hasOverall && overallConfig) {
+      overallHtml = `
+        <section class="signalam-overall-card">
+          <div class="signalam-overall-left">
+            <div aria-hidden="true">${overallConfig.icon}</div>
+            <span class="signalam-overall-title">Overall Detection</span>
+          </div>
+          <span class="signalam-badge ${overallConfig.badgeClass}">
+            <span class="signalam-badge-dot"></span>
+            <span>${escapeHtml(overallConfig.title)}</span>
+          </span>
+        </section>
+      `;
+    }
+
+    // Determine whether the result is Safe in URL only or in both detections
+    const isUrlSafe = webConfig.level === "SAFE";
+    const isEmailSafe = emailConfig.level === "SAFE";
+    const isEmailNeutral = ["NOT DETECTED", "NOT AVAILABLE", "ANALYZING", "UNABLE TO ANALYZE", "WAITING"].includes(emailConfig.level);
+
+    // If result is Safe in URL only or in both detections, remove the Go Back button.
+    // If one of the two is not Safe, display the button.
+    const isSafeOverall = (isUrlSafe && isEmailNeutral) || (isUrlSafe && isEmailSafe);
+    let showGoBack = !isSafeOverall;
+    if (overallConfig && (overallConfig.level === "SUSPICIOUS" || overallConfig.level === "DANGEROUS")) {
+      showGoBack = true;
     }
 
     // Modal Action Buttons
-    const hasWarning = decision.isWarning;
-    const actionsHtml = `
-      ${hasWarning ? `<button id="signalamContinueBtn" class="signalam-btn signalam-btn-outline" type="button">Continue Anyway</button>` : ""}
-      <button id="signalamBackBtn" class="signalam-btn ${hasWarning ? "signalam-btn-primary" : "signalam-btn-outline"}" type="button">Go Back</button>
-      <button id="signalamCloseBtn" class="signalam-btn ${hasWarning ? "signalam-btn-secondary" : "signalam-btn-primary"}" type="button">Close</button>
-    `;
+    let actionsHtml = "";
+    if (showGoBack) {
+      actionsHtml = `
+        <button id="signalamContinueBtn" class="signalam-btn signalam-btn-outline" type="button">Continue Anyway</button>
+        <button id="signalamBackBtn" class="signalam-btn signalam-btn-primary" type="button">Go Back</button>
+      `;
+    }
+
+    const footerHtml = showGoBack ? `
+      <!-- Modal Actions Footer -->
+      <footer class="signalam-footer">
+        ${actionsHtml}
+      </footer>
+    ` : "";
 
     modal.innerHTML = `
       <!-- Modal Header -->
@@ -461,41 +661,78 @@
 
       <!-- Modal Body -->
       <div class="signalam-body">
-        <!-- 1. Final Decision Section -->
-        <section class="signalam-decision-card">
-          <div class="signalam-decision-icon" aria-hidden="true">
-            ${decision.icon}
-          </div>
-          <div class="signalam-decision-info">
-            <div class="signalam-decision-badge">
-              <span class="signalam-decision-dot"></span>
-              <span>${escapeHtml(decision.level)}</span>
+        ${overallHtml}
+
+        <!-- 1. Website Detection Card -->
+        <section class="signalam-card" aria-label="Website Detection">
+          <div class="signalam-card-header">
+            <div class="signalam-card-title-group">
+              <div class="signalam-card-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+              </div>
+              <h2 class="signalam-card-heading">Website Detection</h2>
             </div>
-            <h2 class="signalam-decision-title">${escapeHtml(decision.title)}</h2>
-            <p class="signalam-decision-summary">${escapeHtml(decision.summary)}</p>
+            <span class="signalam-badge ${webConfig.badgeClass}">
+              <span class="signalam-badge-dot"></span>
+              <span>${escapeHtml(webConfig.title)}</span>
+            </span>
+          </div>
+          <div>
+            <h3 class="signalam-subheading">What This Means</h3>
+            <p class="signalam-text">${escapeHtml(webMeaning)}</p>
           </div>
         </section>
 
-        <!-- 2. What This Means -->
-        <section class="signalam-section-card">
-          <h3 class="signalam-section-label">What This Means</h3>
-          <p class="signalam-section-text">${escapeHtml(decision.explanation)}</p>
-          ${indicatorsHtml}
-          ${explanationsHtml}
-          <p class="signalam-safe-notice">A safe result indicates no strong warning signs were detected by Signalam. This is not a guarantee that the website or sender is legitimate.</p>
+        <!-- 2. Email Detection Card -->
+        <section class="signalam-card" aria-label="Email Detection">
+          <div class="signalam-card-header">
+            <div class="signalam-card-title-group">
+              <div class="signalam-card-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                  <polyline points="22,6 12,13 2,6"></polyline>
+                </svg>
+              </div>
+              <h2 class="signalam-card-heading">Email Detection</h2>
+            </div>
+            <span class="signalam-badge ${emailConfig.badgeClass}">
+              <span class="signalam-badge-dot"></span>
+              <span>${escapeHtml(emailConfig.title)}</span>
+            </span>
+          </div>
+          <div>
+            <h3 class="signalam-subheading">What This Means</h3>
+            <p class="signalam-text">${escapeHtml(emailMeaning)}</p>
+            ${emailMetaHtml}
+            ${indicatorsHtml}
+          </div>
         </section>
 
-        <!-- 3. Recommended Action -->
-        <section class="signalam-section-card">
-          <h3 class="signalam-section-label">Recommended Action</h3>
-          <p class="signalam-section-text">${escapeHtml(decision.recommendation)}</p>
+        <!-- 3. Recommended Action Card -->
+        <section class="signalam-card" aria-label="Recommended Action">
+          <div class="signalam-card-header">
+            <div class="signalam-card-title-group">
+              <div class="signalam-card-icon" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+              </div>
+              <h2 class="signalam-card-heading">Recommended Action</h2>
+            </div>
+          </div>
+          <div>
+            <p class="signalam-text">${escapeHtml(recommendedAction)}</p>
+          </div>
         </section>
+
+        <p class="signalam-safe-notice">A safe result indicates no strong warning signs were detected by Signalam. This is not a guarantee that the website or sender is legitimate.</p>
       </div>
 
-      <!-- Modal Actions Footer -->
-      <footer class="signalam-footer">
-        ${actionsHtml}
-      </footer>
+      ${footerHtml}
     `;
 
     backdrop.appendChild(modal);
@@ -514,10 +751,6 @@
     // Dismiss button
     const dismissBtn = shadow.getElementById("signalamDismissBtn");
     if (dismissBtn) dismissBtn.addEventListener("click", closeModal);
-
-    // Close button
-    const closeBtn = shadow.getElementById("signalamCloseBtn");
-    if (closeBtn) closeBtn.addEventListener("click", closeModal);
 
     // Go Back button
     const backBtn = shadow.getElementById("signalamBackBtn");
@@ -577,7 +810,7 @@
 
     // Focus first primary button
     setTimeout(() => {
-      const primaryBtn = shadow.querySelector(".signalam-btn-primary") || closeBtn || dismissBtn;
+      const primaryBtn = shadow.querySelector(".signalam-btn-primary") || dismissBtn;
       if (primaryBtn) primaryBtn.focus();
     }, 50);
   }
@@ -599,3 +832,4 @@
   });
   window.SignalamModal = { render: renderModal };
 })();
+

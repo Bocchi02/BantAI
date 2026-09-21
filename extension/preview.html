@@ -86,15 +86,19 @@
   </div>
 
   <div class="state-buttons">
-    <button class="btn-state active" onclick="loadState('safe', this)">Safe (Green)</button>
-    <button class="btn-state" onclick="loadState('suspicious', this)">Suspicious (Orange)</button>
-    <button class="btn-state" onclick="loadState('dangerous', this)">Dangerous (Red)</button>
-    <button class="btn-state" onclick="loadState('analyzing', this)">Analyzing (Loading)</button>
-    <button class="btn-state" onclick="loadState('error', this)">Error (Unable)</button>
+    <button class="btn-state active" onclick="loadCase('1', this)">1. Safe Web / No Email</button>
+    <button class="btn-state" onclick="loadCase('2', this)">2. Safe Web / Suspicious Email</button>
+    <button class="btn-state" onclick="loadCase('3', this)">3. Dangerous Web</button>
+    <button class="btn-state" onclick="loadCase('4', this)">4. Suspicious Web / Dangerous Email</button>
+    <button class="btn-state" onclick="loadCase('5', this)">5. Both Safe</button>
+    <button class="btn-state" onclick="loadCase('6', this)">6. Both Dangerous</button>
+    <button class="btn-state" onclick="loadCase('7', this)">7. Email Loading</button>
+    <button class="btn-state" onclick="loadCase('8', this)">8. Email Error</button>
+    <button class="btn-state" onclick="loadCase('9', this)">9. Email Not Available</button>
   </div>
 
   <div class="frame-wrapper">
-    <iframe id="previewFrame" src="popup/popup.html?state=safe" title="Signalam Popup Preview"></iframe>
+    <iframe id="previewFrame" src="popup/popup.html?case=1" title="Signalam Popup Preview"></iframe>
   </div>
 
   <div class="dimension-note">
@@ -102,6 +106,12 @@
   </div>
 
   <script>
+    function loadCase(caseNum, btn) {
+      document.querySelectorAll('.btn-state').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      document.getElementById('previewFrame').src = 'popup/popup.html?case=' + caseNum;
+    }
+
     function loadState(state, btn) {
       document.querySelectorAll('.btn-state').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
