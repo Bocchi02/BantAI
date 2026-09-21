@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import fnmatch
+import os
 import py_compile
 import re
 import shutil
@@ -14,6 +16,18 @@ from configure_remote_endpoint import validated_endpoint
 
 
 ROOT = Path(__file__).resolve().parents[1]
+GENERATED_DIRECTORIES = {
+    ".git",
+    ".next",
+    ".pnpm-store",
+    ".venv",
+    ".vinext",
+    ".wrangler",
+    "coverage",
+    "dist",
+    "node_modules",
+    "venv",
+}
 
 
 def configured_api_origin() -> str:
@@ -43,6 +57,17 @@ def read(relative: str) -> str:
     path = ROOT / relative
     require(path.is_file(), f"Missing required file: {relative}")
     return path.read_text(encoding="utf-8")
+
+
+def repository_files_matching(pattern: str):
+    """Yield repository files without descending into generated local trees."""
+    for directory, subdirectories, filenames in os.walk(ROOT):
+        subdirectories[:] = [
+            name for name in subdirectories if name not in GENERATED_DIRECTORIES
+        ]
+        for filename in filenames:
+            if fnmatch.fnmatch(filename, pattern):
+                yield Path(directory) / filename
 
 
 def check_python() -> None:
@@ -398,11 +423,7 @@ def check_private_artifacts() -> None:
     ]
 
     for pattern in prohibited_patterns:
-        matches = [
-            path
-            for path in ROOT.rglob(pattern)
-            if path.is_file()
-        ]
+        matches = list(repository_files_matching(pattern))
 
         require(
             not matches,
@@ -449,10 +470,7 @@ def check_private_artifacts() -> None:
     ]
 
     for pattern in model_binary_patterns:
-        for path in ROOT.rglob(pattern):
-            if not path.is_file():
-                continue
-
+        for path in repository_files_matching(pattern):
             relative = path.relative_to(ROOT)
             if any(part in {".git", ".venv", "node_modules"} for part in relative.parts):
                 # Dependency environments can contain library test fixtures

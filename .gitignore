@@ -70,6 +70,25 @@ build/
 !web/build/sites-vite-plugin.ts
 *.zip
 
+# JavaScript dependencies, package-manager state, and generated web output
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+.next/
+.vinext/
+.wrangler/
+coverage/
+.nyc_output/
+out/
+outputs/
+work/
+.vercel/
+*.tsbuildinfo
+
+# Local copies retained only for reference; they are not deployment source.
+BantAI_v1_0_0_Codex_Ready_With_Local_Models/
+Sneat-Template/
+
 # Editors and OS
 .vscode/
 .idea/

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import unittest
 from pathlib import Path
@@ -52,13 +53,18 @@ class ProjectInvariantTests(unittest.TestCase):
 
     def test_web_interface_uses_javascript_and_separate_route_views(self) -> None:
         web_root = ROOT / "web"
-        typescript_sources = [
-            path
-            for pattern in ("*.ts", "*.tsx")
-            for path in web_root.rglob(pattern)
-            if path.name != "next-env.d.ts"
-            and not any(part in {"node_modules", "dist", ".next"} for part in path.parts)
-        ]
+        generated_directories = {"node_modules", "dist", ".next", ".pnpm-store", ".vinext", ".wrangler"}
+        typescript_sources = []
+        for directory, subdirectories, filenames in os.walk(web_root):
+            # Prune generated trees before descending. Filtering after Path.rglob
+            # still traverses deeply nested package-manager layouts.
+            subdirectories[:] = [
+                name for name in subdirectories if name not in generated_directories
+            ]
+            for filename in filenames:
+                path = Path(directory) / filename
+                if path.suffix in {".ts", ".tsx"} and path.name != "next-env.d.ts":
+                    typescript_sources.append(path)
         self.assertEqual(typescript_sources, [])
 
         view_root = web_root / "app" / "views"
