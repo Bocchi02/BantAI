@@ -98,7 +98,7 @@ class AnalysisModalTests(unittest.TestCase):
         self.assertIn("signalam-modal", script)
         self.assertIn("What This Means", script)
         self.assertIn("Recommended Action", script)
-        self.assertIn("Continue Anyway", script)
+        self.assertIn("Continue", script)
         self.assertIn("Go Back", script)
         self.assertIn("Close", script)
         self.assertIn("This is not a guarantee", script)
@@ -176,7 +176,16 @@ class AnalysisModalTests(unittest.TestCase):
         self.assertIn("isSafeOverall", modal_js)
         self.assertIn("showGoBack", modal_js)
         self.assertIn("signalamBackBtn", modal_js)
-        self.assertIn("Continue Anyway", modal_js)
+        self.assertIn("Continue", modal_js)
+
+    def test_dangerous_modal_intimidating_red_background_and_hero(self) -> None:
+        modal_js = (ROOT / "extension/content/analysis-modal.js").read_text(encoding="utf-8")
+        self.assertIn(".signalam-modal.is-dangerous", modal_js)
+        self.assertIn("linear-gradient(165deg, #d32005 0%, #8f0e00 100%)", modal_js)
+        self.assertIn("signalam-danger-hero", modal_js)
+        self.assertIn("Flagged as Dangerous", modal_js)
+        self.assertIn("signalamBackBtn", modal_js)
+        self.assertIn("signalamContinueBtn", modal_js)
 
 
 if __name__ == "__main__":

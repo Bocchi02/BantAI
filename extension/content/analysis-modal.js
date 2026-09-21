@@ -550,17 +550,184 @@
         outline: 2px solid #696cff;
         outline-offset: 2px;
       }
+
+      /* Intimidating Red Background Sneat Warning Design */
+      .signalam-backdrop.is-dangerous {
+        background: rgba(28, 6, 6, 0.82);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      .signalam-modal.is-dangerous {
+        background: linear-gradient(165deg, #d32005 0%, #8f0e00 100%);
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        box-shadow: 0 20px 60px rgba(120, 10, 0, 0.65), 0 0 0 2px rgba(255, 62, 29, 0.4);
+        color: #ffffff;
+      }
+      .signalam-modal.is-dangerous .signalam-header {
+        background: rgba(0, 0, 0, 0.2);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+      }
+      .signalam-modal.is-dangerous .signalam-title {
+        color: #ffffff;
+        font-weight: 800;
+        letter-spacing: -0.2px;
+      }
+      .signalam-modal.is-dangerous .signalam-domain-subtitle {
+        color: rgba(255, 255, 255, 0.85);
+      }
+      .signalam-modal.is-dangerous .signalam-logo-badge {
+        background: #ffffff;
+        color: #ff3e1d;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      }
+      .signalam-modal.is-dangerous .signalam-close-btn {
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .signalam-modal.is-dangerous .signalam-close-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+      }
+      .signalam-danger-hero {
+        background: rgba(0, 0, 0, 0.24);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 10px;
+        padding: 16px 18px;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+      }
+      .signalam-danger-hero-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.16);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+        animation: dangerPulse 2s ease-in-out infinite;
+      }
+      @keyframes dangerPulse {
+        0%, 100% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4);
+        }
+        50% {
+          transform: scale(1.05);
+          box-shadow: 0 0 0 8px rgba(255, 255, 255, 0);
+        }
+      }
+      .signalam-danger-hero-content {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+      .signalam-danger-hero-tag {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.8px;
+        color: #ffc9c2;
+        text-transform: uppercase;
+      }
+      .signalam-danger-hero-title {
+        font-size: 18px;
+        font-weight: 800;
+        color: #ffffff;
+        line-height: 1.25;
+      }
+      .signalam-danger-hero-desc {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.92);
+        line-height: 1.5;
+        margin-top: 2px;
+      }
+      .signalam-danger-hero-desc strong {
+        color: #ffffff;
+        text-decoration: underline;
+      }
+      .signalam-modal.is-dangerous .signalam-safe-notice {
+        color: rgba(255, 255, 255, 0.78);
+      }
+      .signalam-modal.is-dangerous .signalam-footer {
+        background: rgba(0, 0, 0, 0.22);
+        border-top: 1px solid rgba(255, 255, 255, 0.18);
+      }
+      .signalam-modal.is-dangerous .signalam-btn-primary {
+        background: #ffffff;
+        color: #b71c1c;
+        font-size: 13px;
+        font-weight: 700;
+        border: none;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+      }
+      .signalam-modal.is-dangerous .signalam-btn-primary:hover {
+        background: #f5f5f9;
+        color: #991300;
+        transform: translateY(-1px);
+        box-shadow: 0 5px 14px rgba(0, 0, 0, 0.35);
+      }
+      .signalam-modal.is-dangerous .signalam-btn-outline {
+        background: transparent;
+        border: 1.5px solid rgba(255, 255, 255, 0.6);
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .signalam-modal.is-dangerous .signalam-btn-outline:hover {
+        background: rgba(255, 255, 255, 0.16);
+        border-color: #ffffff;
+        color: #ffffff;
+      }
     `;
     shadow.appendChild(style);
 
     const backdrop = document.createElement("div");
-    backdrop.className = "signalam-backdrop";
+    backdrop.className = isDangerous ? "signalam-backdrop is-dangerous" : "signalam-backdrop";
 
     const modal = document.createElement("div");
-    modal.className = "signalam-modal";
+    modal.className = isDangerous ? "signalam-modal is-dangerous" : "signalam-modal";
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
     modal.setAttribute("aria-labelledby", "signalamAnalysisModalTitle");
+
+    // Hero danger banner if flagged dangerous
+    let dangerHeroHtml = "";
+    if (isDangerous) {
+      let dangerousEntity = "This page";
+      let dangerousAccessTarget = "the destination you are trying to access";
+      if (webConfig.isDangerous && emailConfig.isDangerous) {
+        dangerousEntity = "Website & Email";
+        dangerousAccessTarget = "the website and opened email message you are trying to access";
+      } else if (webConfig.isDangerous) {
+        dangerousEntity = "Website";
+        dangerousAccessTarget = `the website "${targetDomain}" you are trying to access`;
+      } else if (emailConfig.isDangerous) {
+        dangerousEntity = "Email Message";
+        dangerousAccessTarget = "the email message you are viewing";
+      }
+
+      dangerHeroHtml = `
+        <section class="signalam-danger-hero" aria-label="Dangerous Security Alert">
+          <div class="signalam-danger-hero-icon" aria-hidden="true">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </div>
+          <div class="signalam-danger-hero-content">
+            <div class="signalam-danger-hero-tag">SECURITY ALERT • ${escapeHtml(dangerousEntity.toUpperCase())}</div>
+            <h2 class="signalam-danger-hero-title">Flagged as Dangerous</h2>
+            <p class="signalam-danger-hero-desc">
+              Signalam has flagged ${escapeHtml(dangerousAccessTarget)} as <strong>Dangerous</strong>. 
+              The system detected severe characteristics commonly associated with deceptive phishing websites, identity theft, or financial scams designed to harvest passwords, banking credentials, or personal information.
+            </p>
+          </div>
+        </section>
+      `;
+    }
 
     // Indicators HTML if any
     let indicatorsHtml = "";
@@ -625,14 +792,14 @@
     let actionsHtml = "";
     if (showGoBack) {
       actionsHtml = `
-        <button id="signalamContinueBtn" class="signalam-btn signalam-btn-outline" type="button">Continue Anyway</button>
+        <button id="signalamContinueBtn" class="signalam-btn signalam-btn-outline" type="button">Continue</button>
         <button id="signalamBackBtn" class="signalam-btn signalam-btn-primary" type="button">Go Back</button>
       `;
     }
 
     const footerHtml = showGoBack ? `
       <!-- Modal Actions Footer -->
-      <footer class="signalam-footer">
+      <footer class="signalam-footer ${isDangerous ? "is-dangerous" : ""}">
         ${actionsHtml}
       </footer>
     ` : "";
@@ -647,7 +814,7 @@
             </svg>
           </div>
           <div class="signalam-header-text">
-            <h1 id="signalamAnalysisModalTitle" class="signalam-title">Security Analysis</h1>
+            <h1 id="signalamAnalysisModalTitle" class="signalam-title">${isDangerous ? "Dangerous Content Blocked" : "Security Analysis"}</h1>
             <span class="signalam-domain-subtitle">${escapeHtml(targetDomain)}</span>
           </div>
         </div>
@@ -661,6 +828,7 @@
 
       <!-- Modal Body -->
       <div class="signalam-body">
+        ${dangerHeroHtml}
         ${overallHtml}
 
         <!-- 1. Website Detection Card -->

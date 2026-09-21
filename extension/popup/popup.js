@@ -923,6 +923,16 @@ function renderCompactUI(state) {
     elements.quickFeedbackBar.classList.toggle("hidden", !hasReview);
   }
   if (!hasReview && feedbackExpanded) setFeedbackExpanded(false);
+
+  // When URL or Email is marked as "Dangerous", automatically show the warning modal popup
+  const isDangerous = webConfig.signal === "DANGEROUS" || emailConfig.signal === "DANGEROUS";
+  if (isDangerous) {
+    setTimeout(() => {
+      if (elements.viewDetailsBtn) {
+        elements.viewDetailsBtn.click();
+      }
+    }, 60);
+  }
 }
 
 function renderRefreshPending() {

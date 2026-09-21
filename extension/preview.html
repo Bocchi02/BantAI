@@ -109,12 +109,16 @@
     function loadCase(caseNum, btn) {
       document.querySelectorAll('.btn-state').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
+      const existingModal = document.getElementById('signalam-extension-root');
+      if (existingModal) existingModal.remove();
       document.getElementById('previewFrame').src = 'popup/popup.html?case=' + caseNum;
     }
 
     function loadState(state, btn) {
       document.querySelectorAll('.btn-state').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
+      const existingModal = document.getElementById('signalam-extension-root');
+      if (existingModal) existingModal.remove();
       document.getElementById('previewFrame').src = 'popup/popup.html?state=' + state;
     }
 
