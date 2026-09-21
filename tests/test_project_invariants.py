@@ -316,7 +316,10 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn("result.signal", worker)
         self.assertIn('"SUSPICIOUS"', worker)
         self.assertIn("result.final_result", worker)
-        remote_scan = worker[worker.index("async function scanCurrentTabUrl") : worker.index("async function fetchHybridEmail")]
+        remote_scan = worker[
+            worker.index("async function performCurrentTabUrlScan") :
+            worker.index("async function scanCurrentTabUrl")
+        ]
         self.assertEqual(1, remote_scan.count("await fetchUrlAnalysis("))
         self.assertIn("fetchUrlAnalysis(currentUrl, clientEventId)", remote_scan)
         self.assertIn('"/detections/url"', worker)
@@ -699,7 +702,7 @@ class ProjectInvariantTests(unittest.TestCase):
 
     def test_automatic_url_popup_waits_for_complete_cloud_result(self) -> None:
         worker = read("extension/background/service-worker.js")
-        function = worker[worker.index("async function scanCurrentTabUrl") : worker.index("async function fetchHybridEmail")]
+        function = worker[worker.index("async function performCurrentTabUrlScan") : worker.index("async function scanCurrentTabUrl")]
         server_result = function.index("const result = await fetchUrlAnalysis")
         completed_state = function.index("const state = await patchTabState", server_result)
         popup_open = function.index("await openFiveSecondPopup")
@@ -710,6 +713,15 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertGreater(popup_open, completed_state)
         self.assertIn("cloudReviewIsComplete", function[completed_state:popup_open])
         self.assertIn('state: "complete"', function[completed_state:popup_open])
+
+    def test_url_scans_coalesce_and_keep_a_terminal_local_fallback(self) -> None:
+        worker = read("extension/background/service-worker.js")
+        popup = read("extension/popup/popup.js")
+        self.assertIn("const urlAnalysisRequests", worker)
+        self.assertIn("existingRequest?.url === currentUrl", worker)
+        self.assertIn("return existingRequest.promise", worker)
+        self.assertIn('cloudStatus !== "UNAVAILABLE"', worker)
+        self.assertIn('cloudStatus !== "UNAVAILABLE"', popup)
 
     def test_automatic_popup_is_not_reopened_by_focus_or_same_result(self) -> None:
         worker = read("extension/background/service-worker.js")

@@ -39,5 +39,19 @@ export async function proxyApiRequest(request, env, fetchImpl = fetch) {
         );
     }
     const upstreamUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, apiOrigin);
-    return fetchImpl(new Request(upstreamUrl, request));
+    try {
+        return await fetchImpl(new Request(upstreamUrl, request));
+    }
+    catch {
+        return Response.json(
+            { detail: "Service unavailable. BantAI cannot reach the API." },
+            {
+                status: 503,
+                headers: {
+                    "Cache-Control": "no-store",
+                    "Retry-After": "2",
+                },
+            },
+        );
+    }
 }

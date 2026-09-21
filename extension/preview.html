@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Signalam Extension Sneat Redesign Preview</title>
+  <style>
+    :root {
+      font-family: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #384554;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      padding: 30px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    .preview-header {
+      text-align: center;
+    }
+    .preview-header h1 {
+      margin: 0 0 6px 0;
+      font-size: 24px;
+      color: #384554;
+    }
+    .preview-header p {
+      margin: 0;
+      font-size: 14px;
+      color: #8592a3;
+    }
+    .state-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+    .btn-state {
+      padding: 8px 16px;
+      border: 1px solid #d9dee3;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #566a7f;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(67, 89, 113, 0.08);
+      transition: all 0.15s ease;
+    }
+    .btn-state:hover, .btn-state.active {
+      background: #696cff;
+      color: #ffffff;
+      border-color: #696cff;
+      box-shadow: 0 2px 6px rgba(105, 108, 255, 0.4);
+    }
+    .frame-wrapper {
+      position: relative;
+      width: 370px;
+      height: 400px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(67, 89, 113, 0.18);
+      overflow: hidden;
+      background: #f5f5f9;
+      border: 1px solid #d9dee3;
+    }
+    iframe {
+      width: 370px;
+      height: 400px;
+      border: none;
+      display: block;
+    }
+    .dimension-note {
+      font-size: 12px;
+      color: #8592a3;
+      text-align: center;
+    }
+  </style>
+  <script src="content/analysis-modal.js"></script>
+</head>
+<body>
+  <div class="preview-header">
+    <h1>Signalam Extension — Sneat UI System</h1>
+    <p>Target Dimensions: exactly 370px × 400px max (zero vertical scrolling)</p>
+  </div>
+
+  <div class="state-buttons">
+    <button class="btn-state active" onclick="loadState('safe', this)">Safe (Green)</button>
+    <button class="btn-state" onclick="loadState('suspicious', this)">Suspicious (Orange)</button>
+    <button class="btn-state" onclick="loadState('dangerous', this)">Dangerous (Red)</button>
+    <button class="btn-state" onclick="loadState('analyzing', this)">Analyzing (Loading)</button>
+    <button class="btn-state" onclick="loadState('error', this)">Error (Unable)</button>
+  </div>
+
+  <div class="frame-wrapper">
+    <iframe id="previewFrame" src="popup/popup.html?state=safe" title="Signalam Popup Preview"></iframe>
+  </div>
+
+  <div class="dimension-note">
+    Click <strong>"View Details"</strong> inside the popup frame to test the in-page Shadow DOM modal.
+  </div>
+
+  <script>
+    function loadState(state, btn) {
+      document.querySelectorAll('.btn-state').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      document.getElementById('previewFrame').src = 'popup/popup.html?state=' + state;
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.data?.type === "SIGNALAM_SHOW_MODAL" && window.SignalamModal) {
+        window.SignalamModal.render(event.data.data);
+      }
+    });
+  </script>
+</body>
+</html>

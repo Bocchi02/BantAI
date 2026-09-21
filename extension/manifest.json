@@ -5,6 +5,7 @@
   "description": "Independent website and email checks with explainable indicators, privacy-minimized cloud context, and deterministic guidance.",
   "minimum_chrome_version": "127",
   "permissions": [
+    "activeTab",
     "scripting",
     "storage",
     "tabs"

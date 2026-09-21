@@ -99,6 +99,7 @@ def check_javascript() -> None:
         ROOT / "extension" / "content" / "sender-authentication.js",
         ROOT / "extension" / "content" / "outlook-extractor.js",
         ROOT / "extension" / "content" / "yahoo-extractor.js",
+        ROOT / "extension" / "content" / "analysis-modal.js",
         ROOT / "extension" / "popup" / "popup.js",
     ]
 

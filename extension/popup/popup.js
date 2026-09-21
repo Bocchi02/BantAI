@@ -63,6 +63,7 @@ let emailReviewEventId = null;
 let emailReviewBusy = false;
 let submittedEmailReviewIds = new Set();
 let latestServerHealth = null;
+let feedbackExpanded = false;
 
 const byId = (id) => document.getElementById(id);
 
@@ -115,16 +116,48 @@ const elements = {
   pairingForm: byId("pairingForm"),
   pairingCode: byId("pairingCode"),
   pairingButton: byId("pairingButton"),
-  unpairButton: byId("unpairButton")
+  unpairButton: byId("unpairButton"),
+  compactView: byId("compactView"),
+  compactTargetDomain: byId("compactTargetDomain"),
+  compactTargetUrl: byId("compactTargetUrl"),
+  compactScopePill: byId("compactScopePill"),
+  compactRiskCard: byId("compactRiskCard"),
+  compactRiskBadge: byId("compactRiskBadge"),
+  compactRiskText: byId("compactRiskText"),
+  compactDecisionTitle: byId("compactDecisionTitle"),
+  compactResultIcon: byId("compactResultIcon"),
+  compactSummaryText: byId("compactSummaryText"),
+  viewDetailsBtn: byId("viewDetailsBtn"),
+  quickFeedbackBar: byId("quickFeedbackBar"),
+  toggleFeedbackBtn: byId("toggleFeedbackBtn")
 };
+
+function setFeedbackExpanded(expanded) {
+  feedbackExpanded = detectionEnabled && expanded === true;
+  elements.detectionContent.classList.toggle("hidden", !detectionEnabled);
+  elements.detectionContent.classList.toggle("feedback-visible", feedbackExpanded);
+  elements.detectionContent.setAttribute("aria-hidden", String(!feedbackExpanded));
+  if (elements.toggleFeedbackBtn) {
+    elements.toggleFeedbackBtn.textContent = feedbackExpanded
+      ? "Hide result feedback"
+      : "Was this result accurate?";
+    elements.toggleFeedbackBtn.setAttribute("aria-expanded", String(feedbackExpanded));
+  }
+  document.body.style.maxHeight = feedbackExpanded ? "600px" : "400px";
+  document.body.style.overflow = feedbackExpanded ? "auto" : "hidden";
+}
 
 function setDetectionVisibility(enabled) {
   detectionEnabled = enabled === true;
-  elements.detectionContent.classList.toggle("hidden", !detectionEnabled);
+  if (elements.compactView) {
+    elements.compactView.classList.toggle("hidden", !detectionEnabled);
+  }
   elements.safeNote.classList.toggle("hidden", !detectionEnabled);
   elements.serverStatus.classList.toggle("hidden", !detectionEnabled);
+  elements.pairingCard.classList.toggle("hidden", detectionEnabled);
   elements.pairingCard.classList.toggle("access-required", !detectionEnabled);
-  elements.detectionContent.setAttribute("aria-hidden", String(!detectionEnabled));
+  if (!detectionEnabled) feedbackExpanded = false;
+  setFeedbackExpanded(feedbackExpanded);
 
   if (!detectionEnabled) {
     elements.reviewCard.classList.add("hidden");
@@ -333,11 +366,12 @@ function renderServer(server) {
 
 function websiteDecision(detector) {
   const result = detector.result || {};
-  if (detector.state === "error" || result.signal === "UNAVAILABLE" || result.llm_review?.status === "UNAVAILABLE") return "UNAVAILABLE";
+  if (detector.state === "error" || result.signal === "UNAVAILABLE") return "UNAVAILABLE";
   if (detector.state !== "complete") return detector.state === "analyzing" ? "CHECKING" : "WAITING";
   const completed = ["NO_STRONG_WARNING_SIGNS", "NEEDS_CAUTION", "SUSPICIOUS_SIGNS_FOUND"];
   if (!completed.includes(result.final_result)) return "CHECKING";
-  if (result.signal === "SUSPICIOUS" && !completed.includes(result.llm_review?.status || result.llm_review?.assessment)) return "CHECKING";
+  const cloudStatus = String(result.llm_review?.status || result.llm_review?.assessment || "").toUpperCase();
+  if (result.signal === "SUSPICIOUS" && !completed.includes(cloudStatus) && cloudStatus !== "UNAVAILABLE") return "CHECKING";
   return result.final_result;
 }
 
@@ -502,6 +536,7 @@ function renderEmailReview(state) {
 }
 
 async function loadSubmittedReviews() {
+  if (typeof chrome === "undefined" || !chrome.storage?.local) return;
   const stored = await chrome.storage.local.get([
     STORAGE_KEYS.submittedUrlFeedback,
     STORAGE_KEYS.submittedEmailFeedback
@@ -582,21 +617,205 @@ function renderEmail(state) {
   renderIndicators(state, fusionResult);
 }
 
+function renderCompactUI(state) {
+  if (!elements.compactView) return;
+
+  const urlDetector = state?.url_detector || {};
+  const urlResult = urlDetector.result || {};
+  const emailDetector = state?.email_detector || {};
+  const emailResult = emailDetector.result || {};
+  const provider = String(state?.provider || emailDetector.provider || emailResult.provider || "").toLowerCase();
+  const isEmail = SUPPORTED_EMAIL_PROVIDERS.has(provider);
+
+  let targetDomain = "Current Webpage";
+  let targetUrl = state?.current_url || urlResult.current_url || "";
+  let scopeLabel = "Address only";
+  let finalOutcome = "WAITING";
+
+  if (isEmail) {
+    targetDomain = emailDetector.sender || emailResult.sender || (emailDetector.provider_label || state?.provider_label || "Email message");
+    scopeLabel = emailDetector.provider_label || state?.provider_label || provider.toUpperCase();
+    finalOutcome = state?.fusion?.final_result || (emailDetector.state === "analyzing" ? "ANALYZING" : emailDetector.signal || "WAITING");
+  } else {
+    targetDomain = urlResult.hostname || state?.hostname || "Current Webpage";
+    scopeLabel = "Address only";
+    finalOutcome = websiteDecision(urlDetector);
+  }
+
+  let style = "neutral";
+  let badgeLabel = "WAITING";
+  let titleText = "WAITING";
+  let shortSummary = "Waiting for website address...";
+  let iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="6" x2="12" y2="12"></line><line x1="12" y1="12" x2="16" y2="14"></line></svg>';
+
+  if (finalOutcome === "NO_STRONG_WARNING_SIGNS" || finalOutcome === "SAFE") {
+    style = "safe";
+    badgeLabel = "SAFE";
+    titleText = "SAFE";
+    shortSummary = "No major security concerns were identified.";
+    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>';
+  } else if (finalOutcome === "NEEDS_CAUTION") {
+    style = "suspicious";
+    badgeLabel = "SUSPICIOUS";
+    titleText = "SUSPICIOUS";
+    shortSummary = "Signalam recommends caution when interacting with this website.";
+    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+  } else if (finalOutcome === "SUSPICIOUS_SIGNS_FOUND" || finalOutcome === "SUSPICIOUS") {
+    style = "dangerous";
+    badgeLabel = "DANGEROUS";
+    titleText = "DANGEROUS";
+    shortSummary = "Signalam recommends avoiding sensitive interactions with this website.";
+    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+  } else if (finalOutcome === "ANALYZING" || finalOutcome === "CHECKING") {
+    style = "analyzing";
+    badgeLabel = "CHECKING";
+    titleText = "ANALYZING WEBSITE";
+    shortSummary = "Signalam is checking this page.";
+    iconSvg = '<svg class="spinner" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>';
+  } else if (finalOutcome === "UNAVAILABLE") {
+    style = "unavailable";
+    badgeLabel = "UNAVAILABLE";
+    titleText = "UNABLE TO ANALYZE";
+    shortSummary = "Signalam could not complete the website analysis.";
+    iconSvg = '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>';
+  }
+
+  elements.compactTargetDomain.textContent = targetDomain;
+  elements.compactTargetDomain.title = targetDomain;
+  if (elements.compactTargetUrl) {
+    elements.compactTargetUrl.textContent = targetUrl || targetDomain;
+    elements.compactTargetUrl.title = targetUrl || targetDomain;
+  }
+  elements.compactScopePill.textContent = scopeLabel;
+  elements.compactRiskCard.className = `decision-card ${style}`;
+  elements.compactRiskBadge.className = `decision-badge ${style}`;
+  elements.compactRiskText.textContent = badgeLabel;
+  if (elements.compactDecisionTitle) {
+    elements.compactDecisionTitle.textContent = titleText;
+  }
+  elements.compactSummaryText.textContent = shortSummary;
+  elements.compactResultIcon.className = `decision-icon ${style}`;
+  elements.compactResultIcon.innerHTML = iconSvg;
+
+  const hasReview = reviewableUrlResult(state) || reviewableEmailResult(state);
+  if (elements.quickFeedbackBar) {
+    elements.quickFeedbackBar.classList.toggle("hidden", !hasReview);
+  }
+  if (!hasReview && feedbackExpanded) setFeedbackExpanded(false);
+}
+
+function renderRefreshPending() {
+  const provider = String(latestState?.provider || "").toLowerCase();
+  if (!detectionEnabled || SUPPORTED_EMAIL_PROVIDERS.has(provider)) return;
+  renderCompactUI({
+    ...latestState,
+    url_detector: {
+      state: "analyzing",
+      signal: "ANALYZING",
+      result: null
+    }
+  });
+}
+
+function compileModalPayload(state) {
+  const urlDetector = state?.url_detector || {};
+  const urlResult = urlDetector.result || {};
+  const emailDetector = state?.email_detector || {};
+  const emailResult = emailDetector.result || {};
+  const provider = String(state?.provider || emailDetector.provider || emailResult.provider || "").toLowerCase();
+  const isEmail = SUPPORTED_EMAIL_PROVIDERS.has(provider);
+
+  const finalResult = isEmail
+    ? (state?.fusion?.final_result || emailDetector.signal || "WAITING")
+    : websiteDecision(urlDetector);
+
+  const targetUrl = state?.current_url || urlResult.current_url || "";
+  let targetDomain = isEmail
+    ? (emailDetector.sender || emailResult.sender || "Email Message")
+    : (urlResult.hostname || state?.hostname || "");
+  if (!targetDomain && targetUrl) {
+    try {
+      targetDomain = new URL(targetUrl).hostname;
+    } catch {
+      targetDomain = "Current Webpage";
+    }
+  }
+
+  const markers = [
+    ...(state?.local_indicators?.markers || []),
+    ...(state?.llm_review?.indicators || [])
+  ];
+
+  const formattedIndicators = [];
+  const seenCats = new Set();
+  for (const m of markers) {
+    const cat = String(m?.category || "").toUpperCase();
+    if (!cat || seenCats.has(cat)) continue;
+    seenCats.add(cat);
+    formattedIndicators.push({
+      category: cat,
+      title: INDICATOR_LABELS[cat] ? (INDICATOR_LABELS[cat].charAt(0).toUpperCase() + INDICATOR_LABELS[cat].slice(1)) : cat,
+      evidence: m?.evidence || ""
+    });
+  }
+
+  const explanations = [];
+  const cloudSummary = String(state?.llm_review?.reasoning_summary || "").trim();
+  if (cloudSummary) {
+    explanations.push({
+      title: "Security Review",
+      description: cloudSummary
+    });
+  }
+
+  if (isEmail) {
+    const emailMsg = simpleEmailMessage(state, finalResult);
+    if (emailMsg && emailMsg !== cloudSummary) {
+      explanations.push({
+        title: "Email Assessment",
+        description: emailMsg
+      });
+    }
+  } else {
+    const webMsg = simpleWebsiteMessage(finalResult);
+    if (webMsg) {
+      explanations.push({
+        title: "Address Assessment",
+        description: webMsg
+      });
+    }
+  }
+
+  return {
+    finalDecision: finalResult,
+    targetUrl,
+    targetDomain,
+    isEmail,
+    indicators: formattedIndicators,
+    explanations
+  };
+}
+
 function renderState(state) {
   latestState = state || {};
   renderWebsite(latestState);
   renderReview(latestState);
   renderEmail(latestState);
   renderEmailReview(latestState);
+  renderCompactUI(latestState);
 }
 
 async function loadActiveTab() {
+  if (typeof chrome === "undefined" || !chrome.tabs?.query) {
+    activeTabId = 1;
+    return;
+  }
   const tabs = await chrome.tabs.query({active: true, lastFocusedWindow: true});
   activeTabId = tabs[0]?.id ?? null;
 }
 
 async function loadStoredState() {
-  if (!detectionEnabled) return;
+  if (!detectionEnabled || typeof chrome === "undefined" || !chrome.storage?.session) return;
   const stored = await chrome.storage.session.get([STORAGE_KEYS.tabStates, STORAGE_KEYS.server]);
   renderServer(stored[STORAGE_KEYS.server]);
   const states = stored[STORAGE_KEYS.tabStates] || {};
@@ -604,6 +823,24 @@ async function loadStoredState() {
 }
 
 async function loadPairingState() {
+  if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+    setDetectionVisibility(true);
+    elements.serverStatus.className = "server-status connected";
+    elements.serverStatusText.textContent = "Protected";
+    renderCompactUI({
+      current_url: "https://facebook.com/login",
+      hostname: "facebook.com",
+      url_detector: {
+        state: "complete",
+        result: {
+          hostname: "facebook.com",
+          current_url: "https://facebook.com/login",
+          final_result: "NO_STRONG_WARNING_SIGNS"
+        }
+      }
+    });
+    return true;
+  }
   try {
     const state = await chrome.runtime.sendMessage({type: "BANTAI_GET_CONNECTION"});
     if (!state?.ok) throw new Error(state?.detail || "Service unavailable");
@@ -791,6 +1028,7 @@ elements.unpairButton.addEventListener("click", async () => {
 });
 
 async function configureAutoClose() {
+  if (typeof chrome === "undefined" || !chrome.storage?.session) return;
   const stored = await chrome.storage.session.get(STORAGE_KEYS.autoPopup);
   const popup = stored[STORAGE_KEYS.autoPopup];
   if (!popup || popup.consumed || popup.tab_id !== activeTabId) return;
@@ -815,7 +1053,8 @@ async function configureAutoClose() {
   countdownTimer = window.setInterval(updateCountdown, 100);
 }
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
+if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "session") {
     if (changes[STORAGE_KEYS.access]) {
       setDetectionVisibility(changes[STORAGE_KEYS.access].newValue?.enabled === true);
@@ -827,14 +1066,126 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     }
   }
 });
+}
+
+if (elements.viewDetailsBtn) {
+  elements.viewDetailsBtn.addEventListener("click", async () => {
+    const payload = compileModalPayload(latestState);
+
+    // Standalone preview fallback (when testing outside extension context)
+    if (typeof chrome === "undefined" || !chrome.tabs?.sendMessage) {
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: "SIGNALAM_SHOW_MODAL", data: payload }, "*");
+        }
+      } catch {
+        // Fall through to direct call
+      }
+      try {
+        if (window.parent && window.parent.SignalamModal) {
+          window.parent.SignalamModal.render(payload);
+        } else if (window.SignalamModal) {
+          window.SignalamModal.render(payload);
+        }
+      } catch {
+        // Handled via postMessage
+      }
+      return;
+    }
+
+    if (!activeTabId) return;
+
+    // 1. Try messaging content script directly if already loaded
+    try {
+      const response = await chrome.tabs.sendMessage(activeTabId, {
+        type: "BANTAI_SHOW_ANALYSIS_MODAL",
+        data: payload
+      });
+      if (response?.ok) {
+        globalThis["close"]();
+        return;
+      }
+    } catch {
+      // Content script not yet injected
+    }
+
+    // 2. Inject analysis-modal.js and send display message
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: activeTabId },
+        files: ["content/analysis-modal.js"]
+      });
+
+      await chrome.tabs.sendMessage(activeTabId, {
+        type: "BANTAI_SHOW_ANALYSIS_MODAL",
+        data: payload
+      });
+
+      globalThis["close"]();
+    } catch {
+      if (elements.compactSummaryText) {
+        elements.compactSummaryText.textContent = "Security modal cannot be displayed on internal browser tabs.";
+      }
+    }
+  });
+}
+
+if (elements.toggleFeedbackBtn) {
+  elements.toggleFeedbackBtn.addEventListener("click", () => {
+    setFeedbackExpanded(!feedbackExpanded);
+  });
+}
 
 async function initialize() {
+  const urlParams = typeof window !== "undefined" && window.location?.search
+    ? new URLSearchParams(window.location.search)
+    : null;
+  const previewState = urlParams?.get("state");
+
+  if (previewState) {
+    setDetectionVisibility(true);
+    elements.serverStatus.className = "server-status connected";
+    elements.serverStatusText.textContent = "Protected";
+    let final_result = "NO_STRONG_WARNING_SIGNS";
+    let detector_state = "complete";
+    if (previewState === "suspicious" || previewState === "caution") {
+      final_result = "NEEDS_CAUTION";
+    } else if (previewState === "high_risk" || previewState === "high" || previewState === "dangerous") {
+      final_result = "SUSPICIOUS_SIGNS_FOUND";
+    } else if (previewState === "safe" || previewState === "low_risk" || previewState === "low") {
+      final_result = "NO_STRONG_WARNING_SIGNS";
+    } else if (previewState === "analyzing" || previewState === "loading") {
+      final_result = "ANALYZING";
+      detector_state = "analyzing";
+    } else if (previewState === "error" || previewState === "unavailable") {
+      final_result = "UNAVAILABLE";
+      detector_state = "error";
+      elements.serverStatus.className = "server-status unavailable";
+      elements.serverStatusText.textContent = "Unavailable";
+    }
+    renderCompactUI({
+      current_url: "https://example.com/login?id=test",
+      hostname: "example.com",
+      url_detector: {
+        state: detector_state,
+        signal: final_result,
+        result: {
+          hostname: "example.com",
+          current_url: "https://example.com/login?id=test",
+          final_result: final_result
+        }
+      }
+    });
+    return;
+  }
+
   await loadActiveTab();
   await loadSubmittedReviews();
   const enabled = await loadPairingState();
   if (enabled) {
     await configureAutoClose();
     await loadStoredState();
+    renderRefreshPending();
     void chrome.runtime.sendMessage({type: "BANTAI_CHECK_SERVER"});
     /* Manual opening requests a fresh tab.url scan but does not start auto-close. */
     void chrome.runtime.sendMessage({type: "BANTAI_REFRESH_ACTIVE_TAB"});

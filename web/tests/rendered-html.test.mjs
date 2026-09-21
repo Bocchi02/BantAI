@@ -78,6 +78,26 @@ test("same-origin API proxy preserves authenticated requests and requires HTTPS 
   assert.equal(nonLoopback.status, 503);
 });
 
+test("same-origin API proxy returns a controlled response when the upstream API is offline", async () => {
+  const response = await proxyApiRequest(
+    new Request("http://localhost:3000/api/v1/public-config"),
+    {
+      BANTAI_API_ORIGIN: "http://127.0.0.1:8080",
+      BANTAI_ALLOW_HTTP_LOOPBACK: "true",
+    },
+    async () => {
+      throw new TypeError("Network connection lost at http://127.0.0.1:8080");
+    },
+  );
+
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("retry-after"), "2");
+  const body = await response.json();
+  assert.deepEqual(body, { detail: "Service unavailable. BantAI cannot reach the API." });
+  assert.doesNotMatch(JSON.stringify(body), /Network connection lost|127\.0\.0\.1/i);
+});
+
 test("adds HSTS only for HTTPS requests", async () => {
   const response = await render("/", "https://app.example.test");
   assert.equal(

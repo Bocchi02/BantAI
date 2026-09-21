@@ -96,6 +96,9 @@ const EMAIL_FEEDBACK_REQUEST_TYPES = {
 const urlSequences =
   new Map();
 
+const urlAnalysisRequests =
+  new Map();
+
 const emailSequences =
   new Map();
 
@@ -499,6 +502,7 @@ async function clearDetectionState(
   message = "Pair this device with a BantAI account to enable detection."
 ) {
   urlSequences.clear();
+  urlAnalysisRequests.clear();
   emailSequences.clear();
   popupFingerprints.clear();
   automaticPopupStates.clear();
@@ -1746,7 +1750,7 @@ async function legacyLocalScanCurrentTabUrl(
 }
 
 
-async function scanCurrentTabUrl(
+async function performCurrentTabUrlScan(
   tab,
   {
     force = false,
@@ -1828,7 +1832,14 @@ async function scanCurrentTabUrl(
     if (!COMPLETE_CLOUD_STATUSES.has(finalResult)) {
       throw new Error("The BantAI server returned an incomplete website result.");
     }
-    if (result.signal === "SUSPICIOUS" && !cloudReviewIsComplete(result.llm_review)) {
+    const cloudStatus = String(
+      result?.llm_review?.status || result?.llm_review?.assessment || ""
+    ).toUpperCase();
+    if (
+      result.signal === "SUSPICIOUS" &&
+      !cloudReviewIsComplete(result.llm_review) &&
+      cloudStatus !== "UNAVAILABLE"
+    ) {
       throw new Error("The website cloud assessment has not completed.");
     }
     const completedAt = nowIso();
@@ -1889,6 +1900,33 @@ async function scanCurrentTabUrl(
     await setServerState("unavailable", "Service unavailable");
     await updateBadge(tabId, state?.url_detector);
     return state?.url_detector || null;
+  }
+}
+
+
+async function scanCurrentTabUrl(
+  tab,
+  options = {}
+) {
+  const tabId = tab?.id;
+  const currentUrl = String(tab?.url || "");
+  if (!Number.isInteger(tabId)) {
+    return null;
+  }
+
+  const existingRequest = urlAnalysisRequests.get(tabId);
+  if (existingRequest?.url === currentUrl) {
+    return existingRequest.promise;
+  }
+
+  const promise = performCurrentTabUrlScan(tab, options);
+  urlAnalysisRequests.set(tabId, {url: currentUrl, promise});
+  try {
+    return await promise;
+  } finally {
+    if (urlAnalysisRequests.get(tabId)?.promise === promise) {
+      urlAnalysisRequests.delete(tabId);
+    }
   }
 }
 
@@ -3409,6 +3447,10 @@ chrome.tabs.onRemoved
       tabId
     ) => {
       urlSequences.delete(
+        tabId
+      );
+
+      urlAnalysisRequests.delete(
         tabId
       );
 
