@@ -95,6 +95,7 @@ function restart() {
     },
     emailRequestIsCurrent: async () => !stale,
     cloudReviewIsComplete: () => true, updateBadge: async () => {},
+    isDangerousOutcome: () => false,
     scanCurrentTabUrl: async (tab, options) => {
       assert.equal(options.reason, 'email_request_failed');
       urlRetries++;

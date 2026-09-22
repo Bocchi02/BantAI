@@ -57,6 +57,7 @@ class GeminiProvider(LLMProvider):
         api_key: str | None = None,
         model: str | None = None,
         fallback_model: str | None = None,
+        url_model: str | None = None,
         timeout_seconds: float | None = None,
         max_retries: int | None = None,
         client: Any = None,
@@ -73,6 +74,11 @@ class GeminiProvider(LLMProvider):
         self.fallback_model = configured_fallback.strip()
         if self.fallback_model == self.model:
             self.fallback_model = ""
+        self.url_model = (
+            url_model
+            if url_model is not None
+            else os.getenv("GEMINI_URL_MODEL", "").strip()
+        ).strip()
         self._active_model = self.model
         self._model_lock = threading.Lock()
         self._request_state = threading.local()
@@ -114,6 +120,7 @@ class GeminiProvider(LLMProvider):
             "model": used_model,
             "primary_model": self.model,
             "fallback_model": self.fallback_model or None,
+            "url_model": self.url_model or None,
             "fallback_used": bool(
                 self.fallback_model
                 and used_model == self.fallback_model
@@ -141,11 +148,23 @@ class GeminiProvider(LLMProvider):
         if self._client is None:
             self._client = genai.Client(
                 api_key=self.api_key,
-                http_options=types.HttpOptions(
-                    timeout=int(self.timeout_seconds * 1000),
-                ),
+                http_options=self._http_options(types),
             )
         return self._client, types
+
+    def _http_options(self, types: Any) -> Any:
+        """Bound one SDK request to BantAI's explicit retry policy.
+
+        The Google Gen AI SDK retries transient responses five times by default.
+        BantAI already owns fallback selection and permits at most one explicit
+        retry, so leaving the SDK default enabled can multiply a ten-second
+        deadline into a long, stale browser result.
+        """
+
+        return types.HttpOptions(
+            timeout=int(self.timeout_seconds * 1000),
+            retry_options=types.HttpRetryOptions(attempts=1),
+        )
 
     @staticmethod
     def _is_transient(error: Exception) -> bool:
@@ -213,9 +232,18 @@ class GeminiProvider(LLMProvider):
         else:
             prompt = build_review_prompt(payload)
             system_instruction = SYSTEM_INSTRUCTION
+        use_dedicated_url_model = bool(
+            is_url_review
+            and self.url_model
+            and self.url_model != self.model
+        )
         attempt = 0
         while True:
-            selected_model = self.active_model
+            selected_model = (
+                self.url_model
+                if use_dedicated_url_model
+                else self.active_model
+            )
             self._request_state.model = selected_model
             thinking_config = None
             if selected_model.lower().startswith("gemini-3"):
@@ -260,7 +288,12 @@ class GeminiProvider(LLMProvider):
             except Exception as exc:
                 reason_code, retry_after = self._unavailable_details(exc)
                 if (
-                    reason_code == "QUOTA_REACHED"
+                    reason_code in {
+                        "QUOTA_REACHED",
+                        "TIMEOUT",
+                        "PROVIDER_UNAVAILABLE",
+                    }
+                    and not use_dedicated_url_model
                     and self._activate_fallback(selected_model)
                 ):
                     attempt = 0

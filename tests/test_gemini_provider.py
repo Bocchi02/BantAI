@@ -13,6 +13,14 @@ from llm.gemini_provider import GeminiProvider, _gemini_response_schema
 
 
 class FakeTypes:
+    class HttpRetryOptions:
+        def __init__(self, **values) -> None:
+            self.values = values
+
+    class HttpOptions:
+        def __init__(self, **values) -> None:
+            self.values = values
+
     class ThinkingConfig:
         def __init__(self, **values) -> None:
             self.values = values
@@ -56,6 +64,21 @@ class FakeClient:
         self.models = FailoverModels()
 
 
+class TemporaryFailureModels(FailoverModels):
+    def generate_content(self, *, model, contents, config):
+        self.calls.append(model)
+        self.configs.append(config)
+        self.contents.append(contents)
+        if model == "gemini-3.6-flash":
+            raise RuntimeError("Service temporarily unavailable")
+        return FakeResponse()
+
+
+class TemporaryFailureClient:
+    def __init__(self) -> None:
+        self.models = TemporaryFailureModels()
+
+
 class GeminiProviderTests(unittest.TestCase):
     def test_transport_schema_omits_unsupported_additional_properties(self) -> None:
         schema = _gemini_response_schema()
@@ -88,6 +111,18 @@ class GeminiProviderTests(unittest.TestCase):
         self.assertEqual(default_provider.timeout_seconds, 12.0)
         self.assertEqual(short_provider.timeout_seconds, 10.0)
 
+    def test_provider_disables_hidden_sdk_retries(self) -> None:
+        provider = GeminiProvider(
+            api_key="synthetic",
+            model="gemini-3.6-flash",
+            timeout_seconds=10,
+        )
+
+        options = provider._http_options(FakeTypes)
+
+        self.assertEqual(10000, options.values["timeout"])
+        self.assertEqual(1, options.values["retry_options"].values["attempts"])
+
     def test_quota_error_is_classified_without_exposing_provider_details(self) -> None:
         reason, retry_after = GeminiProvider._unavailable_details(
             SyntheticQuotaError("RESOURCE_EXHAUSTED; retry in 23.5s")
@@ -110,6 +145,7 @@ class GeminiProviderTests(unittest.TestCase):
             api_key="synthetic",
             model="gemini-3.6-flash",
             fallback_model="gemini-3.5-flash-lite",
+            url_model="",
             client=client,
         )
         provider._client_and_types = lambda: (client, FakeTypes)
@@ -133,6 +169,54 @@ class GeminiProviderTests(unittest.TestCase):
             ],
         )
         self.assertEqual(provider.active_model, "gemini-3.5-flash-lite")
+        self.assertTrue(provider.review_metadata()["fallback_used"])
+
+    def test_temporary_provider_failure_switches_to_flash_lite(self) -> None:
+        client = TemporaryFailureClient()
+        provider = GeminiProvider(
+            api_key="synthetic",
+            model="gemini-3.6-flash",
+            fallback_model="gemini-3.5-flash-lite",
+            url_model="",
+            client=client,
+        )
+        provider._client_and_types = lambda: (client, FakeTypes)
+
+        result = provider.review({
+            "analysis_type": "URL_CONTEXT",
+            "address_origin": "https://docs.example/",
+            "hostname": "docs.example",
+            "url_model": {"signal": "SUSPICIOUS"},
+        })
+
+        self.assertEqual("NO_STRONG_WARNING_SIGNS", result.assessment)
+        self.assertEqual(
+            ["gemini-3.6-flash", "gemini-3.5-flash-lite"],
+            client.models.calls,
+        )
+        self.assertEqual("gemini-3.5-flash-lite", provider.active_model)
+
+    def test_url_review_uses_the_dedicated_low_latency_model_directly(self) -> None:
+        client = FakeClient()
+        provider = GeminiProvider(
+            api_key="synthetic",
+            model="gemini-3.6-flash",
+            fallback_model="gemini-3.5-flash-lite",
+            url_model="gemini-3.5-flash-lite",
+            client=client,
+        )
+        provider._client_and_types = lambda: (client, FakeTypes)
+
+        result = provider.review({
+            "analysis_type": "URL_CONTEXT",
+            "address_origin": "https://docs.example/",
+            "hostname": "docs.example",
+            "url_model": {"signal": "SUSPICIOUS"},
+        })
+
+        self.assertEqual("NO_STRONG_WARNING_SIGNS", result.assessment)
+        self.assertEqual(["gemini-3.5-flash-lite"], client.models.calls)
+        self.assertEqual("gemini-3.6-flash", provider.active_model)
         self.assertTrue(provider.review_metadata()["fallback_used"])
 
     def test_pasted_message_review_requests_a_detailed_taglish_aware_response(self) -> None:

@@ -75,10 +75,13 @@ class LLMReviewCoordinator:
         if self.provider is not None:
             active_model = getattr(self.provider, "active_model", None)
             fallback_model = getattr(self.provider, "fallback_model", None)
+            url_model = getattr(self.provider, "url_model", None)
             if active_model:
                 result["model"] = active_model
             if fallback_model:
                 result["fallback_model"] = fallback_model
+            if url_model:
+                result["url_model"] = url_model
         return result
 
     def _provider_review_metadata(self) -> dict[str, Any]:

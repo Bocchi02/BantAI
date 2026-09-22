@@ -924,15 +924,8 @@ function renderCompactUI(state) {
   }
   if (!hasReview && feedbackExpanded) setFeedbackExpanded(false);
 
-  // When URL or Email is marked as "Dangerous", automatically show the warning modal popup
-  const isDangerous = webConfig.signal === "DANGEROUS" || emailConfig.signal === "DANGEROUS";
-  if (isDangerous) {
-    setTimeout(() => {
-      if (elements.viewDetailsBtn) {
-        elements.viewDetailsBtn.click();
-      }
-    }, 60);
-  }
+  // The background worker opens a dangerous page modal once the final result
+  // is ready. Re-rendering this toolbar view must not reopen that modal.
 }
 
 function renderRefreshPending() {

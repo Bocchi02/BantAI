@@ -22,6 +22,8 @@ const STORAGE_KEYS = {
     "bantai_v110_server",
   autoPopup:
     "bantai_v110_auto_popup",
+  autoPopupSites:
+    "bantai_v110_auto_popup_sites",
   access:
     "bantai_v110_access",
   collectionDiagnostics:
@@ -109,6 +111,9 @@ const popupFingerprints =
   new Map();
 
 const automaticPopupStates =
+  new Map();
+
+const dangerModalRequests =
   new Map();
 
 const DETECTION_ACCESS_CACHE_MS =
@@ -274,6 +279,45 @@ function hostnameForUrl(
   } catch {
     return "";
   }
+}
+
+
+function popupSiteForUrl(url) {
+  const hostname = hostnameForUrl(url).toLowerCase().replace(/\.$/, "");
+  if (!hostname) return "";
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) return "localhost";
+  if (hostname.includes(":") || /^\d+(?:\.\d+){3}$/.test(hostname)) {
+    return hostname;
+  }
+
+  const labels = hostname.split(".");
+  if (labels.length < 2) return hostname;
+  // Keep common second-level country-code suffixes together without
+  // grouping unrelated sites such as example.co.uk and another.co.uk.
+  const commonCcSecondLevels = new Set([
+    "ac", "co", "com", "edu", "go", "gov", "mil", "ne", "net", "or", "org"
+  ]);
+  const sharedHostingSuffixes = new Set([
+    "appspot.com", "azurewebsites.net", "blogspot.com", "cloudfront.net",
+    "github.io", "gitlab.io", "netlify.app", "pages.dev", "vercel.app"
+  ]);
+  const lastTwo = labels.slice(-2).join(".");
+  const suffixLabels = (
+    (labels.at(-1).length === 2 && commonCcSecondLevels.has(labels.at(-2))) ||
+    sharedHostingSuffixes.has(lastTwo)
+  ) ? 3 : 2;
+  return labels.slice(-suffixLabels).join(".");
+}
+
+
+async function popupSiteFingerprint(url) {
+  const site = popupSiteForUrl(url);
+  if (!site) return "";
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(site)
+  );
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 
@@ -506,6 +550,7 @@ async function clearDetectionState(
   emailSequences.clear();
   popupFingerprints.clear();
   automaticPopupStates.clear();
+  dangerModalRequests.clear();
 
   await chrome.storage
     .session
@@ -523,7 +568,7 @@ async function clearDetectionState(
   await chrome.storage
     .session
     .remove(
-      STORAGE_KEYS.autoPopup
+      [STORAGE_KEYS.autoPopup, STORAGE_KEYS.autoPopupSites]
     );
 
   const tabs =
@@ -1868,12 +1913,24 @@ async function performCurrentTabUrlScan(
     }
     await updateBadge(tabId, state?.url_detector);
     await setServerState("connected", {service_ready: true});
-    if (
-      tab &&
-      shouldAutomaticallyOpenForUrl(reason) &&
-      cloudReviewIsComplete(result.llm_review)
-    ) {
-      await openFiveSecondPopup(tab, currentUrl, "url_review_complete");
+    const automaticResultReady = tab && shouldAutomaticallyOpenForUrl(reason) &&
+      (result.signal === "SAFE" || cloudReviewIsComplete(result.llm_review));
+    if (automaticResultReady) {
+      const dangerModalShown = isDangerousOutcome(finalResult) &&
+        await showDangerousResultModal(
+          tab, state, "URL", state?.url_detector?.activity_event_id
+        );
+      if (!dangerModalShown && (
+        !isDangerousOutcome(finalResult) ||
+        await tabStillAtUrl(tabId, currentUrl)
+      )) {
+        await openFiveSecondPopup(
+          tab,
+          `${currentUrl}:${finalResult}`,
+          "url_review_complete",
+          {url: currentUrl, outcome: finalResult}
+        );
+      }
     }
     return state?.url_detector || null;
   } catch (error) {
@@ -2367,15 +2424,23 @@ async function analyzeOpenedEmail(
         ?.url_detector
     );
 
-    if (
-      showAutomaticPopup && !authenticationChanged && urlReviewCompleted &&
-      cloudReviewCompleted
-    ) {
-      await openFiveSecondPopup(
-        tab,
-        fingerprint,
-        "email_review_complete"
+    if (showAutomaticPopup && urlReviewCompleted && cloudReviewCompleted) {
+      const dangerModalShown = (
+        isDangerousOutcome(finalEmailOutcome) ||
+        isDangerousOutcome(urlResult.final_result)
+      ) && await showDangerousResultModal(
+        tab, completedState, "EMAIL", completedState?.hybrid_analysis_id
       );
+      if (!dangerModalShown && !authenticationChanged && (
+        (!isDangerousOutcome(finalEmailOutcome) && !isDangerousOutcome(urlResult.final_result)) ||
+        await tabStillAtUrl(tabId, currentUrl)
+      )) {
+        await openFiveSecondPopup(
+          tab,
+          fingerprint,
+          "email_review_complete"
+        );
+      }
     }
 
     if (hybridResult.automatic_collection) {
@@ -3013,10 +3078,136 @@ async function disconnectExtension() {
 }
 
 
+function isDangerousOutcome(outcome) {
+  return ["SUSPICIOUS_SIGNS_FOUND", "DANGEROUS"]
+    .includes(String(outcome || "").toUpperCase());
+}
+
+
+async function tabStillAtUrl(tabId, expectedUrl) {
+  try {
+    return (await chrome.tabs.get(tabId)).url === expectedUrl;
+  } catch {
+    return false;
+  }
+}
+
+
+function dangerousModalPayload(state, source, expectedUrl) {
+  const website = state?.url_detector?.result || {};
+  const websiteOutcome = website.final_result || state?.url_detector?.signal || "UNAVAILABLE";
+  const email = state?.email_detector || {};
+  const emailOutcome = source === "EMAIL"
+    ? state?.fusion?.final_result || email.signal || "UNAVAILABLE"
+    : "NOT DETECTED";
+  const markers = source === "EMAIL" ? [
+    ...(state?.local_indicators?.markers || []),
+    ...(state?.llm_review?.indicators || [])
+  ] : [];
+
+  return {
+    expectedUrl,
+    targetUrl: state?.current_url || expectedUrl,
+    targetDomain: state?.hostname || hostnameForUrl(expectedUrl),
+    finalDecision: isDangerousOutcome(websiteOutcome) ? websiteOutcome : emailOutcome,
+    isEmail: source === "EMAIL",
+    websiteAnalysis: {
+      signal: websiteOutcome,
+      explanation: website.message || website.model_message || "The website address needs careful review."
+    },
+    emailAnalysis: {
+      signal: emailOutcome,
+      isDetected: source === "EMAIL",
+      provider: email.provider_label || state?.provider_label || "",
+      sender: source === "EMAIL" ? email.sender || "" : "",
+      subject: source === "EMAIL" ? email.subject || "" : "",
+      explanation: source === "EMAIL"
+        ? state?.fusion?.message || state?.llm_review?.reasoning_summary || email.result?.message || "The opened email needs careful review."
+        : "No email content was found on this page."
+    },
+    indicators: markers.slice(0, 12).map(marker => ({
+      category: String(marker?.category || "").slice(0, 80),
+      title: String(marker?.title || marker?.category || "").slice(0, 120)
+    }))
+  };
+}
+
+
+async function showDangerousResultModal(tab, state, source, eventId) {
+  const tabId = tab?.id;
+  const expectedUrl = String(tab?.url || "");
+  if (!Number.isInteger(tabId) || !canScanAddressBarUrl(expectedUrl) || !eventId) return false;
+
+  const websiteOutcome = state?.url_detector?.result?.final_result || state?.url_detector?.signal;
+  const emailOutcome = source === "EMAIL" ? state?.fusion?.final_result : null;
+  if (!isDangerousOutcome(websiteOutcome) && !isDangerousOutcome(emailOutcome)) return false;
+
+  const pending = dangerModalRequests.get(tabId);
+  if (pending?.eventId === eventId) return pending.promise;
+  if (pending) await pending.promise;
+
+  const promise = (async () => {
+    try {
+      const currentTab = await chrome.tabs.get(tabId);
+      if (currentTab.url !== expectedUrl) return false;
+      const states = await getTabStates();
+      const current = states[String(tabId)];
+      if (!current?.current_url ||
+          new URL(current.current_url).href !== new URL(expectedUrl).href) return false;
+      const currentEventId = source === "EMAIL"
+        ? current?.hybrid_analysis_id
+        : current?.url_detector?.activity_event_id;
+      if (currentEventId !== eventId) return false;
+      if (current?.danger_modal_event_id === eventId) return true;
+
+      const message = {
+        type: "BANTAI_SHOW_ANALYSIS_MODAL",
+        data: dangerousModalPayload(current, source, expectedUrl)
+      };
+      let response;
+      try {
+        response = await chrome.tabs.sendMessage(tabId, message);
+      } catch {
+        // The modal script has not been installed in this document yet.
+      }
+      if (!response?.ok) {
+        await chrome.scripting.executeScript({
+          target: {tabId},
+          files: ["content/analysis-modal.js"]
+        });
+        response = await chrome.tabs.sendMessage(tabId, message);
+      }
+      if (!response?.ok) return false;
+      if (!await tabStillAtUrl(tabId, expectedUrl)) return false;
+      await patchTabState(tabId, previous => ({
+        ...previous,
+        danger_modal_event_id: eventId
+      }));
+      return true;
+    } catch {
+      // A restricted browser page cannot host the modal; retain the red badge
+      // and allow the regular toolbar popup to show the completed result.
+      console.warn("[BantAI v1.1.0] DANGER_MODAL_OPEN_FAILED");
+      return false;
+    }
+  })();
+
+  dangerModalRequests.set(tabId, {eventId, promise});
+  try {
+    return await promise;
+  } finally {
+    if (dangerModalRequests.get(tabId)?.promise === promise) {
+      dangerModalRequests.delete(tabId);
+    }
+  }
+}
+
+
 async function openFiveSecondPopup(
   tab,
   fingerprint,
-  reason = "new_email"
+  reason = "new_email",
+  urlResult = null
 ) {
   const tabId =
     tab?.id;
@@ -3035,6 +3226,25 @@ async function openFiveSecondPopup(
   const createdAt =
     Date.now();
 
+  let siteFingerprint = "";
+  let seenSites = {};
+  let warning = false;
+  if (urlResult) {
+    siteFingerprint = await popupSiteFingerprint(urlResult.url);
+    if (!siteFingerprint) return false;
+    try {
+      const stored = await chrome.storage.session.get(STORAGE_KEYS.autoPopupSites);
+      const value = stored[STORAGE_KEYS.autoPopupSites];
+      seenSites = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch {
+      // Do not open a repeat safe-site popup if the session guard is unavailable.
+      return false;
+    }
+    warning = ["SUSPICIOUS", "SUSPICIOUS_SIGNS_FOUND", "DANGEROUS"]
+      .includes(String(urlResult.outcome || "").toUpperCase());
+    if (!warning && Object.hasOwn(seenSites, siteFingerprint)) return false;
+  }
+
   const fingerprintHash =
     compactHash(
       fingerprint
@@ -3046,10 +3256,8 @@ async function openFiveSecondPopup(
     );
 
   if (
-    existingPopup?.fingerprintHash ===
-      fingerprintHash ||
-    existingPopup?.deadline >
-      createdAt
+    existingPopup?.fingerprintHash === fingerprintHash ||
+    (existingPopup?.deadline > createdAt && !warning)
   ) {
     return false;
   }
@@ -3081,8 +3289,7 @@ async function openFiveSecondPopup(
   }
 
   if (
-    storedPopup?.deadline >
-      createdAt
+    storedPopup?.deadline > createdAt && !warning
   ) {
     automaticPopupStates.set(
       tabId,
@@ -3165,6 +3372,20 @@ async function openFiveSecondPopup(
     } else {
       await chrome.action
         .openPopup();
+    }
+
+    if (siteFingerprint) {
+      try {
+        const recentSites = Object.entries(seenSites).slice(-255);
+        await chrome.storage.session.set({
+          [STORAGE_KEYS.autoPopupSites]: Object.fromEntries([
+            ...recentSites,
+            [siteFingerprint, createdAt]
+          ])
+        });
+      } catch {
+        console.warn("[BantAI v1.1.0] AUTO_POPUP_SITE_STORE_FAILED");
+      }
     }
 
     return true;
@@ -3463,6 +3684,10 @@ chrome.tabs.onRemoved
       );
 
       automaticPopupStates.delete(
+        tabId
+      );
+
+      dangerModalRequests.delete(
         tabId
       );
 

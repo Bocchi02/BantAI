@@ -112,6 +112,14 @@
   }
 
   function renderModal(data = {}) {
+    if (data.expectedUrl) {
+      try {
+        if (new URL(data.expectedUrl).href !== window.location.href) return false;
+      } catch {
+        return false;
+      }
+    }
+
     const existing = document.getElementById(MODAL_ROOT_ID);
     if (existing) {
       existing.remove();
@@ -916,19 +924,23 @@
       }
     }
 
+    function goBack() {
+      closeModal();
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.location.replace("about:blank");
+      }
+    }
+
     // Dismiss button
     const dismissBtn = shadow.getElementById("signalamDismissBtn");
-    if (dismissBtn) dismissBtn.addEventListener("click", closeModal);
+    if (dismissBtn) dismissBtn.addEventListener("click", isDangerous ? goBack : closeModal);
 
     // Go Back button
     const backBtn = shadow.getElementById("signalamBackBtn");
     if (backBtn) {
-      backBtn.addEventListener("click", () => {
-        closeModal();
-        if (window.history.length > 1) {
-          window.history.back();
-        }
-      });
+      backBtn.addEventListener("click", goBack);
     }
 
     // Continue button
@@ -939,17 +951,21 @@
 
     // Backdrop click dismiss
     backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) {
+      if (!isDangerous && e.target === backdrop) {
         closeModal();
       }
     });
 
     // Keyboard navigation and Focus trap
     function onKeyDown(e) {
+      if (isDangerous) e.stopImmediatePropagation();
       if (e.key === "Escape") {
         e.preventDefault();
-        e.stopPropagation();
-        closeModal();
+        if (isDangerous) {
+          backBtn?.focus();
+        } else {
+          closeModal();
+        }
         return;
       }
 
@@ -981,14 +997,14 @@
       const primaryBtn = shadow.querySelector(".signalam-btn-primary") || dismissBtn;
       if (primaryBtn) primaryBtn.focus();
     }, 50);
+    return true;
   }
 
   // Listen for message from popup
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === "BANTAI_SHOW_ANALYSIS_MODAL" || message?.type === "SIGNAMAL_SHOW_ANALYSIS_MODAL") {
-        renderModal(message.data || {});
-        sendResponse({ ok: true });
+        sendResponse({ ok: renderModal(message.data || {}) === true });
         return true;
       }
     });
@@ -1000,4 +1016,3 @@
   });
   window.SignalamModal = { render: renderModal };
 })();
-
