@@ -19,24 +19,24 @@ venv/
 credentials*.json
 secrets*.json
 
-# Frozen model files and ML caches
-# Models may live inside this project locally, but their large binary files
-# must not be committed to Git.
-checkpoint-*/
-models/**/checkpoint-*/*
-models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
-!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
-models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/*
-!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/EMAIL_MODEL_MANIFEST.json
+# Frozen model binaries stay outside Git and are transferred privately to the
+# deployment host. Track only the active model manifests for verification.
+models/**
 !models/README.md
-!models/**/PLACE_*.txt
+!models/email_text_xlmr_v2/
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/EMAIL_MODEL_MANIFEST.json
+!models/url_random_forest_grouped_v1/
+!models/url_random_forest_grouped_v1/MODEL_MANIFEST.json
 *.safetensors
+*.joblib
+*.onnx
 *.bin
 *.pt
 *.pth
-*.onnx
-*.joblib
 *.pkl
+
+# ML caches
 .cache/
 huggingface/
 transformers_cache/
@@ -98,3 +98,23 @@ desktop.ini
 
 # Codex local state, when present
 .codex-local/
+**/.codex/
+**/.agents/
+AGENTS.md
+CODEX_*.md
+codex-prompts/
+scripts/codex/
+
+# One-off local development helpers and previews
+extension/preview.html
+scripts/rebrand_signalam.py
+scripts/repair_build.py
+*.crx
+*.egg-info/
+.coverage
+htmlcov/
+
+# Training checkpoints and rollback artifacts
+checkpoint-*/
+models/**/checkpoint-*/*
+models/**/rollback_archive/

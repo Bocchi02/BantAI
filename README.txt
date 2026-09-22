@@ -61,10 +61,11 @@ networks reachable through the platform. The detector has a narrowly separated
 egress network for backend-only Gemini calls. Caddy and Uvicorn access logging
 are disabled for request inputs.
 
-Before building, place the exact frozen runtime artifacts at the documented
-`models/` paths and run:
-
-  .\.venv\Scripts\python.exe scripts\verify_models.py
+The Git clone contains model manifests, not model binaries. Before building,
+transfer only the frozen active runtime files to their documented `models/`
+paths through a private channel. Do not transfer rollback checkpoints,
+optimizer files, or private datasets. Once detector Python dependencies are
+available, run `python scripts/verify_models.py` to verify the exact artifacts.
 
 The detector Dockerfile copies only calibration/config, tokenizer files, the
 two safetensors shards and index, the RF artifact, and its manifest. Offline

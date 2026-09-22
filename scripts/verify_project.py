@@ -397,13 +397,8 @@ def check_remote_deployment() -> None:
     )
 
 
-def check_codex_files() -> None:
+def check_project_files() -> None:
     required = [
-        "AGENTS.md",
-        "extension/AGENTS.md",
-        "backend/AGENTS.md",
-        "CODEX_PROJECT_CONTEXT.md",
-        "CODEX_MIGRATION_GUIDE.md",
         "BANTAI_BASELINE.json",
         "README.txt",
         "ARCHITECTURE.txt",
@@ -414,7 +409,7 @@ def check_codex_files() -> None:
     for relative in required:
         require(
             (ROOT / relative).is_file(),
-            f"Missing Codex migration file: {relative}",
+            f"Missing project file: {relative}",
         )
 
 
@@ -494,7 +489,7 @@ def main() -> int:
         ("Backend invariants", check_backend_invariants),
         ("Extension invariants", check_extension_invariants),
         ("Remote deployment", check_remote_deployment),
-        ("Codex files", check_codex_files),
+        ("Project files", check_project_files),
         ("Private artifacts", check_private_artifacts),
     ]
 

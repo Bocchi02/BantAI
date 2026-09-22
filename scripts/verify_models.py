@@ -126,23 +126,24 @@ def main() -> int:
             "Legacy email model still occupies its former active path: "
             f"{LEGACY_EMAIL_MODEL_ACTIVE_PATH}"
         )
-    if not LEGACY_EMAIL_MODEL_ARCHIVE.is_dir():
-        fail(f"Missing rollback-only email model archive: {LEGACY_EMAIL_MODEL_ARCHIVE}")
-    require_file(
-        LEGACY_EMAIL_MODEL_ARCHIVE / "config.json",
-        "rollback-only email model config",
-    )
-    legacy_weight_candidates = (
-        LEGACY_EMAIL_MODEL_ARCHIVE / "model.safetensors",
-        LEGACY_EMAIL_MODEL_ARCHIVE / "pytorch_model.bin",
-    )
-    legacy_weight_path = next(
-        (path for path in legacy_weight_candidates if path.is_file()),
-        None,
-    )
-    if legacy_weight_path is None:
-        fail("Rollback-only email model weights are missing.")
-    require_file(legacy_weight_path, "rollback-only email model weights")
+    if LEGACY_EMAIL_MODEL_ARCHIVE.exists():
+        if not LEGACY_EMAIL_MODEL_ARCHIVE.is_dir():
+            fail(f"Rollback-only email model path is not a directory: {LEGACY_EMAIL_MODEL_ARCHIVE}")
+        require_file(
+            LEGACY_EMAIL_MODEL_ARCHIVE / "config.json",
+            "rollback-only email model config",
+        )
+        legacy_weight_candidates = (
+            LEGACY_EMAIL_MODEL_ARCHIVE / "model.safetensors",
+            LEGACY_EMAIL_MODEL_ARCHIVE / "pytorch_model.bin",
+        )
+        legacy_weight_path = next(
+            (path for path in legacy_weight_candidates if path.is_file()),
+            None,
+        )
+        if legacy_weight_path is None:
+            fail("Rollback-only email model weights are missing.")
+        require_file(legacy_weight_path, "rollback-only email model weights")
     require_file(RF_MODEL_PATH, "RF Grouped v1.0.0 joblib")
     digest = hashlib.sha256()
     with RF_MODEL_PATH.open("rb") as handle:
@@ -170,10 +171,13 @@ def main() -> int:
         "PASS: Email preprocessing "
         f"({PREPROCESSING['truncation_strategy']}, max_length={PREPROCESSING['max_length']})"
     )
-    print(
-        "PASS: Legacy email model retained for rollback only "
-        f"({LEGACY_EMAIL_MODEL_ARCHIVE.relative_to(ROOT)})"
-    )
+    if LEGACY_EMAIL_MODEL_ARCHIVE.is_dir():
+        print(
+            "PASS: Legacy email model retained for rollback only "
+            f"({LEGACY_EMAIL_MODEL_ARCHIVE.relative_to(ROOT)})"
+        )
+    else:
+        print("SKIP: Optional rollback-only email model is not part of the production clone")
     print(f"PASS: RF Grouped v1.0.0 ({RF_MODEL_PATH.name}, SHA-256 verified)")
     print()
     print("Signalam frozen server model artifact verification: PASS")

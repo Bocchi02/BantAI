@@ -1,7 +1,10 @@
 # Local frozen models
 
-The trained models are stored inside this project folder for local development
-and Codex app workflows.
+The repository tracks only manifests for the active frozen models. A fresh
+clone does not contain model binaries. Transfer the exact active artifacts to
+the paths below through a private channel before building the detector. Once
+the detector Python dependencies are installed, run
+`python scripts/verify_models.py` to check the manifests and hashes.
 
 Expected paths:
 
@@ -25,8 +28,9 @@ models/
     └── bantai_rf_url_model_v4b_optimized.joblib
 ```
 
-These files remain local and are ignored by Git. They should not be committed
-to public repositories or shared unintentionally.
+The active model binaries, legacy email checkpoint, deprecated V4-B RF model,
+optimizer/trainer state, and private datasets remain local and ignored by Git.
+Only the active runtime artifacts are needed by the production Docker build.
 
 The active URL artifact must have SHA-256
 `4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c`.
