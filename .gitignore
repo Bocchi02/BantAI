@@ -49,6 +49,17 @@ results/
 real_world_validation_log*.csv
 external_validation_predictions*.csv
 external_validation_misclassifications*.csv
+# Local audit reports and their result/traceability exports. Keep the release
+# baseline, tests, and deployment documentation tracked.
+/BANTAI_*_AUDIT.md
+/BANTAI_*_REAUDIT.md
+/BANTAI_*_REMEDIATION.md
+/BANTAI_*_MATRIX.csv
+/BANTAI_*_INVENTORY.csv
+/BANTAI_*_TEST_RESULTS.csv
+/BANTAI_*_TRACEABILITY.csv
+/dataset_*_summary.csv
+/DUAL_DETECTOR_VALIDATION_TRACKER.csv
 *.sqlite
 *.db
 
