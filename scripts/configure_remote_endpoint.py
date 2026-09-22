@@ -147,7 +147,7 @@ def configure_artifacts(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("endpoint", nargs="?", help="BantAI API base, or set BANTAI_PUBLIC_API_ORIGIN")
+    parser.add_argument("endpoint", nargs="?", help="Signalam API base, or set BANTAI_PUBLIC_API_ORIGIN")
     parser.add_argument("--mode", choices=("development", "release"), required=True)
     parser.add_argument("--allow-http-loopback", action="store_true", help="Allow HTTP only on localhost or 127.0.0.1 in explicit development mode")
     parser.add_argument("--config-path", type=Path, default=CONFIG_PATH, help=argparse.SUPPRESS)
@@ -163,7 +163,7 @@ def main() -> int:
         args.mode,
         args.allow_http_loopback,
     )
-    print(f"Configured BantAI extension API: {endpoint}")
+    print(f"Configured Signalam extension API: {endpoint}")
     return 0
 
 

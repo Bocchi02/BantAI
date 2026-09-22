@@ -1,4 +1,4 @@
-# Migrate BantAI to Codex
+# Migrate Signalam to Codex
 
 This package is prepared for Codex through:
 
@@ -12,7 +12,7 @@ This package is prepared for Codex through:
 ## Option A — Codex desktop app or IDE extension
 
 1. Extract this ZIP.
-2. Open the extracted `BantAI_v1_0_0_Codex_Ready` folder as the project.
+2. Open the extracted `Signalam_v1_0_0_Codex_Ready` folder as the project.
 3. Ask Codex:
 
 ```text
@@ -40,11 +40,11 @@ codex --login
 Open this project in PowerShell:
 
 ```powershell
-cd "D:\path\to\BantAI_v1_0_0_Codex_Ready"
+cd "D:\path\to\Signalam_v1_0_0_Codex_Ready"
 codex
 ```
 
-The project-level `AGENTS.md` gives Codex the required BantAI constraints.
+The project-level `AGENTS.md` gives Codex the required Signalam constraints.
 
 ## Prepare local Git history
 
@@ -77,7 +77,7 @@ python scripts\verify_project.py
 Expected result:
 
 ```text
-BantAI Codex migration verification: PASS
+Signalam Codex migration verification: PASS
 ```
 
 ## Stage models in the deployment source checkout
@@ -91,7 +91,7 @@ Set-ExecutionPolicy -Scope Process Bypass -Force
 .\scripts\models\MIGRATE_EXISTING_MODELS.ps1
 ```
 
-The script uses the existing BantAI model paths as defaults, copies the files
+The script uses the existing Signalam model paths as defaults, copies the files
 into the project, and verifies SHA-256 hashes.
 
 Expected local paths:

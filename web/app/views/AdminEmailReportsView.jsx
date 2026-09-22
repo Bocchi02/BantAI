@@ -44,7 +44,7 @@ function AdminEmailReportsPage() {
             await load();
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not complete that review.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not complete that review.");
         }
         finally {
             setActionBusy(null);

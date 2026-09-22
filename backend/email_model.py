@@ -1,4 +1,4 @@
-"""Calibrated BantAI XLM-R email inference contract and preprocessing."""
+"""Calibrated Signalam XLM-R email inference contract and preprocessing."""
 
 from __future__ import annotations
 

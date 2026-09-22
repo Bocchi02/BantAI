@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproducible BantAI URL dataset integrity workflow (Steps 0-6 only).
+"""Reproducible Signalam URL dataset integrity workflow (Steps 0-6 only).
 
 This script deliberately performs no feature extraction, split assignment, model
 training, evaluation, tuning, or model serialization.
@@ -800,7 +800,7 @@ Missing artifacts: {missing}
     ])
     ready_for_grouped_split = ready_integrity and bool(eval_files)
     manifest = {
-        "workflow": "BantAI URL Dataset Preparation Steps 0-6",
+        "workflow": "Signalam URL Dataset Preparation Steps 0-6",
         "script": Path(__file__).name,
         "label_assumption": LABEL_ASSUMPTION,
         "psl_configuration": {"online_updates": False, "bundled_snapshot_sha256": sha256_file(snapshot_path), "tldextract_version": package_versions["tldextract"]},
@@ -820,7 +820,7 @@ Missing artifacts: {missing}
     if not eval_files:
         conclusion += "; Step 6 remains incomplete because no locked evaluation artifacts exist in the project"
     next_action = missing if not eval_files else "Review grouping policy, then create the grouped split in a separate explicitly authorized step."
-    report = f"""# FINAL READINESS REPORT — BantAI Steps 0–6
+    report = f"""# FINAL READINESS REPORT — Signalam Steps 0–6
 
 ## 1. Executive conclusion
 

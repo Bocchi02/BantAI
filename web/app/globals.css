@@ -8,19 +8,19 @@
     --bs-card-bg: #ffffff;
     --bs-navbar-bg: rgba(255, 255, 255, 0.92);
     
-    /* Primary Colors (Sneat Primary / BantAI Interactive Accent) */
+    /* Primary Colors (Sneat Primary / Signalam Interactive Accent) */
     --color-primary: #696cff;
     --color-primary-hover: #5f61e6;
     --color-primary-soft: #e7e7ff;
     --color-primary-border: #c3c4ff;
     
-    /* BantAI Brand Navy */
+    /* Signalam Brand Navy */
     --color-navy-950: #04142f;
     --color-navy-900: #071e4a;
     --color-navy-800: #0d2b66;
     --color-navy-700: #133d8d;
 
-    /* Semantic Outcomes (Strict BantAI Colors) */
+    /* Semantic Outcomes (Strict Signalam Colors) */
     --color-safe: #71dd37;
     --color-safe-dark: #2d5816;
     --color-safe-soft: #e8fadf;

@@ -22,7 +22,7 @@ services:
       retries: 20
 
   detector:
-    image: bantai-detector:local
+    image: signalam-detector:local
     restart: unless-stopped
     init: true
     build:
@@ -51,7 +51,7 @@ services:
     stop_grace_period: 30s
 
   platform:
-    image: bantai-platform:local
+    image: signalam-platform:local
     restart: unless-stopped
     build:
       context: .

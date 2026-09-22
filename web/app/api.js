@@ -62,16 +62,16 @@ export async function api(path, init = {}) {
     }
     catch (reason) {
         if (reason instanceof DOMException && reason.name === "AbortError") {
-            throw new ApiError("The BantAI server took too long to respond. Try again shortly.", 0);
+            throw new ApiError("The Signalam server took too long to respond. Try again shortly.", 0);
         }
-        throw new ApiError("Service unavailable. BantAI cannot reach the server.", 0);
+        throw new ApiError("Service unavailable. Signalam cannot reach the server.", 0);
     }
     finally {
         if (timeout !== null)
             window.clearTimeout(timeout);
     }
     if (!response.ok) {
-        let detail = "BantAI could not complete that request.";
+        let detail = "Signalam could not complete that request.";
         let fieldErrors = {};
         try {
             const body = (await response.json());
@@ -106,13 +106,13 @@ export async function downloadApiFile(path) {
         if (reason instanceof DOMException && reason.name === "AbortError") {
             throw new ApiError("The export took too long. Try again after narrowing the approved-label filter.", 0);
         }
-        throw new ApiError("Service unavailable. BantAI cannot reach the server.", 0);
+        throw new ApiError("Service unavailable. Signalam cannot reach the server.", 0);
     }
     finally {
         window.clearTimeout(timeout);
     }
     if (!response.ok) {
-        let detail = "BantAI could not export the training-data manifest.";
+        let detail = "Signalam could not export the training-data manifest.";
         try {
             const body = (await response.json());
             if (body.detail)
@@ -125,6 +125,6 @@ export async function downloadApiFile(path) {
     }
     const disposition = response.headers.get("Content-Disposition") || "";
     const match = disposition.match(/filename="?([^";]+)"?/i);
-    const filename = (match?.[1] || "bantai-training-manifest.csv").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filename = (match?.[1] || "signalam-training-manifest.csv").replace(/[^a-zA-Z0-9._-]/g, "_");
     return { blob: await response.blob(), filename };
 }

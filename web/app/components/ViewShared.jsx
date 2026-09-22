@@ -165,7 +165,7 @@ function OutcomeChart({ distribution }) {
       <div className="flex items-center justify-between mb-5 pb-3 border-b border-[#e4e6e8]/70">
         <div>
           <p className="text-xs font-semibold text-[#696cff] tracking-wider uppercase">DETECTION OUTCOMES</p>
-          <h2 id="outcome-chart-title" className="text-base font-bold text-[#384551]">What BantAI found</h2>
+          <h2 id="outcome-chart-title" className="text-base font-bold text-[#384551]">What Signalam found</h2>
         </div>
         <span className="text-xs font-medium text-[#8592a3] bg-[#f5f5f9] px-2.5 py-1 rounded-md border border-[#e4e6e8]">Percent of checks</span>
       </div>
@@ -206,12 +206,12 @@ function OutcomeChart({ distribution }) {
             {!row.total && <p className="text-xs text-[#8592a3] text-center mt-3">No checks in this period</p>}
           </article>))}
       </div>
-      <p className="text-xs text-[#8592a3] mt-6 pt-4 border-t border-[#e4e6e8]/70">These percentages summarize categorical outcomes. BantAI does not calculate an overall risk score.</p>
+      <p className="text-xs text-[#8592a3] mt-6 pt-4 border-t border-[#e4e6e8]/70">These percentages summarize categorical outcomes. Signalam does not calculate an overall risk score.</p>
     </section>);
 }
 function ActivityTable({ items, compact = false, onFeedback, onDetails }) {
     if (!items.length)
-        return <EmptyState icon="↗" title="No activity to show" text="Pair BantAI and complete a check. Privacy-minimized results will appear here."/>;
+        return <EmptyState icon="↗" title="No activity to show" text="Pair Signalam and complete a check. Privacy-minimized results will appear here."/>;
     return (<div className="overflow-x-auto">
       <table className="w-full text-left text-xs text-[#646e78]">
         <thead className="text-[11px] font-bold text-[#8592a3] uppercase tracking-wider bg-[#f5f5f9]/80 border-b border-[#e4e6e8]">

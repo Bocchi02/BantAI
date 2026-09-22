@@ -68,7 +68,7 @@ function DashboardPage({ onViewActivity, onPairDevice, onOpenHelp }) {
         }
         catch (reason) {
             if (detailsRequest.current === requestId)
-                setDetailsError(reason?.name === "AbortError" ? "The explanation took too long. Try again." : reason.message || "BantAI could not prepare this explanation.");
+                setDetailsError(reason?.name === "AbortError" ? "The explanation took too long. Try again." : reason.message || "Signalam could not prepare this explanation.");
         }
         finally {
             if (detailsRequest.current === requestId) setDetailsLoading(false);
@@ -92,11 +92,11 @@ function DashboardPage({ onViewActivity, onPairDevice, onOpenHelp }) {
             await openDetails(latestItem || detailsItem, true);
         }
         catch (reason) {
-            setDetailsError(reason.message || "BantAI could not refresh the latest detection.");
+            setDetailsError(reason.message || "Signalam could not refresh the latest detection.");
         }
     }, [days, detailsItem, openDetails]);
     return (<>
-      <PageHeader eyebrow="PERSONAL OVERVIEW" title="Good to see you." description="A clear view of your recent BantAI checks—without storing sensitive content." actions={<RangePicker value={days} onChange={setDays}/>}/>
+      <PageHeader eyebrow="PERSONAL OVERVIEW" title="Good to see you." description="A clear view of your recent Signalam checks—without storing sensitive content." actions={<RangePicker value={days} onChange={setDays}/>}/>
       {error && <Notice type="error">{error} <button className="ml-2 font-bold underline" onClick={load}>Try again</button></Notice>}
       <ConnectionPanel onPairDevice={onPairDevice} onOpenHelp={onOpenHelp}/>
       {!data ? <DashboardSkeleton /> : (<>
@@ -119,7 +119,7 @@ function DashboardPage({ onViewActivity, onPairDevice, onOpenHelp }) {
             <ActivityTable items={data.recent} compact/>
           </section>
           <p className="text-xs text-[#8592a3] text-center max-w-2xl mx-auto mt-6 leading-relaxed">
-            <strong>Remember:</strong> “No strong warning signs.” means BantAI did not detect strong warning signs in the checked module. It is not a guarantee that an email or website is legitimate.
+            <strong>Remember:</strong> “No strong warning signs.” means Signalam did not detect strong warning signs in the checked module. It is not a guarantee that an email or website is legitimate.
           </p>
         </>)}
       {detailsItem && <DetectionDetailsModal item={detailsItem} detail={details} loading={detailsLoading} error={detailsError} onClose={closeDetails} onRetry={() => void retryDetails()}/>}
@@ -169,7 +169,7 @@ function ConnectionPanel({ onPairDevice, onOpenHelp }) {
         }
         catch {
             setStatus(null);
-            setError("Service unavailable. BantAI could not check protection connections.");
+            setError("Service unavailable. Signalam could not check protection connections.");
         }
         finally {
             setRefreshing(false);
@@ -219,7 +219,7 @@ function ConnectionPanel({ onPairDevice, onOpenHelp }) {
             <div>
               <p className="text-xs font-semibold text-[#696cff] uppercase tracking-wider">ACCOUNT CONNECTION REQUIRED</p>
               <h3 className="text-sm font-bold text-[#384551]">Detection is off</h3>
-              <p className="text-xs text-[#646e78] mt-0.5 max-w-xl">Connect this browser extension to your BantAI account to enable authenticated website and email checks.</p>
+              <p className="text-xs text-[#646e78] mt-0.5 max-w-xl">Connect this browser extension to your Signalam account to enable authenticated website and email checks.</p>
             </div>
           </div>
           <button className="px-4 py-2 rounded-md bg-[#696cff] hover:bg-[#5f61e6] text-white text-xs font-bold transition shadow-[0_2px_4px_0_rgba(105,108,255,0.4)] shrink-0" onClick={onPairDevice}>
@@ -237,7 +237,7 @@ function ConnectionPanel({ onPairDevice, onOpenHelp }) {
       {status?.operations && (<div className="grid sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-[#e4e6e8]/70 text-sm" aria-label="Privacy-safe operational diagnostics">
           <div className="p-3 rounded-lg bg-[#f5f5f9] border border-[#e4e6e8]">
             <strong className="block text-[#384551]">Remote activity</strong>
-            <span>Completed checks are recorded by the BantAI server.</span>
+            <span>Completed checks are recorded by the Signalam server.</span>
           </div>
           <div className="p-3 rounded-lg bg-[#f5f5f9] border border-[#e4e6e8] sm:col-span-2">
             <strong className="block text-[#384551]">Optional automatic contribution</strong>

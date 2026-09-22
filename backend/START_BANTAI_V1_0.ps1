@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Warning "START_BANTAI_V1_0.ps1 is retained as a compatibility launcher. Starting BantAI v1.1.0."
+Write-Warning "START_BANTAI_V1_0.ps1 is retained as a compatibility launcher. Starting Signalam v1.1.0."
 
 $Launcher = Join-Path $PSScriptRoot "START_BANTAI_V1_1.ps1"
 

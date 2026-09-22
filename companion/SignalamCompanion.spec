@@ -23,5 +23,5 @@ a = Analysis(
     noarchive=False,
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="BantAICompanion", console=False, icon=None)
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=True, name="BantAICompanion")
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="SignalamCompanion", console=False, icon=None)
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=True, name="SignalamCompanion")

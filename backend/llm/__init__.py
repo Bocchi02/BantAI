@@ -40,7 +40,7 @@ def off_review(provider_name: str = "gemini") -> dict[str, Any]:
         "assessment": None,
         "confidence": None,
         "indicators": [],
-        "reasoning_summary": "Cloud AI Review is off. Local BantAI checks still run.",
+        "reasoning_summary": "Cloud AI Review is off. Local Signalam checks still run.",
         "recommended_action": "Continue using the server-model guidance.",
     }
 
@@ -110,7 +110,7 @@ class LLMReviewCoordinator:
             "assessment": None,
             "confidence": None,
             "indicators": [],
-            "reasoning_summary": "Cloud AI Review could not be completed. Local BantAI checks are still available.",
+            "reasoning_summary": "Cloud AI Review could not be completed. Local Signalam checks are still available.",
             "recommended_action": "Use the server-model guidance and verify unexpected requests independently.",
             "failure_reason": failure_reason,
             **self._provider_review_metadata(),
@@ -171,7 +171,7 @@ class LLMReviewCoordinator:
         except (ValidationError, ValueError, TypeError):
             return self._unavailable(failure_reason="MALFORMED_RESPONSE")
         except Exception:
-            # Provider adapters must not be able to break local BantAI analysis.
+            # Provider adapters must not be able to break local Signalam analysis.
             return self._unavailable()
 
         result = {

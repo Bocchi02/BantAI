@@ -422,7 +422,7 @@ def load_email_model() -> None:
     contract = load_deployment_contract(model_dir)
 
     print(
-        "[BantAI v1.1.0] Loading email "
+        "[Signalam v1.1.0] Loading email "
         f"model from: {model_dir}"
     )
 
@@ -457,7 +457,7 @@ def load_email_model() -> None:
     runtime.email_contract = contract
 
     print(
-        "[BantAI v1.1.0] Calibrated email model "
+        "[Signalam v1.1.0] Calibrated email model "
         f"{contract.model_run_id} loaded on: {device}"
     )
 
@@ -469,7 +469,7 @@ def load_url_model() -> None:
     )
 
     print(
-        "[BantAI v1.1.0] Loading URL "
+        "[Signalam v1.1.0] Loading URL "
         f"model from: {model_path}"
     )
 
@@ -477,7 +477,7 @@ def load_url_model() -> None:
         engine = BantAIInference(model_path)
     except Exception as exc:
         raise RuntimeError(
-            "BantAI RF Grouped v1.0.0 could not be loaded; "
+            "The frozen URL detector v1.0.0 could not be loaded; "
             "V4-B fallback is intentionally disabled. "
             f"{exc}"
         ) from exc
@@ -490,7 +490,7 @@ def load_url_model() -> None:
     runtime.url_model_version = URL_MODEL_VERSION
 
     print(
-        "[BantAI v1.1.0] URL model "
+        "[Signalam v1.1.0] URL model "
         f"loaded with "
         f"{len(runtime.url_feature_names)} "
         f"features using {URL_FEATURE_EXTRACTOR}; SHA-256 "
@@ -556,7 +556,7 @@ async def lifespan(
 
 
 app = FastAPI(
-    title="BantAI Hybrid AI Decision-Support API",
+    title="Signalam Hybrid AI Decision-Support API",
     version=VERSION,
     description=(
         "Private frozen server detectors, explainable scam indicators, "
@@ -639,7 +639,7 @@ app.add_middleware(RequestSizeLimitMiddleware, maximum_bytes=MAX_REQUEST_BYTES)
 
 @app.get("/live")
 def live() -> dict:
-    return {"status": "ok", "service": "bantai-private-detector", "version": VERSION}
+    return {"status": "ok", "service": "signalam-private-detector", "version": VERSION}
 
 
 @app.get("/ready", dependencies=[Depends(require_detection_access)])
@@ -782,7 +782,7 @@ def connection_status() -> dict:
             "connected": paired,
             "device_label": companion.get("device_label"),
             "message": (
-                "The extension is paired with this BantAI Companion."
+                "The extension is paired with this Signalam Companion."
                 if paired
                 else "Pair this computer from the Paired Devices page."
             ),
@@ -797,7 +797,7 @@ def connection_status() -> dict:
                 else (
                     "The local URL and email models are loaded and ready."
                     if url_ready and email_ready
-                    else "BantAI is still loading one or more local models."
+                    else "Signalam is still loading one or more local models."
                 )
             ),
         },
@@ -812,7 +812,7 @@ def connection_status() -> dict:
                     "Cloud AI Review is configured and reachable through the paired extension."
                     if cloud_connected
                     else (
-                        "The shared BantAI service is currently unreachable."
+                        "The shared Signalam service is currently unreachable."
                         if not platform["reachable"]
                         else "Cloud AI Review needs a provider key in the shared service."
                     )
@@ -988,7 +988,7 @@ def analyze_url(
         raise HTTPException(
             status_code=503,
             detail=(
-                "BantAI RF Grouped v1.0.0 is not loaded."
+                "The Signalam URL detector v1.0.0 is not loaded."
             ),
         )
 

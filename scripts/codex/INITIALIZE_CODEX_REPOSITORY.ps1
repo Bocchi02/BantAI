@@ -17,7 +17,7 @@ if (-not (Test-Path ".git")) {
 }
 
 Write-Host ""
-Write-Host "Running BantAI verification..." -ForegroundColor Cyan
+Write-Host "Running Signalam verification..." -ForegroundColor Cyan
 python scripts\verify_project.py
 
 if ($LASTEXITCODE -ne 0) {
@@ -65,7 +65,7 @@ Write-Host "Files staged for the Codex-ready repository:" -ForegroundColor Green
 git status --short
 
 if ($CreateInitialCommit) {
-    git commit -m "Initialize BantAI v1.0.0 Codex-ready repository"
+    git commit -m "Initialize Signalam v1.0.0 Codex-ready repository"
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host ""

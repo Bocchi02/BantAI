@@ -1,4 +1,4 @@
-BantAI v1.1.0 Test Checklist
+Signalam v1.1.0 Test Checklist
 
 AUTOMATED / STATIC
 ------------------
@@ -102,7 +102,7 @@ MANUAL CHROME / EDGE
 [ ] The CSV respects the selected legitimate/suspicious filter and neutralizes spreadsheet formulas
 [ ] The CSV contains no email body plaintext/ciphertext, internal fingerprint, activity ID, or reporter identity
 [ ] Email CSV rows use candidate IDs and mark body access as restricted-training-process only
-[ ] The dashboard does not show the Help improve BantAI feedback card
+[ ] The dashboard does not show the Help improve Signalam feedback card
 [ ] The manually opened extension popup shows email feedback only for a completed supported-email result
 [ ] Email feedback requires an answer, explicit encrypted-report consent, and Submit feedback
 [ ] Extension email feedback rejects a changed opened email before sending its content

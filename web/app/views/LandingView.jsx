@@ -39,12 +39,12 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
             </span>
           </h1>
           <p className="text-[#646e78] text-base sm:text-lg lg:text-xl leading-relaxed max-w-xl mb-8">
-            BantAI checks websites and supported emails with server models, adds contextual cloud review when needed,
+            Signalam checks websites and supported emails with server models, adds contextual cloud review when needed,
             and gives you a clear result without claiming certainty.
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <button className="flex items-center gap-2 bg-[#696cff] hover:bg-[#5f61e6] text-white text-sm font-semibold px-6 py-3.5 rounded-md transition-all shadow-[0_4px_12px_0_rgba(105,108,255,0.4)] active:scale-95" onClick={() => onNavigate(authenticated ? "/dashboard" : publicPrimaryPath)}>
-              <span>{authenticated ? "Go to your dashboard" : registrationEnabled ? "Get started with BantAI" : "Sign in to BantAI"}</span>
+              <span>{authenticated ? "Go to your dashboard" : registrationEnabled ? "Get started with Signalam" : "Sign in to Signalam"}</span>
               <ArrowRightIcon className="w-4 h-4"/>
             </button>
             {!authenticated && (<button className="text-[#646e78] hover:text-[#384551] bg-white hover:bg-[#f5f5f9] border border-[#d9dee3] text-sm font-semibold px-5 py-3.5 rounded-md transition-colors shadow-xs" onClick={() => onNavigate("/login")}>
@@ -53,12 +53,12 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
           </div>
           <p className="flex items-center gap-2 text-xs text-[#8592a3] mt-6">
             <LockIcon className="w-4 h-4 text-[#696cff]"/>
-            Routine raw inputs remain transient on the BantAI server
+            Routine raw inputs remain transient on the Signalam server
           </p>
         </div>
 
         {/* Hero Browser Mockup */}
-        <div className="lg:col-span-5 relative" aria-label="Example BantAI website assessment">
+        <div className="lg:col-span-5 relative" aria-label="Example Signalam website assessment">
           <div className="absolute -inset-2 bg-gradient-to-r from-[#e7e7ff] to-[#d7f5fc] rounded-2xl blur-xl opacity-70"/>
           <div className="relative rounded-xl overflow-hidden bg-white border border-[#e4e6e8] shadow-[0_4px_18px_0_rgba(34,48,62,0.14)]">
             <div className="h-11 bg-[#f5f5f9] border-b border-[#e4e6e8] px-4 flex items-center gap-3">
@@ -109,7 +109,7 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
                 </div>
               </div>
               <p className="text-xs text-[#8592a3] text-center leading-normal">
-                BantAI supports decisions—it does not guarantee that a website is legitimate or malicious.
+                Signalam supports decisions—it does not guarantee that a website is legitimate or malicious.
               </p>
             </div>
           </div>
@@ -117,13 +117,13 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
       </section>
 
       {/* Trust Pillars */}
-      <section className="w-full max-w-[1440px] 2xl:max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6" aria-label="BantAI protection layers">
+      <section className="w-full max-w-[1440px] 2xl:max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6" aria-label="Signalam protection layers">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div className="sneat-card p-5 flex gap-4 items-start">
             <span className="w-8 h-8 rounded-md bg-[#e7e7ff] text-[#696cff] flex items-center justify-center font-bold text-sm shrink-0">01</span>
             <div>
               <strong className="text-sm font-bold text-[#384551] block">Server models</strong>
-              <p className="text-xs text-[#8592a3] mt-1 leading-relaxed">Website addresses and supported opened-email content are sent securely to the BantAI server for checking.</p>
+              <p className="text-xs text-[#8592a3] mt-1 leading-relaxed">Website addresses and supported opened-email content are sent securely to the Signalam server for checking.</p>
             </div>
           </div>
           <div className="sneat-card p-5 flex gap-4 items-start">
@@ -143,17 +143,17 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
         </div>
       </section>
 
-      {/* How BantAI Works */}
+      {/* How Signalam Works */}
       <section className="w-full max-w-[1440px] 2xl:max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-20" id="how-it-works" aria-labelledby="how-title">
         <div className="text-center max-w-2xl mx-auto mb-14">
-          <p className="text-xs font-semibold text-[#696cff] tracking-wider uppercase mb-2">HOW BANTAI WORKS</p>
+          <p className="text-xs font-semibold text-[#696cff] tracking-wider uppercase mb-2">HOW SIGNALAM WORKS</p>
           <h2 id="how-title" className="text-3xl sm:text-4xl font-extrabold text-[#384551] tracking-tight">Protection that works quietly in the background.</h2>
-          <p className="text-sm text-[#8592a3] mt-3 leading-relaxed">The browser extension and BantAI server handle the technical steps. You see the result and the evidence that matters.</p>
+          <p className="text-sm text-[#8592a3] mt-3 leading-relaxed">The browser extension and Signalam server handle the technical steps. You see the result and the evidence that matters.</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <article className="sneat-card p-6 sm:p-7 flex flex-col gap-3">
             <div className="w-9 h-9 rounded-md bg-[#e7e7ff] text-[#696cff] flex items-center justify-center font-bold text-sm">1</div>
-            <h3 className="text-base sm:text-lg font-bold text-[#384551]">Check on the BantAI server</h3>
+            <h3 className="text-base sm:text-lg font-bold text-[#384551]">Check on the Signalam server</h3>
             <p className="text-xs sm:text-sm text-[#646e78] leading-relaxed">The frozen URL and email models analyze the exact active address or supported opened email through the authenticated service.</p>
           </article>
           <article className="sneat-card p-6 sm:p-7 flex flex-col gap-3">
@@ -176,7 +176,7 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
             <p className="text-xs font-semibold text-[#696cff] tracking-wider uppercase mb-2">FOCUSED BY DESIGN</p>
             <h2 id="coverage-title" className="text-3xl sm:text-4xl font-extrabold text-[#384551] tracking-tight mb-4">The right signal for the right context.</h2>
             <p className="text-xs sm:text-sm text-[#646e78] leading-relaxed mb-6">
-              BantAI keeps website and email checks independent, so an ordinary webmail address never hides warning signs in an opened message.
+              Signalam keeps website and email checks independent, so an ordinary webmail address never hides warning signs in an opened message.
             </p>
             <div className="flex flex-wrap gap-2" aria-label="Supported email providers">
               <span className="px-3.5 py-1.5 rounded-full bg-white border border-[#d9dee3] text-xs font-semibold text-[#384551] shadow-2xs">Gmail</span>
@@ -191,7 +191,7 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
               </div>
               <p className="text-xs font-semibold text-[#696cff] uppercase tracking-wider mb-1">WEBSITES</p>
               <h3 className="text-base sm:text-lg font-bold text-[#384551] mb-2">Address-bar URL checks</h3>
-              <p className="text-xs sm:text-sm text-[#646e78] leading-relaxed">Analyzes the exact active-tab URL on the BantAI server. Routine dashboard history stores only the website origin.</p>
+              <p className="text-xs sm:text-sm text-[#646e78] leading-relaxed">Analyzes the exact active-tab URL on the Signalam server. Routine dashboard history stores only the website origin.</p>
             </article>
             <article className="sneat-card p-6 sm:p-7 flex flex-col">
               <div className="w-10 h-10 rounded-md bg-[#e7e7ff] text-[#696cff] flex items-center justify-center mb-4 shadow-2xs">
@@ -259,10 +259,10 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
           <div>
             <p className="text-xs font-semibold text-white/80 tracking-wider uppercase mb-1">READY WHEN YOU ARE</p>
             <h2 id="landing-cta-title" className="text-2xl sm:text-3xl font-black tracking-tight">Make the next click a more informed one.</h2>
-            <p className="text-xs sm:text-sm text-white/90 mt-2 max-w-xl">{registrationEnabled ? "Create your BantAI account, connect the browser extension, and use the server models without installing Python, Docker, model files, or a Companion app." : "Use your provisioned BantAI account, connect the browser extension, and use the server models without installing Python, Docker, model files, or a Companion app."}</p>
+            <p className="text-xs sm:text-sm text-white/90 mt-2 max-w-xl">{registrationEnabled ? "Create your Signalam account, connect the browser extension, and use the server models without installing Python, Docker, model files, or a Companion app." : "Use your provisioned Signalam account, connect the browser extension, and use the server models without installing Python, Docker, model files, or a Companion app."}</p>
           </div>
           <button className="flex items-center gap-2 bg-white text-[#384551] hover:bg-[#f5f5f9] text-sm font-bold px-6 py-3.5 rounded-md transition-all shadow-md shrink-0 active:scale-95" onClick={() => onNavigate(authenticated ? "/dashboard" : publicPrimaryPath)}>
-            <span>{authenticated ? "Open dashboard" : registrationEnabled ? "Create your BantAI account" : "Sign in to BantAI"}</span>
+            <span>{authenticated ? "Open dashboard" : registrationEnabled ? "Create your Signalam account" : "Sign in to Signalam"}</span>
             <ArrowRightIcon className="w-4 h-4"/>
           </button>
         </div>
@@ -273,7 +273,7 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
         <div className="max-w-[1440px] 2xl:max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col sm:flex-row items-center justify-between gap-4">
           <Logo compact/>
           <p className="text-center">Decision support for safer browsing—not a guarantee that a website or email is legitimate.</p>
-          <span>© 2026 BantAI · v1.1</span>
+          <span>© 2026 Signalam · v1.1</span>
         </div>
       </footer>
     </main>);

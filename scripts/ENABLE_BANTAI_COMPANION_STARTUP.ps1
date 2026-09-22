@@ -15,12 +15,12 @@ $UrlModel = Join-Path $ProjectRoot "models\url_random_forest_grouped_v1\bantai_r
 
 foreach ($RequiredFile in @($Launcher, $PythonExe, $UrlModel)) {
     if (-not (Test-Path -LiteralPath $RequiredFile -PathType Leaf)) {
-        throw "BantAI Companion cannot be enabled because a required file is missing: $RequiredFile"
+        throw "Signalam Companion cannot be enabled because a required file is missing: $RequiredFile"
     }
 }
 
 if (-not (Test-Path -LiteralPath $EmailModel -PathType Container)) {
-    throw "BantAI Companion cannot be enabled because the email model directory is missing: $EmailModel"
+    throw "Signalam Companion cannot be enabled because the email model directory is missing: $EmailModel"
 }
 
 $PowerShellExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -58,4 +58,4 @@ if (-not $DoNotStart) {
     }
 }
 
-Write-Host "BantAI Companion startup is enabled for the current Windows account."
+Write-Host "Signalam Companion startup is enabled for the current Windows account."

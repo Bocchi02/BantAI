@@ -1,4 +1,4 @@
-"""Transparent deterministic email decision fusion for BantAI v1.1."""
+"""Transparent deterministic email decision fusion for Signalam v1.1."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-# BantAI remote web platform
+# Signalam remote web platform
 
 ## Components
 
@@ -81,7 +81,7 @@ automatic samples.
 ## User interface
 
 The landing page and Help page explain that exact addresses and supported opened
-emails are sent securely to the BantAI server for transient checking. Dashboard
+emails are sent securely to the Signalam server for transient checking. Dashboard
 status distinguishes Browser extension connected from Server models ready.
 Failures display Service unavailable and never imply a completed or safe check.
 The three primary outcome labels and accessibility behavior remain unchanged.

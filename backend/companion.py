@@ -1,4 +1,4 @@
-"""Local BantAI Companion pairing and privacy-minimized delivery state."""
+"""Local Signalam Companion pairing and privacy-minimized delivery state."""
 
 from __future__ import annotations
 
@@ -54,9 +54,9 @@ def _protect(data: bytes) -> bytes:
     source, source_buffer = _blob(data)
     destination = _DataBlob()
     if not ctypes.windll.crypt32.CryptProtectData(
-        ctypes.byref(source), "BantAI Companion", None, None, None, 1, ctypes.byref(destination)
+        ctypes.byref(source), "Signalam Companion", None, None, None, 1, ctypes.byref(destination)
     ):
-        raise CompanionError("Windows could not protect BantAI Companion state.")
+        raise CompanionError("Windows could not protect Signalam Companion state.")
     try:
         return ctypes.string_at(destination.pbData, destination.cbData)
     finally:
@@ -72,7 +72,7 @@ def _unprotect(data: bytes) -> bytes:
     if not ctypes.windll.crypt32.CryptUnprotectData(
         ctypes.byref(source), None, None, None, None, 1, ctypes.byref(destination)
     ):
-        raise CompanionError("Windows could not unlock BantAI Companion state.")
+        raise CompanionError("Windows could not unlock Signalam Companion state.")
     try:
         return ctypes.string_at(destination.pbData, destination.cbData)
     finally:
@@ -177,13 +177,13 @@ class CompanionManager:
 
     def _request(self, path: str, payload: dict[str, Any], *, authenticated: bool = True) -> dict[str, Any]:
         if not self.platform_url:
-            raise CompanionError("The shared BantAI service is not configured.")
+            raise CompanionError("The shared Signalam service is not configured.")
         state = self._load()
-        headers = {"Content-Type": "application/json", "User-Agent": "BantAI-Companion/1.0"}
+        headers = {"Content-Type": "application/json", "User-Agent": "Signalam-Companion/1.0"}
         if authenticated:
             token = self._credential(state)
             if not token:
-                raise CompanionError("Pair BantAI before using shared services.")
+                raise CompanionError("Pair Signalam before using shared services.")
             headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(
             f"{self.platform_url}/api/v1{path}",
@@ -195,7 +195,7 @@ class CompanionManager:
             with urllib.request.urlopen(request, timeout=15) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
-            message = "The shared BantAI service rejected this request."
+            message = "The shared Signalam service rejected this request."
             try:
                 problem = json.loads(exc.read().decode("utf-8"))
                 detail = problem.get("detail") if isinstance(problem, dict) else None
@@ -205,21 +205,21 @@ class CompanionManager:
                 pass
             raise CompanionRequestError(message, status_code=exc.code) from exc
         except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-            raise CompanionError("The shared BantAI service is unavailable.") from exc
+            raise CompanionError("The shared Signalam service is unavailable.") from exc
 
     def _get(self, path: str, *, timeout: int = 5) -> dict[str, Any]:
         if not self.platform_url:
-            raise CompanionError("The shared BantAI service is not configured.")
+            raise CompanionError("The shared Signalam service is not configured.")
         state = self._load()
         token = self._credential(state)
         if not token:
-            raise CompanionError("Pair BantAI before using shared services.")
+            raise CompanionError("Pair Signalam before using shared services.")
         request = urllib.request.Request(
             f"{self.platform_url}/api/v1{path}",
             headers={
                 "Accept": "application/json",
                 "Authorization": f"Bearer {token}",
-                "User-Agent": "BantAI-Companion/1.0",
+                "User-Agent": "Signalam-Companion/1.0",
             },
             method="GET",
         )
@@ -227,7 +227,7 @@ class CompanionManager:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError) as exc:
-            raise CompanionError("The shared BantAI service is unavailable.") from exc
+            raise CompanionError("The shared Signalam service is unavailable.") from exc
 
     def platform_status(self) -> dict[str, Any]:
         """Check gateway and provider readiness without making an LLM request."""
@@ -242,7 +242,7 @@ class CompanionManager:
         state = self._load()
         token = self._credential(state)
         path = "/api/v1/device-status" if token else "/health"
-        headers = {"Accept": "application/json", "User-Agent": "BantAI-Companion/1.0"}
+        headers = {"Accept": "application/json", "User-Agent": "Signalam-Companion/1.0"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         request = urllib.request.Request(
@@ -387,7 +387,7 @@ class CompanionManager:
                 "authenticated": False,
                 "detection_enabled": False,
                 "platform_reachable": False,
-                "access_message": "Pair this device with a BantAI account to enable detection.",
+                "access_message": "Pair this device with a Signalam account to enable detection.",
             }
 
         platform_status = self.platform_status()
@@ -396,7 +396,7 @@ class CompanionManager:
             or platform_status["device_authenticated"]
         )
         if platform_status["reachable"] and authenticated:
-            message = "This device is paired with an active BantAI account."
+            message = "This device is paired with an active Signalam account."
         elif platform_status["reachable"]:
             self._detail_contexts.clear()
             self._training_consent_cache = {
@@ -433,7 +433,7 @@ class CompanionManager:
                     pass
                 except Exception as exc:
                     raise CompanionError(
-                        "Windows could not remove the BantAI device credential."
+                        "Windows could not remove the Signalam device credential."
                     ) from exc
             self._save(self._empty())
             self._detail_contexts.clear()
@@ -525,7 +525,7 @@ class CompanionManager:
         with self._lock:
             state = self._load()
             if not self._credential(state):
-                raise CompanionError("Pair BantAI before submitting feedback.")
+                raise CompanionError("Pair Signalam before submitting feedback.")
             for _ in range(5):
                 delivery = self.flush()
                 if not delivery.get("submitted") or not delivery.get("remaining"):
@@ -538,7 +538,7 @@ class CompanionManager:
         with self._lock:
             state = self._load()
             if not self._credential(state):
-                raise CompanionError("Pair BantAI before submitting feedback.")
+                raise CompanionError("Pair Signalam before submitting feedback.")
             for _ in range(5):
                 delivery = self.flush()
                 if not delivery.get("submitted") or not delivery.get("remaining"):

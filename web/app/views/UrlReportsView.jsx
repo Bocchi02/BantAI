@@ -42,7 +42,7 @@ function UrlReportsPage() {
             await load();
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not submit this report.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not submit this report.");
         }
         finally {
             setSubmitting(false);
@@ -69,13 +69,13 @@ function UrlReportsPage() {
               <input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com/login" maxLength={2048} required className="h-10 px-3.5 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none"/>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-[#384551]">What result did BantAI show?</span>
+              <span className="text-xs font-semibold text-[#384551]">What result did Signalam show?</span>
               <select value={observedOutcome} onChange={(event) => setObservedOutcome(event.target.value)} className="h-10 px-3 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none">
                 {OUTCOMES.map((item) => (<option key={item.value} value={item.value}>{item.label}</option>))}
               </select>
             </label>
             <fieldset className="space-y-1 border-0 p-0 m-0">
-              <legend className="text-xs font-semibold text-[#384551] mb-1.5">Do you think BantAI got this result right?</legend>
+              <legend className="text-xs font-semibold text-[#384551] mb-1.5">Do you think Signalam got this result right?</legend>
               <div className="grid grid-cols-2 gap-2">
                 <label className={cx("p-3 rounded-lg border cursor-pointer text-xs transition", classification === "LEGITIMATE" ? "bg-[#e8fadf] border-[#c6f1af] text-[#2d5816] font-semibold ring-2 ring-[#c6f1af]" : "bg-white border-[#d9dee3] text-[#646e78] hover:bg-[#f5f5f9]")}>
                   <input type="radio" name="url-class" className="sr-only" checked={classification === "LEGITIMATE"} onChange={() => setClassification("LEGITIMATE")}/>

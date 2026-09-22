@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024" role="img" aria-labelledby="title description">
+  <title id="title">Signalam — Clear warnings. Private by design.</title>
+  <desc id="description">Signalam website and email decision support with clear outcomes.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#061a3b"/>
+      <stop offset="1" stop-color="#0c365d"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#159dff"/>
+      <stop offset="1" stop-color="#6ddac6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1536" height="1024" fill="url(#background)"/>
+  <circle cx="1260" cy="90" r="420" fill="#1686b8" opacity=".08"/>
+  <circle cx="1460" cy="950" r="480" fill="#17a99b" opacity=".07"/>
+  <g transform="translate(112 142)">
+    <path d="M58 0 110 19v48c0 42-25 76-52 88C31 143 6 109 6 67V19Z" fill="url(#accent)"/>
+    <path d="M58 15 96 29v38c0 31-17 56-38 67C37 123 20 98 20 67V29Z" fill="#061a3b"/>
+    <path d="M77 43c-7-6-15-8-23-8-12 0-20 6-20 15 0 8 6 12 21 16 16 4 24 11 24 23 0 15-13 25-32 25-13 0-25-5-34-13l9-13c7 7 16 10 25 10 11 0 17-4 17-11 0-6-5-9-19-13-17-5-26-12-26-25 0-16 14-27 33-27 12 0 23 4 32 11Z" fill="#ffffff" transform="translate(12 8) scale(.77)"/>
+    <text x="148" y="111" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" letter-spacing="-2">Signalam</text>
+    <text x="0" y="330" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="87" font-weight="700">Clear warnings.</text>
+    <text x="0" y="430" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="87" font-weight="700">Private by design.</text>
+    <text x="4" y="526" fill="#c4d7e5" font-family="Arial, Helvetica, sans-serif" font-size="31">Website and email decision support</text>
+  </g>
+  <g transform="translate(995 248)">
+    <rect width="360" height="500" rx="32" fill="#ffffff" opacity=".97"/>
+    <text x="40" y="80" fill="#18324a" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700">Detection overview</text>
+    <rect x="40" y="125" width="280" height="83" rx="16" fill="#e7f7ee"/>
+    <circle cx="82" cy="166" r="18" fill="#31a66d"/>
+    <text x="115" y="174" fill="#1d6040" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700">No strong signs</text>
+    <rect x="40" y="228" width="280" height="83" rx="16" fill="#fff3d9"/>
+    <circle cx="82" cy="269" r="18" fill="#e3a221"/>
+    <text x="115" y="277" fill="#735118" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700">Needs caution</text>
+    <rect x="40" y="331" width="280" height="83" rx="16" fill="#ffe5e1"/>
+    <circle cx="82" cy="372" r="18" fill="#ea665a"/>
+    <text x="115" y="380" fill="#7d2b28" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700">Suspicious signs</text>
+  </g>
+</svg>

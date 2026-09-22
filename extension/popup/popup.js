@@ -242,7 +242,7 @@ function setStatus(element, label, style) {
 
 function simpleWebsiteMessage(result) {
   if (result === "NO_STRONG_WARNING_SIGNS" || result === "SAFE") {
-    return "BantAI did not find clear warning signs in this website address. It did not check the page itself, so this does not guarantee that the website is legitimate.";
+    return "Signalam did not find clear warning signs in this website address. It did not check the page itself, so this does not guarantee that the website is legitimate.";
   }
   if (result === "NEEDS_CAUTION") {
     return "This website address looks unusual. Check that it is spelled correctly and belongs to the organization you expect before entering personal information.";
@@ -251,12 +251,12 @@ function simpleWebsiteMessage(result) {
     return "This website address shows warning signs often seen in fake or misleading sites. Do not enter passwords, one-time codes, or payment details unless you confirm the address through an official source.";
   }
   if (result === "UNAVAILABLE") {
-    return "BantAI could not check this website right now. Avoid sharing private or payment information until the check is available.";
+    return "Signalam could not check this website right now. Avoid sharing private or payment information until the check is available.";
   }
   if (result === "ANALYZING" || result === "CHECKING") {
-    return "BantAI is checking this website address. Please wait for the final result.";
+    return "Signalam is checking this website address. Please wait for the final result.";
   }
-  return "BantAI checks only the website address shown in the browser.";
+  return "Signalam checks only the website address shown in the browser.";
 }
 
 function indicatorLabels(state) {
@@ -294,10 +294,10 @@ function indicatorLabels(state) {
 function simpleEmailMessage(state, result) {
   const reassuringResult = result === "NO_STRONG_WARNING_SIGNS" || result === "SAFE";
   if (result === "UNAVAILABLE") {
-    return "BantAI could not finish checking this email. Be careful with links, attachments, money requests, and requests for private information.";
+    return "Signalam could not finish checking this email. Be careful with links, attachments, money requests, and requests for private information.";
   }
   if (result === "ANALYZING" || result === "CHECKING" || result === "WAITING") {
-    return "BantAI is checking this email. Please wait for the final result.";
+    return "Signalam is checking this email. Please wait for the final result.";
   }
 
   const cloudReview = state?.llm_review || {};
@@ -342,12 +342,12 @@ function simpleEmailMessage(state, result) {
   }
 
   if (reassuringResult) {
-    return "BantAI did not find clear scam warning signs in this email. This does not guarantee that the sender or message is legitimate.";
+    return "Signalam did not find clear scam warning signs in this email. This does not guarantee that the sender or message is legitimate.";
   }
 
   const findings = indicatorLabels(state).slice(0, 2);
   const reason = findings.length
-    ? `BantAI noticed that ${findings.join(" and ")}. `
+    ? `Signalam noticed that ${findings.join(" and ")}. `
     : result === "SUSPICIOUS_SIGNS_FOUND"
       ? "This email shows warning signs often used in scams. "
       : "Some parts of this email look unclear or unusual. ";
@@ -414,7 +414,7 @@ function selectedReviewValue(name) {
 }
 
 function feedbackErrorMessage(problem) {
-  const fallback = "BantAI could not submit feedback. Try again shortly.";
+  const fallback = "Signalam could not submit feedback. Try again shortly.";
   const detail = problem && typeof problem === "object" ? problem.detail : null;
   if (typeof detail === "string" && detail.length > 0 && detail.length <= 180) {
     return detail;
@@ -424,7 +424,7 @@ function feedbackErrorMessage(problem) {
       Array.isArray(item?.loc) && item.loc.includes("url") && item?.type === "missing"
     );
     if (missingUrl) {
-      return "Reload the BantAI extension, then submit this feedback again.";
+      return "Reload the Signalam extension, then submit this feedback again.";
     }
     const firstMessage = detail.find((item) => typeof item?.msg === "string" && item.msg.length <= 140)?.msg;
     if (firstMessage) {
@@ -1111,17 +1111,17 @@ async function loadPairingState() {
     setDetectionVisibility(enabled);
     if (enabled) {
       elements.pairingState.textContent = "Connected";
-      elements.pairingMessage.textContent = `Browser extension connected to ${state.user_email || "your BantAI account"}. Server models are ready.`;
+      elements.pairingMessage.textContent = `Browser extension connected to ${state.user_email || "your Signalam account"}. Server models are ready.`;
       elements.pairingForm.classList.add("hidden");
       elements.unpairButton.classList.remove("hidden");
     } else if (state.connected) {
       elements.pairingState.textContent = "Service unavailable";
-      elements.pairingMessage.textContent = state.access_message || "Browser extension connected, but the BantAI server is unavailable.";
+      elements.pairingMessage.textContent = state.access_message || "Browser extension connected, but the Signalam server is unavailable.";
       elements.pairingForm.classList.add("hidden");
       elements.unpairButton.classList.remove("hidden");
     } else {
       elements.pairingState.textContent = "Not connected";
-      elements.pairingMessage.textContent = "Generate a one-time code from the BantAI web dashboard, then enter it here.";
+      elements.pairingMessage.textContent = "Generate a one-time code from the Signalam web dashboard, then enter it here.";
       elements.pairingForm.classList.remove("hidden");
       elements.unpairButton.classList.add("hidden");
     }
@@ -1173,14 +1173,14 @@ elements.reviewForm.addEventListener("submit", async (event) => {
       confirmed: true
     });
     if (!response?.ok) {
-      throw new Error(response?.detail || "BantAI could not submit feedback. Try again shortly.");
+      throw new Error(response?.detail || "Signalam could not submit feedback. Try again shortly.");
     }
     await rememberSubmittedReview(review.clientEventId);
     renderReview(latestState);
   } catch (error) {
     elements.reviewMessage.textContent = error instanceof Error
         ? error.message
-        : "BantAI could not submit feedback. Try again shortly.";
+        : "Signalam could not submit feedback. Try again shortly.";
   } finally {
     reviewBusy = false;
     updateReviewControls();
@@ -1222,14 +1222,14 @@ elements.emailReviewForm.addEventListener("submit", async (event) => {
       confirmed: true
     });
     if (!response?.ok) {
-      throw new Error(response?.detail || "BantAI could not submit this email report.");
+      throw new Error(response?.detail || "Signalam could not submit this email report.");
     }
     await rememberSubmittedEmailReview(review.clientEventId);
     renderEmailReview(latestState);
   } catch (error) {
     elements.emailReviewMessage.textContent = error instanceof Error
       ? error.message
-      : "BantAI could not submit this email report. Try again shortly.";
+      : "Signalam could not submit this email report. Try again shortly.";
   } finally {
     emailReviewBusy = false;
     updateEmailReviewControls();
@@ -1245,10 +1245,10 @@ elements.pairingForm.addEventListener("submit", async (event) => {
     const response = await chrome.runtime.sendMessage({
       type: "BANTAI_PAIR_EXTENSION",
       code,
-      device_label: `BantAI browser extension on ${navigator.platform || "this device"}`
+      device_label: `Signalam browser extension on ${navigator.platform || "this device"}`
     });
     if (!response?.ok) {
-      throw new Error(response?.detail || "That code is invalid, expired, or the BantAI service is unavailable.");
+      throw new Error(response?.detail || "That code is invalid, expired, or the Signalam service is unavailable.");
     }
     elements.pairingCode.value = "";
     const enabled = await loadPairingState();
@@ -1284,7 +1284,7 @@ elements.unpairButton.addEventListener("click", async () => {
     await chrome.runtime.sendMessage({type: "BANTAI_PAIRING_CHANGED"});
   } catch {
     elements.pairingState.textContent = "Try again";
-    elements.pairingMessage.textContent = "BantAI could not disconnect this browser extension.";
+    elements.pairingMessage.textContent = "Signalam could not disconnect this browser extension.";
   } finally {
     elements.unpairButton.disabled = false;
   }

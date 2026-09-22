@@ -1,4 +1,4 @@
-# BantAI shared platform
+# Signalam shared platform
 
 This public service owns accounts, web sessions, one-time extension pairing,
 authenticated remote detection orchestration, privacy-minimized activity,
@@ -65,7 +65,7 @@ payload to compact beginning/ending context. The review uses exactly
 `gemini-3.5-flash-lite`. The pasted text, redacted payload, and result are not
 written to activity history, reports, training candidates, or application
 logs. This cloud-only wording assessment does not run the frozen server XLM-R model and
-is not a final fused BantAI email result. Its language-aware prompt evaluates
+is not a final fused Signalam email result. Its language-aware prompt evaluates
 English, Filipino, and Taglish social-engineering context, including contextual
 credential, payment, urgency, account-threat, secrecy, and prize patterns. A
 language choice, code-switching, or isolated Taglish phrase is never treated as

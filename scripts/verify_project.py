@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify BantAI source syntax and frozen project invariants without loading ML models."""
+"""Verify Signalam source syntax and frozen project invariants without loading ML models."""
 
 from __future__ import annotations
 
@@ -476,7 +476,7 @@ def check_private_artifacts() -> None:
             if any(part in {".git", ".venv", "node_modules"} for part in relative.parts):
                 # Dependency environments can contain library test fixtures
                 # that use model-like extensions. They are ignored local
-                # tooling, not BantAI model artifacts.
+                # tooling, not Signalam model artifacts.
                 continue
 
             require(
@@ -503,7 +503,7 @@ def main() -> int:
         print(f"PASS: {name}")
 
     print()
-    print("BantAI Codex migration verification: PASS")
+    print("Signalam project verification: PASS")
     return 0
 
 
@@ -512,5 +512,5 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:
         print()
-        print(f"BantAI Codex migration verification: FAIL\n{exc}")
+        print(f"Signalam project verification: FAIL\n{exc}")
         raise SystemExit(1)

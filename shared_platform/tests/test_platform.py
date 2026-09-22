@@ -355,7 +355,7 @@ class PlatformTests(unittest.TestCase):
             "/api/v1/admin/training-data/automatic-export.csv?sample_type=URL"
         )
         self.assertEqual(200, url_export.status_code, url_export.text)
-        self.assertIn("bantai-automatic-url-samples", url_export.headers["content-disposition"])
+        self.assertIn("signalam-automatic-url-samples", url_export.headers["content-disposition"])
         self.assertIn("private/path?token=synthetic#section", url_export.text)
         self.assertNotIn("user_id", url_export.text)
 
@@ -363,7 +363,7 @@ class PlatformTests(unittest.TestCase):
             "/api/v1/admin/training-data/automatic-export.csv?sample_type=EMAIL"
         )
         self.assertEqual(200, email_export.status_code, email_export.text)
-        self.assertIn("bantai-automatic-email-sample-manifest", email_export.headers["content-disposition"])
+        self.assertIn("signalam-automatic-email-sample-manifest", email_export.headers["content-disposition"])
         self.assertIn("sender@example.test", email_export.text)
         self.assertIn("Synthetic sample", email_export.text)
         self.assertIn("RESTRICTED_TRAINING_PROCESS_ONLY", email_export.text)
@@ -392,7 +392,7 @@ class PlatformTests(unittest.TestCase):
             },
         )
         self.assertEqual(201, registration.status_code, registration.text)
-        self.assertEqual("Your BantAI account was created.", registration.json()["message"])
+        self.assertEqual("Your Signalam account was created.", registration.json()["message"])
         self.login("new-user@example.com", "StrongInitial1!")
 
         removed_routes = (
@@ -980,7 +980,7 @@ class PlatformTests(unittest.TestCase):
         exported = admin_client.get("/api/v1/admin/training-data/export.csv?candidate_type=URL")
         self.assertEqual(200, exported.status_code, exported.text)
         self.assertTrue(exported.headers["content-type"].startswith("text/csv"))
-        self.assertIn('filename="bantai-url-training-data-', exported.headers["content-disposition"])
+        self.assertIn('filename="signalam-url-training-data-', exported.headers["content-disposition"])
         self.assertEqual("no-store", exported.headers["cache-control"])
         export_rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
         self.assertEqual(1, len(export_rows))
@@ -1307,7 +1307,7 @@ class PlatformTests(unittest.TestCase):
 
         exported = admin_client.get("/api/v1/admin/training-data/export.csv?candidate_type=EMAIL")
         self.assertEqual(200, exported.status_code, exported.text)
-        self.assertIn('filename="bantai-email-training-manifest-', exported.headers["content-disposition"])
+        self.assertIn('filename="signalam-email-training-manifest-', exported.headers["content-disposition"])
         rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
         self.assertEqual(1, len(rows))
         self.assertEqual("LEGITIMATE", rows[0]["approved_label"])
@@ -1716,7 +1716,7 @@ class PlatformTests(unittest.TestCase):
         token = self.paired_device_token()
         with patch(
             "shared_platform.app.main.detector_gateway.analyze_url",
-            side_effect=DetectorUnavailable("BantAI server models are temporarily unavailable."),
+            side_effect=DetectorUnavailable("Signalam server models are temporarily unavailable."),
         ):
             response = self.client.post(
                 "/api/v1/detections/url",

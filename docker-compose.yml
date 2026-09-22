@@ -3,7 +3,7 @@ services:
     image: caddy:2.10-alpine
     restart: unless-stopped
     environment:
-      BANTAI_API_DOMAIN: ${BANTAI_API_DOMAIN:?Set the public BantAI API domain}
+      BANTAI_API_DOMAIN: ${BANTAI_API_DOMAIN:?Set the public Signalam API domain}
     ports:
       - "80:80"
       - "443:443"
@@ -51,7 +51,7 @@ services:
       - data
 
   migration:
-    image: bantai-platform:1.1.0
+    image: signalam-platform:1.1.0
     build:
       context: .
       dockerfile: shared_platform/Dockerfile
@@ -69,7 +69,7 @@ services:
       - data
 
   detector:
-    image: bantai-detector:1.1.0
+    image: signalam-detector:1.1.0
     restart: unless-stopped
     init: true
     read_only: true
@@ -112,7 +112,7 @@ services:
       - egress
 
   platform:
-    image: bantai-platform:1.1.0
+    image: signalam-platform:1.1.0
     restart: unless-stopped
     init: true
     read_only: true

@@ -1,5 +1,5 @@
-import { BantAIApp } from "../BantAIApp";
-export default async function BantAIRoute({ params, }) {
+import { SignalamApp } from "../SignalamApp";
+export default async function SignalamRoute({ params, }) {
     const { path } = await params;
-    return <BantAIApp initialPath={`/${path.join("/")}`}/>;
+    return <SignalamApp initialPath={`/${path.join("/")}`}/>;
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a BantAI release ZIP only after fail-closed release validation."""
+"""Create a Signalam release ZIP only after fail-closed release validation."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover - direct script execution
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = ROOT / "extension"
-DEFAULT_OUTPUT = ROOT / "dist" / "bantai-extension-release.zip"
+DEFAULT_OUTPUT = ROOT / "dist" / "signalam-extension-release.zip"
 
 
 def package_release(source: Path, output: Path, endpoint: str) -> Path:
@@ -33,7 +33,7 @@ def package_release(source: Path, output: Path, endpoint: str) -> Path:
         raise ValueError("The extension source is missing config.js or manifest.json.")
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="bantai-extension-release-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="signalam-extension-release-") as temporary:
         staging = Path(temporary) / "extension"
         shutil.copytree(source, staging)
         config_path = staging / "config.js"

@@ -40,14 +40,14 @@ function UsersPage({ currentUser }) {
             await load();
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not update that user’s status.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not update that user’s status.");
         }
         finally {
             setBusyId(null);
         }
     };
     return (<>
-      <PageHeader eyebrow="ADMINISTRATION" title="Users" description="Manage registered BantAI accounts and review active devices."/>
+      <PageHeader eyebrow="ADMINISTRATION" title="Users" description="Manage registered Signalam accounts and review active devices."/>
       {error && <Notice type="error">{error}</Notice>}
       {message && <Notice type="success">{message}</Notice>}
       <section className="sneat-card p-4 sm:p-5 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

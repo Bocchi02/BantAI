@@ -76,7 +76,7 @@ validate:
 ```powershell
 python scripts\package_extension.py `
   --endpoint https://api.example.org/api/v1 `
-  --output dist\bantai-extension-release.zip
+  --output dist\signalam-extension-release.zip
 ```
 
 ## Run the migrated stack with the local web preview
@@ -119,7 +119,7 @@ python backend\test_client.py
 5. Refresh Gmail, Outlook, and Yahoo Mail.
 
 After server or extension updates, restart the platform, detector, and gateway,
-then select **Reload** for BantAI on the Extensions page. Open the web **Help**
+then select **Reload** for Signalam on the Extensions page. Open the web **Help**
 page for pairing, device revocation, supported-provider, and troubleshooting
 steps.
 

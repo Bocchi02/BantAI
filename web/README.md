@@ -1,4 +1,4 @@
-# BantAI web interface
+# Signalam web interface
 
 The web client is a React JavaScript application styled with Tailwind CSS. Its
 route-level screens are separated into `app/views/*.jsx`, while reusable UI is

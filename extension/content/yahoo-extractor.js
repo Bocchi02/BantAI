@@ -1,8 +1,8 @@
 /*
- * BantAI Yahoo Mail Email-Content Extractor V1
+ * Signalam Yahoo Mail Email-Content Extractor V1
  * ============================================
  *
- * BantAI milestone:
+ * Signalam milestone:
  *   v0.8 - Yahoo Mail integration
  *
  * Scope:
@@ -12,13 +12,13 @@
  *   Yahoo Mail DOM
  *       -> this content script
  *       -> chrome.runtime.sendMessage()
- *       -> unified BantAI service worker
- *       -> authenticated BantAI server API
- *       -> frozen BantAI XLM-RoBERTa email model
+ *       -> unified Signalam service worker
+ *       -> authenticated Signalam server API
+ *       -> frozen Signalam XLM-RoBERTa email model
  *
  * IMPORTANT:
  *   - Email content only.
- *   - No overall BantAI risk calculation.
+ *   - No overall Signalam risk calculation.
  *   - No threshold changes.
  *   - No arbitrary webpage classification.
  *   - Yahoo's rendered DOM is treated as unstable; defensive selectors
@@ -4920,7 +4920,7 @@
           null,
         reason:
           "Yahoo Mail extractor provides an independent email-content NLP " +
-          "signal only. Overall BantAI risk is calculated separately."
+          "signal only. Overall Signalam risk is calculated separately."
       }
     };
   }
@@ -4995,7 +4995,7 @@
           "Extension context invalidated"
         )
       ) {
-        console.debug("[BantAI Yahoo] SEND_MESSAGE_FAILED");
+        console.debug("[Signalam Yahoo] SEND_MESSAGE_FAILED");
       }
     }
   }
@@ -5059,7 +5059,7 @@
       if (
         result.subject
       ) {
-        console.info("[BantAI Yahoo] SUBJECT_FOUND_AFTER_RETRY");
+        console.info("[Signalam Yahoo] SUBJECT_FOUND_AFTER_RETRY");
 
         break;
       }
@@ -5109,7 +5109,7 @@
       lastFingerprint =
         fingerprint;
 
-      console.info("[BantAI Yahoo] EMAIL_EXTRACTED");
+      console.info("[Signalam Yahoo] EMAIL_EXTRACTED");
 
       await sendExtractedEmail(
         result
@@ -5255,7 +5255,7 @@
           )
           .catch(
             (error) => {
-              console.error("[BantAI Yahoo] REQUEST_EXTRACTION_FAILED");
+              console.error("[Signalam Yahoo] REQUEST_EXTRACTION_FAILED");
 
               sendResponse(
                 extractOpenedEmail()
@@ -5277,7 +5277,7 @@
       scanAndNotify
     });
 
-  console.info("[BantAI Yahoo] EXTRACTOR_LOADED");
+  console.info("[Signalam Yahoo] EXTRACTOR_LOADED");
 
   scheduleScanBurst();
 })();

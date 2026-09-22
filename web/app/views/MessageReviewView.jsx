@@ -41,7 +41,7 @@ function MessageReviewPage() {
             setResult(data);
         }
         catch (problem) {
-            setError(problem instanceof Error ? problem.message : "BantAI could not complete the contextual review.");
+            setError(problem instanceof Error ? problem.message : "Signalam could not complete the contextual review.");
         }
         finally {
             setBusy(false);
@@ -57,7 +57,7 @@ function MessageReviewPage() {
     const isSafe = completeResult && result.assessment === "NO_STRONG_WARNING_SIGNS";
     const isCaution = result?.assessment === "NEEDS_CAUTION";
     return (<>
-      <PageHeader eyebrow="TEXT-ONLY CONTEXTUAL REVIEW" title="AI message check" description="Paste suspicious text to check it with BantAI’s Philippine scam contextual engine."/>
+      <PageHeader eyebrow="TEXT-ONLY CONTEXTUAL REVIEW" title="AI message check" description="Paste suspicious text to check it with Signalam’s Philippine scam contextual engine."/>
 
       <div className="grid lg:grid-cols-12 gap-6">
         <div className="lg:col-span-7 flex flex-col gap-6">
@@ -81,7 +81,7 @@ function MessageReviewPage() {
               <label className="flex items-start gap-3 p-3.5 rounded-lg bg-[#f5f5f9] border border-[#e4e6e8] cursor-pointer">
                 <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 rounded border-[#d9dee3] text-[#696cff] focus:ring-[#696cff] shrink-0 accent-[#696cff]"/>
                 <span className="text-xs text-[#646e78] leading-relaxed">
-                  I agree to analyze this pasted text. I understand BantAI redacts reasonably detectable OTPs, phone numbers, email addresses, and account identifiers before cloud analysis.
+                  I agree to analyze this pasted text. I understand Signalam redacts reasonably detectable OTPs, phone numbers, email addresses, and account identifiers before cloud analysis.
                 </span>
               </label>
 
@@ -100,7 +100,7 @@ function MessageReviewPage() {
           <section className="sneat-card p-5 rounded-lg bg-[#e7e7ff]/40 border-[#c3c4ff] flex gap-3 text-xs text-[#4347d9]">
             <SparklesIcon className="w-5 h-5 text-[#696cff] shrink-0 mt-0.5"/>
             <div className="space-y-1">
-              <strong className="block font-bold">This is a text-only contextual check, not a final BantAI email result.</strong>
+              <strong className="block font-bold">This is a text-only contextual check, not a final Signalam email result.</strong>
               <p className="text-[#646e78] leading-relaxed">English, Filipino, and Taglish scam context is reviewed. Language or code-switching alone is never a warning sign.</p>
               <p className="text-[#646e78] leading-relaxed">Sender details, message headers, links, attachments, and the frozen server XLM-R email model are not checked here.</p>
             </div>

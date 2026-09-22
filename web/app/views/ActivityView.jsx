@@ -45,7 +45,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
             await onSubmitted();
         }
         catch (problem) {
-            setError(problem instanceof Error ? problem.message : "BantAI could not save your feedback.");
+            setError(problem instanceof Error ? problem.message : "Signalam could not save your feedback.");
         }
         finally {
             setBusy(false);
@@ -57,7 +57,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
           <CheckCircle2Icon className="w-6 h-6 text-[#71dd37] shrink-0"/>
           <div>
             <p className="text-xs font-semibold text-[#2d5816] uppercase tracking-wider">FEEDBACK RECEIVED</p>
-            <h2 className="text-sm font-bold text-[#2d5816]">Thank you for helping improve BantAI.</h2>
+            <h2 className="text-sm font-bold text-[#2d5816]">Thank you for helping improve Signalam.</h2>
             <p className="text-xs text-[#2d5816]/90 mt-0.5">An administrator will review the complete address you explicitly submitted before it can become a future training candidate.</p>
           </div>
         </div>
@@ -72,8 +72,8 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
           <HelpCircleIcon className="w-5 h-5"/>
         </div>
         <div className="flex-1">
-          <p className="text-xs font-semibold text-[#696cff] tracking-wider uppercase mb-1">HELP IMPROVE BANTAI</p>
-          <h2 id={`feedback-title-${activity.id}`} className="text-base font-bold text-[#384551]">Do you think BantAI got this result right?</h2>
+          <p className="text-xs font-semibold text-[#696cff] tracking-wider uppercase mb-1">HELP IMPROVE SIGNALAM</p>
+          <h2 id={`feedback-title-${activity.id}`} className="text-base font-bold text-[#384551]">Do you think Signalam got this result right?</h2>
           <p className="text-xs text-[#8592a3] mt-1"><strong>{activity.origin}</strong> was shown as “{outcomeInfo(activity.outcome).label}.”</p>
           {error && <Notice type="error">{error}</Notice>}
           <form className="space-y-4 mt-4" onSubmit={submit}>
@@ -118,7 +118,7 @@ function DetectionFeedbackCard({ activity, onSubmitted, onClose }) {
                       <span className="w-5 h-5 rounded-full bg-[#ff3e1d] text-white flex items-center justify-center text-xs font-bold shrink-0">!</span>
                       <div>
                         <strong className="text-xs font-bold block text-[#384551]">Seems suspicious</strong>
-                        <small className="text-xs text-[#8592a3]">BantAI may have missed warning signs.</small>
+                        <small className="text-xs text-[#8592a3]">Signalam may have missed warning signs.</small>
                       </div>
                     </label>
                   </div>
@@ -175,7 +175,7 @@ function ActivityPage() {
             setData(await api(`/activities?${query}`));
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not load activity.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not load activity.");
         }
         finally {
             setRefreshing(false);
@@ -208,7 +208,7 @@ function ActivityPage() {
         }
         catch (reason) {
             if (detailsRequest.current === requestId)
-                setDetailsError(reason?.name === "AbortError" ? "The explanation took too long. Try again." : reason.message || "BantAI could not prepare this explanation.");
+                setDetailsError(reason?.name === "AbortError" ? "The explanation took too long. Try again." : reason.message || "Signalam could not prepare this explanation.");
         }
         finally {
             if (detailsRequest.current === requestId) setDetailsLoading(false);

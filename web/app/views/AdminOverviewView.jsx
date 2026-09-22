@@ -27,7 +27,7 @@ function AdminOverviewPage() {
         return () => window.clearTimeout(initial);
     }, [load]);
     return (<>
-      <PageHeader eyebrow="ADMINISTRATION" title="Admin overview" description="Aggregated, privacy-preserving metrics across all registered BantAI accounts." actions={<RangePicker value={days} onChange={setDays}/>}/>
+      <PageHeader eyebrow="ADMINISTRATION" title="Admin overview" description="Aggregated, privacy-preserving metrics across all registered Signalam accounts." actions={<RangePicker value={days} onChange={setDays}/>}/>
       <div className="p-4 rounded-lg bg-[#e7e7ff]/50 border border-[#c3c4ff] flex items-center gap-3 text-xs text-[#4347d9] mb-6">
         <LockIcon className="w-5 h-5 text-[#696cff] shrink-0"/>
         <div>

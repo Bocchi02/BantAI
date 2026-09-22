@@ -1,4 +1,4 @@
-"""Nontechnical Windows tray host for the local BantAI detector service."""
+"""Nontechnical Windows tray host for the local Signalam detector service."""
 
 from __future__ import annotations
 
@@ -40,13 +40,13 @@ class CompanionTray:
         self.server: uvicorn.Server | None = None
         self.server_thread: threading.Thread | None = None
         self.icon = pystray.Icon(
-            "BantAI",
+            "Signalam",
             self._icon_image(),
-            "BantAI is starting",
+            "Signalam is starting",
             menu=pystray.Menu(
-                pystray.MenuItem("BantAI is protecting you", lambda: None, enabled=False),
+                pystray.MenuItem("Signalam is protecting you", lambda: None, enabled=False),
                 pystray.MenuItem("Open web dashboard", self.open_dashboard),
-                pystray.MenuItem("Restart BantAI", self.restart),
+                pystray.MenuItem("Restart Signalam", self.restart),
                 pystray.MenuItem("Repair / verify models", self.repair),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Exit", self.exit),
@@ -67,7 +67,7 @@ class CompanionTray:
         self.server = uvicorn.Server(config)
         self.server_thread = threading.Thread(target=self.server.run, name="bantai-local-api", daemon=True)
         self.server_thread.start()
-        self.icon.title = "BantAI is protecting you"
+        self.icon.title = "Signalam is protecting you"
 
     def stop_server(self) -> None:
         if self.server is not None:
@@ -79,7 +79,7 @@ class CompanionTray:
         webbrowser.open(os.getenv("BANTAI_WEB_DASHBOARD", "http://localhost:3000"))
 
     def restart(self, *_args) -> None:
-        self.icon.title = "BantAI is restarting"
+        self.icon.title = "Signalam is restarting"
         self.stop_server()
         self.start_server()
 
@@ -95,9 +95,9 @@ class CompanionTray:
         ]
         missing = [path.name for path in expected if not path.is_file()]
         if missing:
-            messagebox.showerror("BantAI needs attention", "Required detector files are missing. Reinstall BantAI Companion to repair them.")
+            messagebox.showerror("Signalam needs attention", "Required detector files are missing. Reinstall Signalam Companion to repair them.")
         else:
-            messagebox.showinfo("BantAI is ready", "The frozen detector files are present. Restart BantAI if a check is still unavailable.")
+            messagebox.showinfo("Signalam is ready", "The frozen detector files are present. Restart Signalam if a check is still unavailable.")
 
     def exit(self, *_args) -> None:
         self.stop_server()

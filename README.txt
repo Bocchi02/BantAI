@@ -1,11 +1,20 @@
-BantAI v1.1.0 — Remote Hybrid AI Decision-Support
+Signalam v1.1.0 — Remote Hybrid AI Decision-Support
 
 OVERVIEW
 --------
-BantAI checks the exact active address-bar URL and visible opened-email content
+Signalam checks the exact active address-bar URL and visible opened-email content
 from Gmail, Outlook, or Yahoo through an authenticated HTTPS service. End users
-need the browser extension and a BantAI account. They do not need Python,
-Docker, local model files, a local FastAPI service, or BantAI Companion.
+need the browser extension and a Signalam account. They do not need Python,
+Docker, local model files, a local FastAPI service, or Signalam Companion.
+
+BRANDING COMPATIBILITY
+----------------------
+The web interface, extension, API descriptions, installer, exports, and release
+package now use the Signalam name. Existing BANTAI_* environment variables,
+browser storage keys, session cookies, database names, Docker volume names,
+device credential identifiers, and frozen model identifiers are retained as
+compatibility keys. Do not rename or delete those values in an existing
+installation: doing so can disconnect paired browsers or hide existing data.
 
 The frozen server models remain unchanged:
 
@@ -18,7 +27,7 @@ The frozen server models remain unchanged:
   4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c.
   Shadow/non-blocking mode remains on and enforcement remains off.
 
-BantAI supports decisions. NO STRONG WARNING SIGNS means no strong warning sign
+Signalam supports decisions. NO STRONG WARNING SIGNS means no strong warning sign
 was detected by the completed module; it is not a guarantee that a website or
 email is legitimate. Gemini is contextual evidence only and cannot create the
 final red email outcome by itself. Deterministic fusion still requires two
@@ -27,7 +36,7 @@ independent suspicious sources for SUSPICIOUS SIGNS FOUND.
 PRIVACY AND SCOPE
 -----------------
 The exact `tab.url` and supported opened-email content travel over HTTPS to the
-BantAI server for inference. Raw routine inputs remain transient: they are not
+Signalam server for inference. Raw routine inputs remain transient: they are not
 written to application/access logs, activity records, or durable queues. URL
 activity stores only the normalized origin; email activity stores provider,
 sender, and subject metadata, never the routine body.
@@ -118,7 +127,7 @@ host/CSP policy:
   .\.venv\Scripts\python.exe scripts\verify_extension_release.py
   .\.venv\Scripts\python.exe scripts\package_extension.py `
     --endpoint https://api.example.org/api/v1 `
-    --output dist\bantai-extension-release.zip
+    --output dist\signalam-extension-release.zip
 
 The packaging command stages a copy, regenerates release configuration, runs
 the fail-closed verifier, and only then writes the ZIP. The checked-in
@@ -133,7 +142,7 @@ Outlook, and Yahoo tabs.
 
 USER CONNECTION FLOW
 --------------------
-1. Sign in to the BantAI web dashboard.
+1. Sign in to the Signalam web dashboard.
 2. Open Paired Devices and generate a five-minute one-time code.
 3. Open the extension popup and enter the code.
 4. The service worker stores only the revocable device credential and restricts

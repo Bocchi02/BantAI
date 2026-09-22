@@ -1,2 +1,2 @@
-"""BantAI shared web platform."""
+"""Signalam shared web platform."""
 

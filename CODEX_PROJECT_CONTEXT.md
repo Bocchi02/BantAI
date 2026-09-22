@@ -1,17 +1,17 @@
-# BantAI Project Context for Codex
+# Signalam Project Context for Codex
 
 ## Current version
 
 `1.1.0 — Hybrid AI Decision-Support`
 
-BantAI helps users notice warning signs while browsing and reading supported
+Signalam helps users notice warning signs while browsing and reading supported
 webmail. It provides cautious decision support, not a guarantee or definitive
 phishing judgment.
 
 ## Current website flow
 
 For any HTTP/HTTPS tab, the service worker sends the exact `tab.url` over HTTPS
-to the authenticated public BantAI API. The API calls the private server-side
+to the authenticated public Signalam API. The API calls the private server-side
 detector, where BantAI RF Grouped v1.0.0 returns an independent SAFE or
 SUSPICIOUS module signal. It runs on URL changes, page completion, tab switches,
 window focus, and new supported emails. Cloud URL Review runs automatically only
@@ -26,7 +26,7 @@ On Gmail, Outlook, or Yahoo Mail:
    message body to the trusted extension service worker. The service worker sends
    it over HTTPS with its revocable browser-device credential.
 2. The authenticated public API calls the private server detector, where the
-   calibrated BantAI XLM-R model and Philippine Scam Indicator Engine run.
+   calibrated Signalam XLM-R model and Philippine Scam Indicator Engine run.
 3. The exact address-bar URL is independently checked by BantAI RF Grouped v1.0.0.
 4. Deterministic Rules A-H produce initial guidance without opening the automatic popup.
 5. A limited redacted payload is automatically reviewed by the configured LLM.
@@ -68,9 +68,9 @@ queues. A bounded, expiring process-memory store may retain recent account/devic
 detection-scoped context for explanations. Explicit encrypted reports and opted-in
 10% training contributions remain separate consented workflows.
 
-End users need only their BantAI account and the configured browser extension.
+End users need only their Signalam account and the configured browser extension.
 They do not install Python, Docker, model files, a local FastAPI service, or
-BantAI Companion. Legacy local tooling is development-only.
+Signalam Companion. Legacy local tooling is development-only.
 
 ## Known limitations
 

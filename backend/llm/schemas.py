@@ -1,4 +1,4 @@
-"""Strict provider-neutral schemas for BantAI cloud contextual review."""
+"""Strict provider-neutral schemas for Signalam cloud contextual review."""
 
 from __future__ import annotations
 

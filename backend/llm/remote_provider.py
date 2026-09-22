@@ -1,4 +1,4 @@
-"""Authenticated provider adapter for the shared BantAI cloud-review gateway."""
+"""Authenticated provider adapter for the shared Signalam cloud-review gateway."""
 
 from __future__ import annotations
 
@@ -48,10 +48,10 @@ class RemotePlatformProvider(LLMProvider):
                     },
                 )
         except CompanionError as exc:
-            raise LLMUnavailableError("The shared BantAI cloud gateway is unavailable.") from exc
+            raise LLMUnavailableError("The shared Signalam cloud gateway is unavailable.") from exc
         if result.get("status") == "UNAVAILABLE":
             raise LLMUnavailableError(
-                "The shared BantAI cloud gateway is unavailable.",
+                "The shared Signalam cloud gateway is unavailable.",
                 reason_code=str(result.get("failure_reason") or "PROVIDER_UNAVAILABLE"),
             )
         # Accept the redundant success envelope used by earlier gateway builds

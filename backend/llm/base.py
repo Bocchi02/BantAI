@@ -1,4 +1,4 @@
-"""Provider abstraction for optional BantAI cloud contextual analysis."""
+"""Provider abstraction for optional Signalam cloud contextual analysis."""
 
 from __future__ import annotations
 

@@ -34,7 +34,7 @@ export async function proxyApiRequest(request, env, fetchImpl = fetch) {
     const apiOrigin = configuredApiOrigin(env);
     if (!apiOrigin) {
         return Response.json(
-            { detail: "Service unavailable. The BantAI API route is not configured." },
+            { detail: "Service unavailable. The Signalam API route is not configured." },
             { status: 503 },
         );
     }
@@ -44,7 +44,7 @@ export async function proxyApiRequest(request, env, fetchImpl = fetch) {
     }
     catch {
         return Response.json(
-            { detail: "Service unavailable. BantAI cannot reach the API." },
+            { detail: "Service unavailable. Signalam cannot reach the API." },
             {
                 status: 503,
                 headers: {

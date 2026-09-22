@@ -94,7 +94,7 @@ test("same-origin API proxy returns a controlled response when the upstream API 
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(response.headers.get("retry-after"), "2");
   const body = await response.json();
-  assert.deepEqual(body, { detail: "Service unavailable. BantAI cannot reach the API." });
+  assert.deepEqual(body, { detail: "Service unavailable. Signalam cannot reach the API." });
   assert.doesNotMatch(JSON.stringify(body), /Network connection lost|127\.0\.0\.1/i);
 });
 
@@ -106,7 +106,7 @@ test("adds HSTS only for HTTPS requests", async () => {
   );
 });
 
-test("server-renders the BantAI public and account experience", async () => {
+test("server-renders the Signalam public and account experience", async () => {
   const landingResponse = await render("/");
   assert.equal(landingResponse.status, 200);
   assert.match(landingResponse.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
@@ -116,16 +116,16 @@ test("server-renders the BantAI public and account experience", async () => {
   assert.equal(landingResponse.headers.get("strict-transport-security"), null);
   const landingHtml = await landingResponse.text();
   assert.match(landingHtml, /Clear warnings\. Private by design\./i);
-  assert.match(landingHtml, /Sign in to BantAI/i);
-  assert.doesNotMatch(landingHtml, /Create account|Create your BantAI account/i);
+  assert.match(landingHtml, /Sign in to Signalam/i);
+  assert.doesNotMatch(landingHtml, /Create account|Create your Signalam account/i);
 
   const response = await render("/login");
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /BantAI/);
+  assert.match(html, /Signalam/);
   assert.match(html, /Privacy-first server-based website and email detection/i);
-  assert.doesNotMatch(html, /Get started with BantAI/i);
+  assert.doesNotMatch(html, /Get started with Signalam/i);
   assert.doesNotMatch(html, /Forgot password|email verification|account recovery/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
@@ -159,8 +159,8 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(source, /including its path/);
   assert.match(source, /Full-URL reports and optional 10% contributions use separate, explicit consent workflows/);
   assert.match(source, /type="url"/);
-  assert.match(source, /What result did BantAI show/);
-  assert.match(source, /Do you think BantAI got this result right/);
+  assert.match(source, /What result did Signalam show/);
+  assert.match(source, /Do you think Signalam got this result right/);
   assert.match(source, /Yes, looks right/);
   assert.match(source, /No, report correction/);
   assert.match(source, /Select one response/);
@@ -208,7 +208,7 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(source, /\/message-review/);
   assert.match(source, /Analyze pasted text/);
   assert.match(source, /redacts reasonably detectable OTPs/);
-  assert.match(source, /not a final BantAI email result/);
+  assert.match(source, /not a final Signalam email result/);
   const messageReviewPage = await readFile(new URL("../app/views/MessageReviewView.jsx", import.meta.url), "utf8");
   assert.match(messageReviewPage, /English, Filipino, and Taglish scam context is reviewed/);
   assert.match(messageReviewPage, /Language or code-switching alone is never a warning sign/);
@@ -217,7 +217,7 @@ test("includes explicit full-address reporting and administrator review interfac
   assert.match(messageReviewPage, /Safer next steps/);
   assert.doesNotMatch(messageReviewPage, /Gemini/i);
   assert.doesNotMatch(messageReviewPage, /localStorage|sessionStorage/);
-  assert.match(source, /BantAI RF Grouped v1\.0\.0 stays in shadow mode/);
+  assert.match(source, /frozen URL detector v1\.0\.0 stays in shadow mode/);
   assert.match(source, /No reporter identity/);
   assert.match(source, /Complete website address/);
   assert.match(source, /does not automatically change future outcomes/);

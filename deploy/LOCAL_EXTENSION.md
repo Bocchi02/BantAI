@@ -6,7 +6,7 @@ With `docker-compose.local.yml` running, configure the extension:
 python scripts/configure_remote_endpoint.py http://127.0.0.1:8080/api/v1 --allow-http-loopback
 ```
 
-Reload BantAI on `edge://extensions` or `chrome://extensions`. Generate a fresh
+Reload Signalam on `edge://extensions` or `chrome://extensions`. Generate a fresh
 code from the local dashboard's Devices page, then enter it in the extension.
 Pairing uses the authenticated platform API on port 8080.
 

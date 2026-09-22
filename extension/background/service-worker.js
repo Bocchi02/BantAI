@@ -12,7 +12,7 @@ const localDockerApi = globalThis.BANTAI_CONFIG?.allowHttpLoopback === true
   && apiEndpoint.protocol === "http:"
   && ["localhost", "127.0.0.1"].includes(apiEndpoint.hostname);
 if (apiEndpoint.protocol !== "https:" && !localDockerApi) {
-  throw new Error("BantAI remote API configuration must use HTTPS.");
+  throw new Error("Signalam remote API configuration must use HTTPS.");
 }
 
 const STORAGE_KEYS = {
@@ -128,7 +128,7 @@ const detectionAccessCache = {
 
 class PairingRequiredError extends Error {
   constructor(
-    message = "Pair this device with a BantAI account to enable detection."
+    message = "Pair this device with a Signalam account to enable detection."
   ) {
     super(message);
     this.name =
@@ -195,7 +195,7 @@ async function authenticatedFetch(path, options = {}) {
     await chrome.storage.local.remove(STORAGE_KEYS.deviceCredential);
     throw new PairingRequiredError(
       response.status === 403
-        ? "This BantAI account is unavailable."
+        ? "This Signalam account is unavailable."
         : "This extension connection was revoked. Connect it again."
     );
   }
@@ -543,7 +543,7 @@ async function setServerState(
 
 
 async function clearDetectionState(
-  message = "Pair this device with a BantAI account to enable detection."
+  message = "Pair this device with a Signalam account to enable detection."
 ) {
   urlSequences.clear();
   urlAnalysisRequests.clear();
@@ -634,7 +634,7 @@ async function checkDetectionAccess(
 
         if (!response.ok) {
           throw new Error(
-            `BantAI server status HTTP ${response.status}`
+            `Signalam server status HTTP ${response.status}`
           );
         }
 
@@ -645,7 +645,7 @@ async function checkDetectionAccess(
           status?.service_ready === true;
         const message =
           status?.access_message ||
-          "Pair this device with a BantAI account to enable detection.";
+          "Pair this device with a Signalam account to enable detection.";
 
         detectionAccessCache
           .enabled = enabled;
@@ -676,7 +676,7 @@ async function checkDetectionAccess(
         const message =
           isPairingRequiredError(error)
             ? error.message
-            : "Browser extension connected status could not be verified. The BantAI service is unavailable.";
+            : "Browser extension connected status could not be verified. The Signalam service is unavailable.";
 
         detectionAccessCache
           .enabled = false;
@@ -717,7 +717,7 @@ async function disableDetectionForPairing(
 ) {
   const message =
     error?.message ||
-    "Pair this device with a BantAI account to enable detection.";
+    "Pair this device with a Signalam account to enable detection.";
 
   detectionAccessCache
     .enabled = false;
@@ -751,7 +751,7 @@ async function checkServer() {
       await response.json();
 
     if (health.service_ready !== true) {
-      throw new Error("BantAI server models are unavailable.");
+      throw new Error("Signalam server models are unavailable.");
     }
 
     await setServerState(
@@ -1075,7 +1075,7 @@ async function updateBadge(
           ""
       });
   } catch (error) {
-    console.debug("[BantAI v1.1.0] BADGE_UPDATE_FAILED");
+    console.debug("[Signalam v1.1.0] BADGE_UPDATE_FAILED");
   }
 }
 
@@ -1160,7 +1160,7 @@ async function fetchUrlAnalysis(
 
     if (!response.ok) {
       throw new Error(
-        await responseProblem(response, "The BantAI server could not complete this website check.")
+        await responseProblem(response, "The Signalam server could not complete this website check.")
       );
     }
 
@@ -1237,7 +1237,7 @@ async function legacyLocalScanCurrentTabUrl(
             signal:
               "UNAVAILABLE",
             message:
-              "BantAI checks regular HTTP and HTTPS websites only.",
+              "Signalam checks regular HTTP and HTTPS websites only.",
             reason
           },
           email_detector:
@@ -1764,7 +1764,7 @@ async function legacyLocalScanCurrentTabUrl(
             signal:
               "UNAVAILABLE",
             message:
-              "The website check could not be completed. Make sure the BantAI server is running.",
+              "The website check could not be completed. Make sure the Signalam server is running.",
             error:
               String(
                 error?.message ||
@@ -1822,7 +1822,7 @@ async function performCurrentTabUrlScan(
       url_detector: {
         state: "unavailable",
         signal: "UNAVAILABLE",
-        message: "BantAI checks regular HTTP and HTTPS websites only.",
+        message: "Signalam checks regular HTTP and HTTPS websites only.",
         reason
       },
       email_detector: defaultEmailState(provider, current.email_detector)
@@ -1856,7 +1856,7 @@ async function performCurrentTabUrlScan(
     url_detector: {
       state: "analyzing",
       signal: "ANALYZING",
-      message: "Checking this address with the BantAI server...",
+      message: "Checking this address with the Signalam server...",
       reason,
       activity_event_id: clientEventId,
       requested_at: nowIso()
@@ -1875,7 +1875,7 @@ async function performCurrentTabUrlScan(
     }
     const finalResult = String(result?.final_result || "").toUpperCase();
     if (!COMPLETE_CLOUD_STATUSES.has(finalResult)) {
-      throw new Error("The BantAI server returned an incomplete website result.");
+      throw new Error("The Signalam server returned an incomplete website result.");
     }
     const cloudStatus = String(
       result?.llm_review?.status || result?.llm_review?.assessment || ""
@@ -1948,7 +1948,7 @@ async function performCurrentTabUrlScan(
         state: "error",
         signal: "UNAVAILABLE",
         result: null,
-        message: "Service unavailable. BantAI could not complete this website check.",
+        message: "Service unavailable. Signalam could not complete this website check.",
         error: String(error?.message || error),
         reason,
         activity_event_id: clientEventId
@@ -2044,7 +2044,7 @@ async function fetchHybridEmail(
 
     if (!response.ok) {
       throw new Error(
-        await responseProblem(response, "The BantAI server could not complete this email check.")
+        await responseProblem(response, "The Signalam server could not complete this email check.")
       );
     }
 
@@ -2161,7 +2161,7 @@ async function analyzeOpenedEmail(
       payload?.provider
   ) {
     console.warn(
-      "[BantAI v1.1.0] Ignoring email extraction outside a matching supported provider."
+      "[Signalam v1.1.0] Ignoring email extraction outside a matching supported provider."
     );
 
     return null;
@@ -2610,7 +2610,7 @@ async function extractCurrentEmailForFeedback(
     ).trim()
   ) {
     throw new Error(
-      "BantAI could not read the currently opened email. Keep it open and try again."
+      "Signalam could not read the currently opened email. Keep it open and try again."
     );
   }
 
@@ -2945,7 +2945,7 @@ async function submitCurrentEmailFeedback(
     !response.ok
   ) {
     let detail =
-      "BantAI could not submit this email report.";
+      "Signalam could not submit this email report.";
 
     try {
       const problem =
@@ -3016,7 +3016,7 @@ async function submitCurrentUrlFeedback(message) {
     });
   }
   if (!response.ok) {
-    throw new Error(await responseProblem(response, "BantAI could not submit this website feedback."));
+    throw new Error(await responseProblem(response, "Signalam could not submit this website feedback."));
   }
   return response.json();
 }
@@ -3024,7 +3024,7 @@ async function submitCurrentUrlFeedback(message) {
 
 async function pairExtension(code, deviceLabel) {
   if (new URL(API_BASE).hostname.endsWith(".invalid")) {
-    throw new Error("This extension has no BantAI server configured. Ask the administrator to configure the public API address and reload the extension.");
+    throw new Error("This extension has no Signalam server configured. Ask the administrator to configure the public API address and reload the extension.");
   }
   let response;
   try {
@@ -3035,19 +3035,19 @@ async function pairExtension(code, deviceLabel) {
       signal: AbortSignal.timeout(30000)
     });
   } catch {
-    throw new Error("Cannot reach the BantAI pairing server. Check your connection and the extension's configured API address, then try again.");
+    throw new Error("Cannot reach the Signalam pairing server. Check your connection and the extension's configured API address, then try again.");
   }
   if (!response.ok) {
     const fallback = response.status >= 500
-      ? "The BantAI pairing service is unavailable. Try again shortly."
+      ? "The Signalam pairing service is unavailable. Try again shortly."
       : response.status === 404
-        ? "The configured server does not provide BantAI extension pairing. Ask the administrator to check the API address and server version."
-        : "BantAI could not pair this device. Generate a fresh code from the dashboard and try again.";
+        ? "The configured server does not provide Signalam extension pairing. Ask the administrator to check the API address and server version."
+        : "Signalam could not pair this device. Generate a fresh code from the dashboard and try again.";
     throw new Error(await responseProblem(response, fallback));
   }
   const result = await response.json();
   if (!result?.device_token) {
-    throw new Error("BantAI did not return a device credential.");
+    throw new Error("Signalam did not return a device credential.");
   }
   await restrictCredentialStorage();
   await chrome.storage.local.set({[STORAGE_KEYS.deviceCredential]: result.device_token});
@@ -3061,7 +3061,7 @@ async function disconnectExtension() {
   try {
     const response = await authenticatedFetch("/extension/device", {method: "DELETE"});
     if (!response.ok) {
-      throw new Error("The BantAI server could not revoke this extension connection.");
+      throw new Error("The Signalam server could not revoke this extension connection.");
     }
   } catch (error) {
     // A missing/revoked credential is already disconnected. On transport
@@ -3073,7 +3073,7 @@ async function disconnectExtension() {
   await chrome.storage.local.remove(STORAGE_KEYS.deviceCredential);
   detectionAccessCache.enabled = false;
   detectionAccessCache.checkedAt = 0;
-  await clearDetectionState("Connect this browser extension to your BantAI account.");
+  await clearDetectionState("Connect this browser extension to your Signalam account.");
   return {disconnected: true};
 }
 
@@ -3187,7 +3187,7 @@ async function showDangerousResultModal(tab, state, source, eventId) {
     } catch {
       // A restricted browser page cannot host the modal; retain the red badge
       // and allow the regular toolbar popup to show the completed result.
-      console.warn("[BantAI v1.1.0] DANGER_MODAL_OPEN_FAILED");
+      console.warn("[Signalam v1.1.0] DANGER_MODAL_OPEN_FAILED");
       return false;
     }
   })();
@@ -3345,7 +3345,7 @@ async function openFiveSecondPopup(
         }
       });
   } catch (error) {
-      console.warn("[BantAI v1.1.0] AUTO_POPUP_STATE_STORE_FAILED");
+      console.warn("[Signalam v1.1.0] AUTO_POPUP_STATE_STORE_FAILED");
     return false;
   }
 
@@ -3384,7 +3384,7 @@ async function openFiveSecondPopup(
           ])
         });
       } catch {
-        console.warn("[BantAI v1.1.0] AUTO_POPUP_SITE_STORE_FAILED");
+        console.warn("[Signalam v1.1.0] AUTO_POPUP_SITE_STORE_FAILED");
       }
     }
 
@@ -3408,7 +3408,7 @@ async function openFiveSecondPopup(
       // No-op fallback.
     }
 
-      console.warn("[BantAI v1.1.0] AUTO_POPUP_OPEN_FAILED");
+      console.warn("[Signalam v1.1.0] AUTO_POPUP_OPEN_FAILED");
 
     return false;
   }
@@ -3464,7 +3464,7 @@ async function injectProviderScript(
         "Cannot access"
       )
     ) {
-      console.debug("[BantAI v1.1.0] PROVIDER_INJECTION_MESSAGE");
+      console.debug("[Signalam v1.1.0] PROVIDER_INJECTION_MESSAGE");
     }
   }
 }
@@ -3842,7 +3842,7 @@ chrome.runtime.onMessage
             ok: true,
             connected: Boolean(token),
             detection_enabled: access.enabled === true,
-            access_message: access.message || "Connect this browser extension to your BantAI account.",
+            access_message: access.message || "Connect this browser extension to your Signalam account.",
             user_email: access.user_email || null
           });
         }).catch((error) => sendResponse({
@@ -3994,7 +3994,7 @@ chrome.runtime.onMessage
                 String(
                   error?.message ||
                   error ||
-                  "BantAI could not submit this email report."
+                  "Signalam could not submit this email report."
                 )
             });
           }
@@ -4029,7 +4029,7 @@ chrome.runtime.onMessage
 void restrictCredentialStorage();
 
 
-console.log("[BantAI] SERVICE_WORKER_STARTED");
+console.log("[Signalam] SERVICE_WORKER_STARTED");
 
 void checkServer();
 void initializeExistingTabs();

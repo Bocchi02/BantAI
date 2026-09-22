@@ -1,13 +1,13 @@
-# BantAI Codex Instructions
+# Signalam Codex Instructions
 
 ## Project identity
 
-BantAI v1.1.0 is a Chromium Manifest V3 hybrid AI decision-support browser
-extension backed by the authenticated public BantAI API and a private
+Signalam v1.1.0 is a Chromium Manifest V3 hybrid AI decision-support browser
+extension backed by the authenticated public Signalam API and a private
 server-side detector service. It combines five transparent parts:
 
 1. the frozen BantAI RF Grouped URL Model v1.0.0 in shadow/non-blocking mode;
-2. the calibrated BantAI XLM-RoBERTa email model;
+2. the calibrated Signalam XLM-RoBERTa email model;
 3. an explainable Philippine Scam Indicator Engine;
 4. automatic, redacted LLM contextual review; and
 5. deterministic email decision fusion.

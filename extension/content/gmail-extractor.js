@@ -87,7 +87,7 @@
         return null;
       }
 
-      console.error("[BantAI Gmail] SEND_MESSAGE_FAILED");
+      console.error("[Signalam Gmail] SEND_MESSAGE_FAILED");
 
       return null;
     }

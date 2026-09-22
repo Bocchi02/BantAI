@@ -24,7 +24,7 @@ test("auth routing and copy match enabled and controlled-pilot states", () => {
 
 test("UI surfaces gate registration CTAs and help copy on the capability state", async () => {
   const [app, auth, landing, help] = await Promise.all([
-    readFile(new URL("../app/BantAIApp.jsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/SignalamApp.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/views/AuthView.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/views/LandingView.jsx", import.meta.url), "utf8"),
     readFile(new URL("../app/views/HelpView.jsx", import.meta.url), "utf8"),
@@ -33,7 +33,7 @@ test("UI surfaces gate registration CTAs and help copy on the capability state",
   assert.match(app, /registrationEnabledFromConfig/);
   assert.match(auth, /registrationEnabled \? \(/);
   assert.match(auth, /authorized pilot users/);
-  assert.match(landing, /registrationEnabled \? "Get started with BantAI" : "Sign in to BantAI"/);
-  assert.match(landing, /registrationEnabled \? "Create your BantAI account" : "Sign in to BantAI"/);
+  assert.match(landing, /registrationEnabled \? "Get started with Signalam" : "Sign in to Signalam"/);
+  assert.match(landing, /registrationEnabled \? "Create your Signalam account" : "Sign in to Signalam"/);
   assert.match(help, /Use your provisioned account/);
 });

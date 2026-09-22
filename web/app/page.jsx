@@ -1,4 +1,4 @@
-import { BantAIApp } from "./BantAIApp";
+import { SignalamApp } from "./SignalamApp";
 export default function Home() {
-    return <BantAIApp initialPath="/"/>;
+    return <SignalamApp initialPath="/"/>;
 }

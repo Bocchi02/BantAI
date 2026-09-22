@@ -1,5 +1,5 @@
 <# LEGACY DEVELOPMENT ONLY: starts the retired local Companion workflow.
-   End users connect the extension directly to the remote BantAI API. #>
+   End users connect the extension directly to the remote Signalam API. #>
 
 param(
     [string]$TextModelDir = "",
@@ -20,7 +20,7 @@ if (Test-Path -LiteralPath $VirtualEnvPython -PathType Leaf) {
 else {
     $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
     if ($null -eq $PythonCommand) {
-        throw "Python was not found. Restore the BantAI .venv environment before starting Companion."
+        throw "Python was not found. Restore the Signalam .venv environment before starting Companion."
     }
     $PythonExe = $PythonCommand.Source
 }
@@ -55,7 +55,7 @@ if (-not [string]::IsNullOrWhiteSpace($PlatformApi)) {
 Set-Location $BackendDir
 
 Write-Host ""
-Write-Host "BantAI v1.1 Hybrid AI Decision-Support Server" -ForegroundColor Green
+Write-Host "Signalam v1.1 Hybrid AI Decision-Support Server" -ForegroundColor Green
 Write-Host "=============================================="
 Write-Host "Email model: $env:BANTAI_MODEL_DIR"
 Write-Host "URL model:   $env:BANTAI_RF_MODEL_PATH"
@@ -71,5 +71,5 @@ Write-Host ""
     --no-access-log
 
 if ($LASTEXITCODE -ne 0) {
-    throw "BantAI Companion stopped unexpectedly with exit code $LASTEXITCODE."
+    throw "Signalam Companion stopped unexpectedly with exit code $LASTEXITCODE."
 }

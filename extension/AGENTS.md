@@ -6,7 +6,7 @@ These instructions apply under `extension/`.
 
 - Chromium Manifest V3; minimum Chrome/Chromium version 127.
 - Use a service worker and standard browser JavaScript without a build step.
-- Send inference only through the configured public HTTPS BantAI API. Never
+- Send inference only through the configured public HTTPS Signalam API. Never
   silently fall back to localhost or contact the private detector directly.
 - Keep the revocable device credential in extension storage restricted to
   trusted extension contexts. Content scripts must never receive it or make API

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify local BantAI model files without loading model weights."""
+"""Verify local Signalam model files without loading model weights."""
 
 from __future__ import annotations
 
@@ -176,7 +176,7 @@ def main() -> int:
     )
     print(f"PASS: RF Grouped v1.0.0 ({RF_MODEL_PATH.name}, SHA-256 verified)")
     print()
-    print("BantAI frozen server model artifact verification: PASS")
+    print("Signalam frozen server model artifact verification: PASS")
     return 0
 
 

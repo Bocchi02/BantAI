@@ -270,7 +270,7 @@ def seed_admin(db: Session) -> None:
         return
     user = db.scalar(select(User).where(User.email == email))
     if user is None:
-        db.add(User(email=email, first_name="BantAI", last_name="Administrator", password_hash=hash_password(password), role=UserRole.ADMIN, status=UserStatus.ACTIVE))
+        db.add(User(email=email, first_name="Signalam", last_name="Administrator", password_hash=hash_password(password), role=UserRole.ADMIN, status=UserStatus.ACTIVE))
         db.commit()
 
 
@@ -296,7 +296,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="BantAI Public API",
+    title="Signalam Public API",
     version="1.1.0",
     description="Authenticated remote detection, privacy-minimized activity, accounts, and reporting.",
     lifespan=lifespan,
@@ -332,7 +332,7 @@ def user_view(user: User) -> dict:
 def health() -> dict:
     return {
         "status": "ok",
-        "service": "bantai-public-api",
+        "service": "signalam-public-api",
         "version": "1.1.0",
         "cloud_ai": cloud_connection_status(),
     }
@@ -340,7 +340,7 @@ def health() -> dict:
 
 @app.get("/live")
 def live() -> dict:
-    return {"status": "ok", "service": "bantai-public-api", "version": "1.1.0"}
+    return {"status": "ok", "service": "signalam-public-api", "version": "1.1.0"}
 
 
 @app.get("/ready")
@@ -350,10 +350,10 @@ def ready(db: Session = Depends(get_db)) -> dict:
         detector = detector_gateway.readiness()
     except Exception as exc:
         # Readiness is operational only; never echo database or transport details.
-        raise HTTPException(status_code=503, detail="BantAI server is not ready.") from exc
+        raise HTTPException(status_code=503, detail="Signalam server is not ready.") from exc
     return {
         "status": "ready",
-        "service": "bantai-public-api",
+        "service": "signalam-public-api",
         "server_models": detector,
         "cloud_ai": cloud_connection_status(),
     }
@@ -398,7 +398,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=EMAIL_IN_USE_MESSAGE) from exc
     db.commit()
-    return {"message": "Your BantAI account was created."}
+    return {"message": "Your Signalam account was created."}
 
 
 @app.post("/api/v1/auth/email-availability")
@@ -592,9 +592,9 @@ def extension_status(current: CurrentDevice = Depends(current_device)) -> dict:
         "user_email": current.user.email,
         "server_models": readiness,
         "access_message": (
-            "Browser extension connected. BantAI server models are ready."
+            "Browser extension connected. Signalam server models are ready."
             if service_ready
-            else "Browser extension connected, but the BantAI server is unavailable."
+            else "Browser extension connected, but the Signalam server is unavailable."
         ),
     }
 
@@ -1885,7 +1885,7 @@ def protection_status(
             "message": (
                 "Privacy-minimized contextual review is available."
                 if cloud.get("configured") and cloud.get("available")
-                else "Cloud review is unavailable; BantAI will report that state explicitly."
+                else "Cloud review is unavailable; Signalam will report that state explicitly."
             ),
         },
         "extension": {
@@ -2396,7 +2396,7 @@ def export_admin_training_data(
                 "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
                 "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
             })
-        filename_prefix = "bantai-url-training-data"
+        filename_prefix = "signalam-url-training-data"
     else:
         fieldnames = [
             "candidate_id", "provider", "sender", "subject", "approved_label",
@@ -2431,7 +2431,7 @@ def export_admin_training_data(
                 "first_approved_at_utc": utc_timestamp(candidate.first_approved_at),
                 "last_approved_at_utc": utc_timestamp(candidate.last_approved_at),
             })
-        filename_prefix = "bantai-email-training-manifest"
+        filename_prefix = "signalam-email-training-manifest"
 
     filename = f"{filename_prefix}-{utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
@@ -2478,7 +2478,7 @@ def export_automatic_training_samples(
                 "occurred_at_utc": utc_timestamp(sample.occurred_at),
                 "collected_at_utc": utc_timestamp(sample.created_at),
             })
-        filename_prefix = "bantai-automatic-url-samples"
+        filename_prefix = "signalam-automatic-url-samples"
     else:
         fieldnames = [
             "sample_id", "provider", "sender", "subject", "detector_outcome",
@@ -2502,7 +2502,7 @@ def export_automatic_training_samples(
                 "occurred_at_utc": utc_timestamp(sample.occurred_at),
                 "collected_at_utc": utc_timestamp(sample.created_at),
             })
-        filename_prefix = "bantai-automatic-email-sample-manifest"
+        filename_prefix = "signalam-automatic-email-sample-manifest"
 
     filename = f"{filename_prefix}-{utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "BantAI Hybrid AI Decision-Support",
+  "name": "Signalam Hybrid AI Decision-Support",
   "version": "1.1.0",
   "description": "Independent website and email checks with explainable indicators, privacy-minimized cloud context, and deterministic guidance.",
   "minimum_chrome_version": "127",
@@ -24,7 +24,7 @@
     "service_worker": "background/service-worker.js"
   },
   "action": {
-    "default_title": "BantAI safety check",
+    "default_title": "Signalam safety check",
     "default_popup": "popup/popup.html"
   },
   "content_security_policy": {

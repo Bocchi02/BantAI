@@ -52,7 +52,7 @@ function AppShell({ user, page, navigate, children }) {
           <div className="flex items-center gap-3 select-none">
             <ShieldLogoMark className="w-[34px] h-[34px] object-contain shrink-0" />
             <span className="text-xl font-bold tracking-tight text-[#384551]">
-              BantAI
+              Signalam
             </span>
           </div>
           <button
@@ -71,7 +71,7 @@ function AppShell({ user, page, navigate, children }) {
         >
           <div>
             <p className="px-3 text-[11px] font-semibold text-[#a1acb8] uppercase tracking-wider mb-2">
-              MY BANTAI
+              MY SIGNALAM
             </p>
             <div className="space-y-1">
               {nav.map((item) => (
@@ -172,8 +172,8 @@ function AppShell({ user, page, navigate, children }) {
             <div className="flex items-center gap-3">
               <button
                 className="w-8 h-8 rounded-full border border-[#d9dee3] text-[#8592a3] hover:bg-[#f5f5f9] hover:text-[#384551] flex items-center justify-center text-xs font-bold transition-colors"
-                title="BantAI help"
-                aria-label="BantAI help"
+                title="Signalam help"
+                aria-label="Signalam help"
                 aria-current={page === "help" ? "page" : undefined}
                 onClick={() => navigate("help")}
               >

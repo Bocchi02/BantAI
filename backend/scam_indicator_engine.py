@@ -1,4 +1,4 @@
-"""Explainable, non-probabilistic scam indicator extraction for BantAI v1.1."""
+"""Explainable, non-probabilistic scam indicator extraction for Signalam v1.1."""
 
 from __future__ import annotations
 

@@ -25,7 +25,7 @@ from .schemas import LLMReview, validate_llm_response
 
 
 def _gemini_response_schema() -> dict[str, Any]:
-    """Return BantAI's schema without keywords rejected by Gemini's API."""
+    """Return Signalam's schema without keywords rejected by Gemini's API."""
 
     def clean(value: Any) -> Any:
         if isinstance(value, dict):
@@ -153,10 +153,10 @@ class GeminiProvider(LLMProvider):
         return self._client, types
 
     def _http_options(self, types: Any) -> Any:
-        """Bound one SDK request to BantAI's explicit retry policy.
+        """Bound one SDK request to Signalam's explicit retry policy.
 
         The Google Gen AI SDK retries transient responses five times by default.
-        BantAI already owns fallback selection and permits at most one explicit
+        Signalam already owns fallback selection and permits at most one explicit
         retry, so leaving the SDK default enabled can multiply a ten-second
         deadline into a long, stale browser result.
         """

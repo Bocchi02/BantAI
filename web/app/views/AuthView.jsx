@@ -24,7 +24,7 @@ function AuthLayout({ children, eyebrow, title, description }) {
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
             Exact addresses and supported opened-email content are sent securely
-            to the BantAI server for transient checking. Routine inputs are not
+            to the Signalam server for transient checking. Routine inputs are not
             retained, and this dashboard receives only permitted metadata.
           </p>
           <ul className="space-y-3 text-xs text-slate-300">
@@ -49,7 +49,7 @@ function AuthLayout({ children, eyebrow, title, description }) {
           </ul>
         </div>
         <p className="text-[11px] text-slate-400">
-          BantAI v1.1 · Privacy-first hybrid analysis
+          Signalam v1.1 · Privacy-first hybrid analysis
         </p>
       </section>
 
@@ -138,7 +138,7 @@ function AuthScreen({ onAuthenticated, initialPath, registrationEnabled = false 
       setError(
         reason instanceof Error
           ? reason.message
-          : "BantAI could not complete that request.",
+          : "Signalam could not complete that request.",
       );
     } finally {
       setBusy(false);
@@ -147,7 +147,7 @@ function AuthScreen({ onAuthenticated, initialPath, registrationEnabled = false 
   const isRegister = registrationEnabled && path === "/register";
   const title = isRegister ? "Create your account" : "Welcome back";
   const description = isRegister
-    ? "Create a secure BantAI account using your email address."
+    ? "Create a secure Signalam account using your email address."
     : "Sign in to review your recent website and email checks.";
   return (
     <AuthLayout
@@ -276,7 +276,7 @@ function AuthScreen({ onAuthenticated, initialPath, registrationEnabled = false 
         ) : (
           registrationEnabled ? (
             <>
-              New to BantAI?{" "}
+              New to Signalam?{" "}
               <button
                 className="text-[#696cff] font-bold hover:underline"
                 onClick={() => go("/register")}
@@ -285,7 +285,7 @@ function AuthScreen({ onAuthenticated, initialPath, registrationEnabled = false 
               </button>
             </>
           ) : (
-            <>Accounts are currently provisioned for authorized pilot users. Contact the BantAI administrator.</>
+            <>Accounts are currently provisioned for authorized pilot users. Contact the Signalam administrator.</>
           )
         )}
       </div>

@@ -1,8 +1,8 @@
 /*
- * BantAI Outlook Email-Content Extractor V2
+ * Signalam Outlook Email-Content Extractor V2
  * =========================================
  *
- * BantAI milestone:
+ * Signalam milestone:
  *   v0.7.2 - Outlook sender + subject metadata extraction fix
  *
  * Scope:
@@ -19,7 +19,7 @@
  *
  * IMPORTANT:
  *   - Email content only.
- *   - No overall BantAI risk calculation.
+ *   - No overall Signalam risk calculation.
  *   - No threshold changes.
  *   - No arbitrary webpage classification.
  */
@@ -1791,7 +1791,7 @@
         reason:
           "Outlook Email-Content Extractor V2 extracts email content and " +
           "metadata only. Classification is handled separately by the frozen " +
-          "BantAI XLM-RoBERTa Email NLP Analyzer V1."
+          "Signalam XLM-RoBERTa Email NLP Analyzer V1."
       }
     };
   }
@@ -1875,7 +1875,7 @@
           "Extension context invalidated"
         )
       ) {
-        console.debug("[BantAI Outlook] SEND_MESSAGE_FAILED");
+        console.debug("[Signalam Outlook] SEND_MESSAGE_FAILED");
       }
     }
   }
@@ -1925,7 +1925,7 @@
       lastFingerprint =
         fingerprint;
 
-      console.info("[BantAI Outlook] EMAIL_EXTRACTED");
+      console.info("[Signalam Outlook] EMAIL_EXTRACTED");
 
       await sendExtractedEmail(
         result
@@ -2081,7 +2081,7 @@
   /*
    * Development helpers.
    *
-   * In the Outlook tab DevTools, select the BantAI extension content-script
+   * In the Outlook tab DevTools, select the Signalam extension content-script
    * execution context when necessary, then run:
    *
    * window.__BANTAI_OUTLOOK_EXTRACTOR__.extractOpenedEmail()
@@ -2099,7 +2099,7 @@
       debugMetadataCandidates
     });
 
-  console.info("[BantAI Outlook] EXTRACTOR_LOADED");
+  console.info("[Signalam Outlook] EXTRACTOR_LOADED");
 
   scheduleScanBurst();
 })();

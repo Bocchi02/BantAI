@@ -67,7 +67,7 @@ export default function DetectionDetailsModal({ item, detail, loading, error, on
     const visibleIndicators = (detail?.indicators || []).filter((indicator) => !isSenderRedactionOnly(indicator));
     const scopeMessage = fullContextAvailable
         ? isUrl
-            ? "This on-demand request sent only the website origin through the BantAI server. Paths, queries, fragments, and page content were not shared."
+            ? "This on-demand request sent only the website origin through the Signalam server. Paths, queries, fragments, and page content were not shared."
             : "This on-demand request included the email provider, sender, subject, and message body. Personal identifiers were redacted and long content was limited before Cloud AI; links and attachments were not opened."
         : isUrl
             ? "This explanation used the stored website origin only. Paths, queries, fragments, and page content were not shared."
@@ -113,10 +113,10 @@ export default function DetectionDetailsModal({ item, detail, loading, error, on
                 </div>
               </div>
             </div>) : detail ? (<div className="space-y-4">
-              {detail.status === "UNAVAILABLE" && <div className="p-3.5 rounded-lg bg-[#fff1d6] border border-[#ffdd99] text-xs text-[#664400]" role="status"><strong>Cloud AI is temporarily unavailable.</strong> The saved BantAI outcome shown above has not changed.</div>}
+              {detail.status === "UNAVAILABLE" && <div className="p-3.5 rounded-lg bg-[#fff1d6] border border-[#ffdd99] text-xs text-[#664400]" role="status"><strong>Cloud AI is temporarily unavailable.</strong> The saved Signalam outcome shown above has not changed.</div>}
               {!isUrl && <div className={cx("p-3.5 rounded-lg border text-xs flex items-start gap-2.5", bodyContextSent ? "bg-[#e8fadf]/70 border-[#c6f1af] text-[#2d5816]" : "bg-[#fff1d6]/70 border-[#ffdd99] text-[#664400]")} role="status">
                 <span className="mt-0.5" aria-hidden="true">{bodyContextSent ? "✓" : "!"}</span>
-                <div className="flex-1"><strong className="block font-semibold">{bodyContextSent ? "Email body included" : "Email body unavailable for this record"}</strong><span className="block mt-0.5 leading-relaxed">{bodyContextSent ? "Cloud AI received the message text after required privacy redaction." : "Open the email and then open BantAI once to restore its temporary message context."}</span>{!bodyContextSent && <button type="button" onClick={onRetry} className="mt-2 px-3 py-1.5 rounded-md bg-white border border-[#ffdd99] text-xs font-bold hover:bg-[#fff1d6] focus:outline-none focus:ring-2 focus:ring-[#ffab00]">Try again</button>}</div>
+                <div className="flex-1"><strong className="block font-semibold">{bodyContextSent ? "Email body included" : "Email body unavailable for this record"}</strong><span className="block mt-0.5 leading-relaxed">{bodyContextSent ? "Cloud AI received the message text after required privacy redaction." : "Open the email and then open Signalam once to restore its temporary message context."}</span>{!bodyContextSent && <button type="button" onClick={onRetry} className="mt-2 px-3 py-1.5 rounded-md bg-white border border-[#ffdd99] text-xs font-bold hover:bg-[#fff1d6] focus:outline-none focus:ring-2 focus:ring-[#ffab00]">Try again</button>}</div>
               </div>}
               <div className="p-4 rounded-lg bg-[#f5f5f9]/70 border border-[#e4e6e8]">
                 <div className="flex items-center gap-2 mb-2">

@@ -1,8 +1,8 @@
-BantAI v1.1.0 Remote Hybrid AI Decision-Support Architecture
+Signalam v1.1.0 Remote Hybrid AI Decision-Support Architecture
 
 PRODUCTION REQUEST PATH
 -----------------------
-Browser extension -> public HTTPS BantAI API (Caddy TLS gateway)
+Browser extension -> public HTTPS Signalam API (Caddy TLS gateway)
 Web dashboard -> same-origin /api/v1 hosting-worker proxy -> public HTTPS API
         -> authenticated account or revocable device credential
         -> platform API (activity, reporting, consent, transient context)

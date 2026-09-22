@@ -22,7 +22,7 @@ export function Logo({ compact = false, light = false, size = "md", className = 
       </div>
       {!compact && (<div className="flex flex-col">
           <span className={`${isSm ? "text-base sm:text-[17px]" : "text-xl"} font-bold tracking-tight leading-none ${light ? "text-white" : "text-[#04142F]"}`}>
-            BantAI
+            Signalam
           </span>
           <span className={`text-[10px] sm:text-[11px] font-medium tracking-wide uppercase mt-0.5 ${light ? "text-slate-300" : "text-slate-500"}`}>
             Intelligent Threat Protection

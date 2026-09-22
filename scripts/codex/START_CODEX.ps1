@@ -11,7 +11,7 @@ Set-Location $ProjectRoot
 python scripts\verify_project.py
 
 if ($LASTEXITCODE -ne 0) {
-    throw "BantAI verification failed. Fix the baseline before starting Codex."
+    throw "Signalam verification failed. Fix the baseline before starting Codex."
 }
 
 codex

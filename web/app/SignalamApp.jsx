@@ -55,7 +55,7 @@ function Application({ user, initialPath, onUserChanged, onSignedOut, registrati
       {page === "users" && user.role === "ADMIN" && <UsersPage currentUser={user}/>}
     </AppShell>);
 }
-export function BantAIApp({ initialPath }) {
+export function SignalamApp({ initialPath }) {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [startupError, setStartupError] = useState("");
@@ -78,7 +78,7 @@ export function BantAIApp({ initialPath }) {
         catch (reason) {
             setUser(null);
             if (!(reason instanceof ApiError) || reason.status !== 401) {
-                setStartupError(reason instanceof Error ? reason.message : "BantAI cannot reach the shared service.");
+                setStartupError(reason instanceof Error ? reason.message : "Signalam cannot reach the shared service.");
             }
         }
         finally {

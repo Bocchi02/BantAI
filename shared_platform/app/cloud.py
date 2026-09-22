@@ -166,7 +166,7 @@ def _correct_incoming_transfer_wording(
     if inaccurate_payment_claim:
         corrected["reasoning_summary"] = (
             "The email describes an incoming transfer and does not contain a clear request "
-            "for you to send money. BantAI cannot independently confirm that the notification is authentic."
+            "for you to send money. Signalam cannot independently confirm that the notification is authentic."
         )
         corrected["recommended_action"] = (
             "Confirm the transaction directly in the official banking app or website, without using links from the email."
@@ -180,7 +180,7 @@ def unavailable(reason: str = "PROVIDER_UNAVAILABLE") -> dict[str, Any]:
         "assessment": None,
         "confidence": None,
         "indicators": [],
-        "reasoning_summary": "Cloud AI Review could not be completed. Local BantAI checks are still available.",
+        "reasoning_summary": "Cloud AI Review could not be completed. Local Signalam checks are still available.",
         "recommended_action": "Use the server-model guidance and verify unexpected requests independently.",
         "failure_reason": reason,
     }
@@ -398,7 +398,7 @@ def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:
         "confidence": None,
         "indicators": [],
         "reasoning_summary": "The additional Cloud AI explanation is unavailable right now.",
-        "recommended_action": "Use the recorded BantAI result and try opening the explanation again later.",
+        "recommended_action": "Use the recorded Signalam result and try opening the explanation again later.",
         "failure_reason": failure_reason,
         "stored": False,
         "analysis_scope": payload.get("content_scope"),

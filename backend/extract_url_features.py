@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic, stateless lexical URL feature extraction for BantAI."""
+"""Deterministic, stateless lexical URL feature extraction for Signalam."""
 
 from __future__ import annotations
 

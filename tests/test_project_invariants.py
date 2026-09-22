@@ -30,7 +30,7 @@ class ProjectInvariantTests(unittest.TestCase):
 
         self.assertIn("gateway:", compose)
         self.assertIn("detector:", compose)
-        self.assertIn("image: bantai-detector:1.1.0", compose)
+        self.assertIn("image: signalam-detector:1.1.0", compose)
         self.assertNotIn('"8000:8000"', compose)
         self.assertNotIn('"8080:8080"', compose)
         self.assertIn('"80:80"', compose)
@@ -449,7 +449,7 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn('BANTAI_SUBMIT_URL_FEEDBACK', submit_handler)
         self.assertIn('url: review.url', submit_handler)
         self.assertIn('confirmed: true', submit_handler)
-        self.assertIn('BantAI could not submit feedback', submit_handler)
+        self.assertIn('Signalam could not submit feedback', submit_handler)
         self.assertNotIn('/companion/url-feedback', popup)
         self.assertIn('confirmed: Literal[True]', server)
         self.assertIn('/api/v1/url-reports/from-device-activity', platform)
@@ -473,8 +473,8 @@ class ProjectInvariantTests(unittest.TestCase):
         ]
         self.assertIn('Depends(admin_user)', export_endpoint)
         self.assertIn('candidate_type: Literal["URL", "EMAIL"]', export_endpoint)
-        self.assertIn('bantai-url-training-data', export_endpoint)
-        self.assertIn('bantai-email-training-manifest', export_endpoint)
+        self.assertIn('signalam-url-training-data', export_endpoint)
+        self.assertIn('signalam-email-training-manifest', export_endpoint)
         self.assertIn('RESTRICTED_TRAINING_PROCESS_ONLY', export_endpoint)
         self.assertNotIn('decrypt_text(candidate.body_ciphertext)', export_endpoint)
         self.assertNotIn('body_fingerprint', export_endpoint)
@@ -605,7 +605,7 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn('type="checkbox"', page)
         self.assertIn('confirmed: true', page)
         self.assertIn('Analyze pasted text', page)
-        self.assertIn('not a final BantAI email result', page)
+        self.assertIn('not a final Signalam email result', page)
         self.assertNotIn('localStorage', page)
         self.assertNotIn('sessionStorage', page)
 

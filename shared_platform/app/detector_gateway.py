@@ -43,9 +43,9 @@ class DetectorGateway:
                     json=payload,
                 )
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            raise DetectorUnavailable("BantAI server models are temporarily unavailable.") from exc
+            raise DetectorUnavailable("Signalam server models are temporarily unavailable.") from exc
         if response.status_code >= 500:
-            raise DetectorUnavailable("BantAI server models are temporarily unavailable.")
+            raise DetectorUnavailable("Signalam server models are temporarily unavailable.")
         if response.status_code >= 400:
             try:
                 detail = response.json().get("detail")

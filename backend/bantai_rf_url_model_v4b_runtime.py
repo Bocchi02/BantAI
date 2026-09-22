@@ -1,5 +1,5 @@
 """
-BantAI frozen Random Forest URL Model V4-B runtime feature extraction.
+Signalam frozen Random Forest URL Model V4-B runtime feature extraction.
 
 This module contains only the frozen V4-B inference feature pipeline.
 It does not train, retune, or modify the Random Forest model.

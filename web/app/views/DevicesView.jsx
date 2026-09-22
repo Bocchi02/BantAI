@@ -17,12 +17,12 @@ function DevicesPage() {
         return api("/devices")
             .then((data) => {
             if (!Array.isArray(data?.items))
-                throw new Error("BantAI received an invalid paired-device list.");
+                throw new Error("Signalam received an invalid paired-device list.");
             setDevices(data.items);
         })
             .catch((reason) => {
             setDevices([]);
-            setError(reason instanceof Error ? reason.message : "BantAI could not load paired devices.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not load paired devices.");
         })
             .finally(() => setLoading(false));
     }, []);
@@ -39,7 +39,7 @@ function DevicesPage() {
             setPairing(data);
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not create a pairing code.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not create a pairing code.");
         }
         finally {
             setGenerating(false);
@@ -54,7 +54,7 @@ function DevicesPage() {
             await load();
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : "BantAI could not revoke that device.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not revoke that device.");
         }
     };
     const copyCode = async () => {
@@ -68,7 +68,7 @@ function DevicesPage() {
         }
     };
     return (<>
-      <PageHeader eyebrow="BROWSER PROTECTION" title="Paired devices" description="Connect and revoke browser extensions authorized to use the BantAI server for this account."/>
+      <PageHeader eyebrow="BROWSER PROTECTION" title="Paired devices" description="Connect and revoke browser extensions authorized to use the Signalam server for this account."/>
       {error && <Notice type="error">{error}</Notice>}
       {message && <Notice type="success">{message}</Notice>}
       <div className="grid lg:grid-cols-12 gap-6">
@@ -83,7 +83,7 @@ function DevicesPage() {
             </div>
           </div>
           <p className="text-xs text-[#8592a3] mb-4 leading-relaxed">
-            Generate a one-time code and enter it in the BantAI browser extension. Codes expire in 5 minutes.
+            Generate a one-time code and enter it in the Signalam browser extension. Codes expire in 5 minutes.
           </p>
           {pairing ? (<div className="p-4 rounded-lg bg-[#f5f5f9] border border-[#d9dee3] text-center space-y-3">
               <span className="text-xs text-[#8592a3] uppercase font-bold tracking-wider block">Your 8-digit pairing code</span>
@@ -122,7 +122,7 @@ function DevicesPage() {
                       <LaptopIcon className="w-4 h-4"/>
                     </span>
                     <div className="min-w-0">
-                      <strong className="text-xs sm:text-sm font-semibold text-[#384551] block truncate">{device.label || "BantAI browser extension"}</strong>
+                      <strong className="text-xs sm:text-sm font-semibold text-[#384551] block truncate">{device.label || "Signalam browser extension"}</strong>
                       <small className="text-[#8592a3] block text-[11px]">Paired {niceDate(device.paired_at)} · Last active {niceDate(device.last_seen_at)}</small>
                     </div>
                   </div>

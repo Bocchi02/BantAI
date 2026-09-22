@@ -57,7 +57,7 @@ function ProfilePage({ user, onUpdateUser, onUserChanged, onLogout, onSignOut })
             setProfileMessage("Personal details updated.");
         }
         catch (reason) {
-            setProfileError(reason instanceof Error ? reason.message : "BantAI could not update your details.");
+            setProfileError(reason instanceof Error ? reason.message : "Signalam could not update your details.");
         }
         finally {
             setSavingProfile(false);
@@ -91,7 +91,7 @@ function ProfilePage({ user, onUpdateUser, onUserChanged, onLogout, onSignOut })
             setPasswordMessage("Password updated successfully.");
         }
         catch (reason) {
-            setPasswordError(reason instanceof Error ? reason.message : "BantAI could not update your password.");
+            setPasswordError(reason instanceof Error ? reason.message : "Signalam could not update your password.");
         }
         finally {
             setSavingPassword(false);
@@ -112,7 +112,7 @@ function ProfilePage({ user, onUpdateUser, onUserChanged, onLogout, onSignOut })
         }
         catch (reason) {
             setTrainingConsent(Boolean(consent?.enabled));
-            setConsentError(reason instanceof Error ? reason.message : "BantAI could not update your contribution preference.");
+            setConsentError(reason instanceof Error ? reason.message : "Signalam could not update your contribution preference.");
         }
         finally {
             setSavingConsent(false);
@@ -207,7 +207,7 @@ function ProfilePage({ user, onUpdateUser, onUserChanged, onLogout, onSignOut })
           {consentError && <Notice type="error">{consentError}</Notice>}
           {consentMessage && <Notice type="success">{consentMessage}</Notice>}
           <p className="text-xs text-[#646e78] leading-relaxed max-w-3xl mb-4">
-            Consenting users allow the BantAI server to randomly collect a small fraction of completed checks to help improve future model accuracy. Selected full URLs and email content may contain personal information. Stored content is encrypted and separate from human-approved labels.
+            Consenting users allow the Signalam server to randomly collect a small fraction of completed checks to help improve future model accuracy. Selected full URLs and email content may contain personal information. Stored content is encrypted and separate from human-approved labels.
           </p>
           <div className="p-4 rounded-lg bg-[#e0f8f2]/40 border border-[#bfe4dc] space-y-3 mb-4">
             <label className="flex items-start gap-3 cursor-pointer">

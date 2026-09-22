@@ -10,6 +10,9 @@ function approvedTrainingLabel(value) {
 function feedbackSourceLabel(value) {
     return value === "RECENT_DETECTION" ? "Detection review" : "Manual URL report";
 }
+function displayUrlModelVersion(value) {
+    return value === "BantAI RF Grouped v1.0.0" ? "Signalam URL detector v1.0.0" : value;
+}
 function collectionData(value) {
     const source = value && typeof value === "object" ? value : {};
     return {
@@ -77,7 +80,7 @@ function TrainingDataPage() {
             .then((response) => setData(normalizeTrainingData(response)))
             .catch((reason) => {
             setData(null);
-            setError(reason instanceof Error ? reason.message : "BantAI could not load the training-data inventory.");
+            setError(reason instanceof Error ? reason.message : "Signalam could not load the training-data inventory.");
         });
     }, [labelFilter, page]);
     useEffect(() => {
@@ -113,7 +116,7 @@ function TrainingDataPage() {
             setMessage(candidateType === "URL" ? "URL training data exported." : "Email training manifest exported. Email bodies and encrypted body values were not included.");
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : `BantAI could not export the ${candidateType.toLowerCase()} training data.`);
+            setError(reason instanceof Error ? reason.message : `Signalam could not export the ${candidateType.toLowerCase()} training data.`);
         }
         finally {
             setExporting(null);
@@ -140,7 +143,7 @@ function TrainingDataPage() {
                 : "Automatic email sample manifest exported. Email bodies were not included.");
         }
         catch (reason) {
-            setError(reason instanceof Error ? reason.message : `BantAI could not export the automatic ${sampleType.toLowerCase()} samples.`);
+            setError(reason instanceof Error ? reason.message : `Signalam could not export the automatic ${sampleType.toLowerCase()} samples.`);
         }
         finally {
             setExporting(null);
@@ -161,7 +164,7 @@ function TrainingDataPage() {
               <p className="text-[11px] text-[#8592a3] mt-0.5">{data ? `${data.urls.evidence_total} approved user ${data.urls.evidence_total === 1 ? "review" : "reviews"}` : "Loading evidence count..."}</p>
             </div>
           </div>
-          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#e7e7ff] text-[#696cff] border border-[#c3c4ff] self-start">{data?.urls.model_version || "BantAI RF Grouped v1.0.0"}</span>
+          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-[#e7e7ff] text-[#696cff] border border-[#c3c4ff] self-start">{displayUrlModelVersion(data?.urls.model_version || "BantAI RF Grouped v1.0.0")}</span>
         </article>
 
         <article className="sneat-card p-5 flex items-center justify-between">
@@ -214,7 +217,7 @@ function TrainingDataPage() {
         <LockIcon className="w-5 h-5 text-[#696cff] shrink-0"/>
         <div>
           <strong className="block font-bold">This inventory does not train the live models</strong>
-          <p className="text-[#646e78] mt-0.5">Approved URL records and encrypted email content remain de-identified references. Email bodies cannot be opened here, and live model training remains disabled. BantAI RF Grouped v1.0.0 stays in shadow mode.</p>
+          <p className="text-[#646e78] mt-0.5">Approved URL records and encrypted email content remain de-identified references. Email bodies cannot be opened here, and live model training remains disabled. The frozen URL detector v1.0.0 stays in shadow mode.</p>
           {data?.emails.provenance_note && <p className="text-[#646e78] mt-1"><strong>Model provenance:</strong> {data.emails.provenance_note}</p>}
         </div>
       </div>
