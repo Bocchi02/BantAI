@@ -15,3 +15,14 @@
 *.ini text eol=lf
 Dockerfile text eol=lf
 Caddyfile text eol=lf
+# Frozen model data must retain byte-for-byte manifest hashes on checkout.
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/calibration.json filter=lfs diff=lfs merge=lfs -text
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/config.json filter=lfs diff=lfs merge=lfs -text
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/EMAIL_MODEL_MANIFEST.json -text
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00001-of-00002.safetensors filter=lfs diff=lfs merge=lfs -text
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00002-of-00002.safetensors filter=lfs diff=lfs merge=lfs -text
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model.safetensors.index.json filter=lfs diff=lfs merge=lfs -text
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer.json filter=lfs diff=lfs merge=lfs -text
+models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer_config.json filter=lfs diff=lfs merge=lfs -text
+models/url_random_forest_grouped_v1/MODEL_MANIFEST.json -text
+models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib filter=lfs diff=lfs merge=lfs -text

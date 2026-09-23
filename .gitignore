@@ -19,15 +19,13 @@ venv/
 credentials*.json
 secrets*.json
 
-# Frozen model binaries stay outside Git and are transferred privately to the
-# deployment host. Track only the active model manifests for verification.
+# Exclude all model trees by default. Only the frozen active runtime artifacts
+# named below are eligible for the repository; large files use Git LFS.
 models/**
 !models/README.md
 !models/email_text_xlmr_v2/
 !models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/
-!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/EMAIL_MODEL_MANIFEST.json
 !models/url_random_forest_grouped_v1/
-!models/url_random_forest_grouped_v1/MODEL_MANIFEST.json
 *.safetensors
 *.joblib
 *.onnx
@@ -35,6 +33,16 @@ models/**
 *.pt
 *.pth
 *.pkl
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/calibration.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/config.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/EMAIL_MODEL_MANIFEST.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00001-of-00002.safetensors
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model-00002-of-00002.safetensors
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/model.safetensors.index.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer.json
+!models/email_text_xlmr_v2/full_taglish_xlmr_512_headtail_seed13/tokenizer_config.json
+!models/url_random_forest_grouped_v1/bantai_rf_grouped_v1.0.0.joblib
+!models/url_random_forest_grouped_v1/MODEL_MANIFEST.json
 
 # ML caches
 .cache/

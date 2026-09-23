@@ -1,9 +1,11 @@
-# Local frozen models
+# Frozen deployment models
 
-The repository tracks only manifests for the active frozen models. A fresh
-clone does not contain model binaries. Transfer the exact active artifacts to
-the paths below through a private channel before building the detector. Once
-the detector Python dependencies are installed, run
+The active frozen runtime models are selected for repository tracking. The
+email model payloads and RF `.joblib` artifact use Git LFS; their manifests
+use regular Git. Install Git LFS
+before cloning, then run `git lfs pull` in an existing clone so the actual
+binary files replace LFS pointers. A clone with only pointers cannot build
+the detector. Once the detector Python dependencies are installed, run
 `python scripts/verify_models.py` to check the manifests and hashes.
 
 Expected paths:
@@ -28,9 +30,10 @@ models/
     └── bantai_rf_url_model_v4b_optimized.joblib
 ```
 
-The active model binaries, legacy email checkpoint, deprecated V4-B RF model,
-optimizer/trainer state, and private datasets remain local and ignored by Git.
-Only the active runtime artifacts are needed by the production Docker build.
+Only the active runtime artifacts above should be committed. The legacy email
+checkpoint, deprecated V4-B RF model, optimizer/trainer state, and private
+datasets remain local and ignored by Git. Confirm redistribution rights before
+publishing the active model files, and account for Git LFS storage/bandwidth.
 
 The active URL artifact must have SHA-256
 `4fd1417fbca11cc60a1eb1f16e9f71c1db0d76f6ce042feae5abcc2bde528c4c`.
