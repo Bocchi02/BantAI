@@ -367,6 +367,7 @@ def check_remote_deployment() -> None:
     compose = read("docker-compose.yml")
     caddy = read("deploy/Caddyfile")
     detector_dockerfile = read("backend/Dockerfile")
+    web_dockerfile = read("web/Dockerfile")
     platform = read("shared_platform/app/main.py")
 
     require(
@@ -379,8 +380,18 @@ def check_remote_deployment() -> None:
         '"80:80"' in compose
         and '"443:443"' in compose
         and "BANTAI_API_DOMAIN" in caddy
-        and "reverse_proxy platform:8080" in caddy,
+        and "BANTAI_WEB_DOMAIN" in caddy
+        and "BANTAI_ROOT_DOMAIN" in caddy
+        and "reverse_proxy platform:8080" in caddy
+        and "reverse_proxy web:3000" in caddy,
         "Public HTTPS gateway configuration is incomplete.",
+    )
+    require(
+        "image: signalam-web:1.1.0" in compose
+        and 'BANTAI_API_ORIGIN: http://platform:8080' in compose
+        and 'CMD ["node", "server.js"]' in web_dockerfile
+        and "/app/.next/standalone" in web_dockerfile,
+        "Production dashboard container or private API proxy configuration is incomplete.",
     )
     require(
         "bantai_rf_grouped_v1.0.0.joblib" in detector_dockerfile

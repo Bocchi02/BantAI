@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { Logo } from "../BrandLogo";
 import { ShieldIcon, GlobeIcon, MailIcon, LockIcon, ArrowRightIcon, CheckIcon } from "../Icons";
 
@@ -12,7 +13,7 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
           <nav className="hidden md:flex items-center gap-8 text-xs sm:text-sm font-semibold text-[#646e78]" aria-label="Landing page navigation">
             <a href="#how-it-works" className="hover:text-[#696cff] transition-colors">How it works</a>
             <a href="#coverage" className="hover:text-[#696cff] transition-colors">What it checks</a>
-            <a href="#privacy" className="hover:text-[#696cff] transition-colors">Privacy</a>
+            <Link href="/privacy" className="hover:text-[#696cff] transition-colors">Privacy Policy</Link>
           </nav>
           <div className="flex items-center gap-3">
             {!authenticated && (<button className="text-xs sm:text-sm font-semibold text-[#646e78] hover:text-[#696cff] px-3 py-2 transition-colors" onClick={() => onNavigate("/login")}>
@@ -273,7 +274,7 @@ function LandingPage({ authenticated, registrationEnabled = false, onNavigate, }
         <div className="max-w-[1440px] 2xl:max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col sm:flex-row items-center justify-between gap-4">
           <Logo compact/>
           <p className="text-center">Decision support for safer browsing—not a guarantee that a website or email is legitimate.</p>
-          <span>© 2026 Signalam · v1.1</span>
+          <div className="flex items-center gap-3"><Link href="/privacy" className="font-semibold text-[#696cff] hover:underline">Privacy Policy</Link><span>© 2026 Signalam · v1.1</span></div>
         </div>
       </footer>
     </main>);

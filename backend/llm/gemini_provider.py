@@ -16,10 +16,12 @@ from .prompt_builder import (
     PASTED_MESSAGE_SYSTEM_INSTRUCTION,
     SYSTEM_INSTRUCTION,
     URL_SYSTEM_INSTRUCTION,
+    WEBSITE_PAGE_SYSTEM_INSTRUCTION,
     build_activity_explanation_prompt,
     build_pasted_message_review_prompt,
     build_review_prompt,
     build_url_review_prompt,
+    build_website_page_review_prompt,
 )
 from .schemas import LLMReview, validate_llm_response
 
@@ -219,6 +221,7 @@ class GeminiProvider(LLMProvider):
         client, types = self._client_and_types()
         is_url_review = payload.get("analysis_type") == "URL_CONTEXT"
         is_pasted_message_review = payload.get("analysis_type") == "PASTED_MESSAGE"
+        is_website_page_review = payload.get("analysis_type") == "WEBSITE_PAGE"
         is_activity_explanation = payload.get("analysis_type") == "ACTIVITY_EXPLANATION"
         if is_url_review:
             prompt = build_url_review_prompt(payload)
@@ -226,6 +229,9 @@ class GeminiProvider(LLMProvider):
         elif is_pasted_message_review:
             prompt = build_pasted_message_review_prompt(payload)
             system_instruction = PASTED_MESSAGE_SYSTEM_INSTRUCTION
+        elif is_website_page_review:
+            prompt = build_website_page_review_prompt(payload)
+            system_instruction = WEBSITE_PAGE_SYSTEM_INSTRUCTION
         elif is_activity_explanation:
             prompt = build_activity_explanation_prompt(payload)
             system_instruction = ACTIVITY_EXPLANATION_SYSTEM_INSTRUCTION
@@ -265,7 +271,7 @@ class GeminiProvider(LLMProvider):
                     512
                     if is_url_review
                     else 1536
-                    if is_pasted_message_review or is_activity_explanation
+                    if is_pasted_message_review or is_website_page_review or is_activity_explanation
                     else 1024
                 ),
             )

@@ -75,6 +75,11 @@ class PastedMessageReviewRequest(BaseModel):
         return value
 
 
+class WebsiteCheckRequest(StrictModel):
+    website_url: str = Field(min_length=1, max_length=2048)
+    confirmed: Literal[True]
+
+
 class ProfileUpdateRequest(StrictModel):
     first_name: str = Field(min_length=1, max_length=80)
     middle_name: str | None = Field(default=None, max_length=80)

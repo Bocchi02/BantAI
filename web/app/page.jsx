@@ -1,4 +1,6 @@
+import { connection } from "next/server";
 import { SignalamApp } from "./SignalamApp";
-export default function Home() {
+export default async function Home() {
+    await connection();
     return <SignalamApp initialPath="/"/>;
 }

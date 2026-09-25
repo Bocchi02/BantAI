@@ -1,7 +1,63 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
-import test from "node:test";
-import { proxyApiRequest } from "../worker/api-proxy.js";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
+import { after, before, test } from "node:test";
+import { proxyApiRequest } from "../server/api-proxy.js";
+
+const webRoot = fileURLToPath(new URL("../", import.meta.url));
+let nextServer;
+let serverOrigin;
+let serverOutput = "";
+
+async function unusedPort() {
+  return await new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
+}
+
+before(async () => {
+  const port = await unusedPort();
+  serverOrigin = `http://127.0.0.1:${port}`;
+  nextServer = spawn(
+    process.execPath,
+    ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(port)],
+    { cwd: webRoot, env: { ...process.env, NODE_ENV: "production" }, stdio: ["ignore", "pipe", "pipe"] },
+  );
+  nextServer.stdout.on("data", (chunk) => { serverOutput += chunk; });
+  nextServer.stderr.on("data", (chunk) => { serverOutput += chunk; });
+
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (nextServer.exitCode !== null)
+      throw new Error(`Next server exited during startup.\n${serverOutput}`);
+    try {
+      const response = await fetch(`${serverOrigin}/healthz`);
+      if (response.ok)
+        return;
+    } catch {
+      // The server is still starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for the Next server.\n${serverOutput}`);
+}, { timeout: 30_000 });
+
+after(async () => {
+  if (!nextServer || nextServer.exitCode !== null)
+    return;
+  const exited = new Promise((resolve) => nextServer.once("exit", resolve));
+  nextServer.kill();
+  await Promise.race([
+    exited,
+    new Promise((resolve) => setTimeout(resolve, 5_000)),
+  ]);
+});
 
 async function readReactSources(directory = new URL("../app/", import.meta.url)) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -17,15 +73,11 @@ async function readReactSources(directory = new URL("../app/", import.meta.url))
   return sources.join("\n");
 }
 
-async function render(path = "/", origin = "http://localhost") {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-  return worker.fetch(
-    new Request(`${origin}${path}`, { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
-    { waitUntil() {}, passThroughOnException() {} },
-  );
+async function render(path = "/", requestedOrigin = serverOrigin) {
+  const headers = { accept: "text/html" };
+  if (requestedOrigin.startsWith("https:"))
+    headers["x-forwarded-proto"] = "https";
+  return fetch(`${serverOrigin}${path}`, { headers });
 }
 
 test("same-origin API proxy preserves authenticated requests and requires HTTPS configuration", async () => {
@@ -44,6 +96,20 @@ test("same-origin API proxy preserves authenticated requests and requires HTTPS 
   assert.equal(forwarded.url, "https://api.example.test/api/v1/auth/me?synthetic=1");
   assert.equal(forwarded.headers.get("cookie"), "bantai_session=synthetic");
   assert.equal(forwarded.headers.get("origin"), "https://app.example.test");
+
+  const redirect = await proxyApiRequest(
+    new Request("https://app.example.test/api/v1/auth/continue"),
+    { BANTAI_API_ORIGIN: "https://api.example.test" },
+    async () => new Response(null, {
+      status: 303,
+      headers: {
+        location: "https://api.example.test/api/v1/auth/me?continued=1",
+        connection: "close",
+      },
+    }),
+  );
+  assert.equal(redirect.headers.get("location"), "/api/v1/auth/me?continued=1");
+  assert.equal(redirect.headers.get("connection"), null);
 
   const unavailable = await proxyApiRequest(
     new Request("https://app.example.test/api/v1/auth/me"),
@@ -66,6 +132,27 @@ test("same-origin API proxy preserves authenticated requests and requires HTTPS 
   );
   assert.equal(loopback.status, 200);
   assert.equal(loopbackUrl, "http://127.0.0.1:8080/api/v1/health");
+
+  let privatePlatformUrl = "";
+  const privatePlatform = await proxyApiRequest(
+    new Request("https://app.example.test/api/v1/ready"),
+    {
+      BANTAI_API_ORIGIN: "http://platform:8080",
+      BANTAI_ALLOW_PRIVATE_PLATFORM_ORIGIN: "true",
+    },
+    async (request) => {
+      privatePlatformUrl = request.url;
+      return Response.json({ status: "ready" });
+    },
+  );
+  assert.equal(privatePlatform.status, 200);
+  assert.equal(privatePlatformUrl, "http://platform:8080/api/v1/ready");
+
+  const privatePlatformDenied = await proxyApiRequest(
+    new Request("https://app.example.test/api/v1/ready"),
+    { BANTAI_API_ORIGIN: "http://platform:8080" },
+  );
+  assert.equal(privatePlatformDenied.status, 503);
 
   const nonLoopback = await proxyApiRequest(
     new Request("http://localhost:3000/api/v1/health"),
@@ -115,6 +202,7 @@ test("server-renders the Signalam public and account experience", async () => {
   assert.equal(landingResponse.headers.get("x-frame-options"), "DENY");
   assert.equal(landingResponse.headers.get("strict-transport-security"), null);
   const landingHtml = await landingResponse.text();
+  assert.match(landingHtml, /nonce="[^"]+"/);
   assert.match(landingHtml, /Clear warnings\. Private by design\./i);
   assert.match(landingHtml, /Sign in to Signalam/i);
   assert.doesNotMatch(landingHtml, /Create account|Create your Signalam account/i);
@@ -128,6 +216,20 @@ test("server-renders the Signalam public and account experience", async () => {
   assert.doesNotMatch(html, /Get started with Signalam/i);
   assert.doesNotMatch(html, /Forgot password|email verification|account recovery/i);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
+});
+
+test("publishes a complete privacy policy without requiring an account", async () => {
+  const response = await render("/privacy");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Signalam Privacy Policy/i);
+  assert.match(html, /Effective date:[\s\S]{0,50}September 23, 2026/i);
+  assert.match(html, /Information we handle/i);
+  assert.match(html, /Cloud AI review/i);
+  assert.match(html, /Optional reports and training data/i);
+  assert.match(html, /Routine activity, submitted reports, and automatic training samples are removed after 90 days/i);
+  assert.match(html, /does not provide a self-service account deletion control/i);
+  assert.doesNotMatch(html, /GEMINI_API_KEY|BANTAI_ENCRYPTION_KEY|mysql\+pymysql/i);
 });
 
 test("landing page explains scope, privacy, and non-guarantee outcomes", async () => {

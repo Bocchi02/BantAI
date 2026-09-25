@@ -9,6 +9,8 @@ import AuthScreen from "./views/AuthView";
 import DashboardPage from "./views/DashboardView";
 import ActivityPage from "./views/ActivityView";
 import MessageReviewPage from "./views/MessageReviewView";
+import WebsiteCheckPage from "./views/WebsiteCheckView";
+import PrivacyPolicyPage from "./views/PrivacyPolicyView";
 import UrlReportsPage from "./views/UrlReportsView";
 import EmailReportsPage from "./views/EmailReportsView";
 import DevicesPage from "./views/DevicesView";
@@ -23,7 +25,7 @@ import { registrationEnabledFromConfig } from "./registration";
 
 function Application({ user, initialPath, onUserChanged, onSignedOut, registrationEnabled }) {
     const initialPage = (initialPath.split("/")[1] || "dashboard");
-    const allowed = useMemo(() => user.role === "ADMIN" ? ["dashboard", "activity", "message-review", "reports", "email-reports", "devices", "profile", "help", "admin", "review-reports", "admin-email-reports", "training-data", "users"] : ["dashboard", "activity", "message-review", "reports", "email-reports", "devices", "profile", "help"], [user.role]);
+    const allowed = useMemo(() => user.role === "ADMIN" ? ["dashboard", "activity", "website-check", "message-review", "reports", "email-reports", "devices", "profile", "help", "admin", "review-reports", "admin-email-reports", "training-data", "users"] : ["dashboard", "activity", "website-check", "message-review", "reports", "email-reports", "devices", "profile", "help"], [user.role]);
     const [page, setPage] = useState(allowed.includes(initialPage) ? initialPage : "dashboard");
     const navigate = (next) => { history.pushState({}, "", `/${next}`); setPage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
     const logout = async () => {
@@ -43,6 +45,7 @@ function Application({ user, initialPath, onUserChanged, onSignedOut, registrati
       {page === "dashboard" && <DashboardPage onViewActivity={() => navigate("activity")} onPairDevice={() => navigate("devices")} onOpenHelp={() => navigate("help")}/>}
       {page === "activity" && <ActivityPage />}
       {page === "message-review" && <MessageReviewPage />}
+      {page === "website-check" && <WebsiteCheckPage />}
       {page === "reports" && <UrlReportsPage />}
       {page === "email-reports" && <EmailReportsPage />}
       {page === "devices" && <DevicesPage />}
@@ -96,6 +99,8 @@ export function SignalamApp({ initialPath }) {
     }, []);
     if (path === "/")
         return <LandingPage authenticated={Boolean(user)} registrationEnabled={registrationEnabled} onNavigate={navigatePublic}/>;
+    if (path === "/privacy")
+        return <PrivacyPolicyPage authenticated={Boolean(user)} onNavigate={navigatePublic}/>;
     if (loading)
         return <LoadingPage />;
     if (startupError)

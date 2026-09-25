@@ -1,4 +1,5 @@
 const nextConfig = {
-/* config options here */
+    output: "standalone",
+    poweredByHeader: false,
 };
 export default nextConfig;

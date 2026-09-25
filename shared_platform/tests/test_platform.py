@@ -37,6 +37,7 @@ from shared_platform.app.models import (
 )
 from shared_platform.app.security import decrypt_text, encrypt_text, hash_password, token_hash
 from shared_platform.app.rate_limit import consume_limit, trusted_client_address
+from shared_platform.app.website_fetch import WebsiteFetchError, WebsitePage
 
 
 class PlatformTests(unittest.TestCase):
@@ -92,6 +93,43 @@ class PlatformTests(unittest.TestCase):
         encrypted = encrypt_text(clear)
         self.assertNotIn(clear, encrypted)
         self.assertEqual(clear, decrypt_text(encrypted))
+
+    def test_website_check_requires_login_csrf_and_explicit_consent(self) -> None:
+        payload = {"website_url": "https://example.com/page", "confirmed": True}
+        unauthenticated = self.client.post("/api/v1/website-check", json=payload)
+        self.assertEqual(401, unauthenticated.status_code)
+        self.login("user@example.com", "correct horse battery staple")
+        self.assertEqual(403, self.client.post("/api/v1/website-check", json=payload).status_code)
+        self.assertEqual(422, self.client.post(
+            "/api/v1/website-check", headers=self.csrf(),
+            json={**payload, "confirmed": False},
+        ).status_code)
+        page = WebsitePage("https://example.com", "Example", "A synthetic page snapshot. " * 8, False)
+        with patch("shared_platform.app.main.fetch_website", return_value=page) as fetch, patch(
+            "shared_platform.app.main.review_website_page",
+            return_value={"status": "COMPLETE", "assessment": "NEEDS_CAUTION", "checked_origin": page.origin},
+        ) as review:
+            response = self.client.post("/api/v1/website-check", headers=self.csrf(), json=payload)
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("NEEDS_CAUTION", response.json()["assessment"])
+        fetch.assert_called_once_with(payload["website_url"])
+        review.assert_called_once_with(page)
+        with SessionLocal() as db:
+            self.assertEqual(0, db.scalar(select(func.count(ActivityEvent.id))))
+
+    def test_website_check_fetch_failure_never_calls_cloud_or_assigns_safe(self) -> None:
+        self.login("user@example.com", "correct horse battery staple")
+        with patch("shared_platform.app.main.fetch_website", side_effect=WebsiteFetchError("Page unavailable.")), patch(
+            "shared_platform.app.main.review_website_page"
+        ) as review:
+            response = self.client.post(
+                "/api/v1/website-check", headers=self.csrf(),
+                json={"website_url": "https://example.com", "confirmed": True},
+            )
+        self.assertEqual(200, response.status_code, response.text)
+        self.assertEqual("UNAVAILABLE", response.json()["status"])
+        self.assertIsNone(response.json()["assessment"])
+        review.assert_not_called()
 
     def test_unknown_account_and_wrong_password_have_same_failure_response(self) -> None:
         unknown = self.client.post(

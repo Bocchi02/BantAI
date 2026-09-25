@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     environment:
       BANTAI_API_DOMAIN: ${BANTAI_API_DOMAIN:?Set the public Signalam API domain}
+      BANTAI_WEB_DOMAIN: ${BANTAI_WEB_DOMAIN:?Set the public Signalam dashboard domain}
+      BANTAI_ROOT_DOMAIN: ${BANTAI_ROOT_DOMAIN:?Set the public Signalam root domain}
     ports:
       - "80:80"
       - "443:443"
@@ -14,6 +16,45 @@ services:
     depends_on:
       platform:
         condition: service_healthy
+    networks:
+      - edge
+
+  web:
+    image: signalam-web:1.1.0
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /app/.next/cache:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        NEXT_PUBLIC_BANTAI_API_URL: /api/v1
+        NEXT_PUBLIC_SITE_URL: ${BANTAI_WEB_ORIGIN:?Set the HTTPS dashboard origin}
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      BANTAI_API_ORIGIN: http://platform:8080
+      BANTAI_ALLOW_PRIVATE_PLATFORM_ORIGIN: "true"
+    expose:
+      - "3000"
+    depends_on:
+      platform:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 20s
     networks:
       - edge
 

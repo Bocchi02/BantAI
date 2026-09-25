@@ -16,9 +16,12 @@ from backend.llm.gemini_provider import GeminiProvider
 from backend.llm.redaction import redact_text, sender_parts, truncate_preserving_ends
 from backend.llm.authentication import minimize_authentication
 
+from .website_fetch import WebsitePage
+
 
 PASTED_MESSAGE_MODEL = "gemini-3.5-flash-lite"
 PASTED_MESSAGE_MAX_CLOUD_CHARS = 7000
+WEBSITE_PAGE_MAX_CLOUD_CHARS = 9000
 ACTIVITY_METADATA_MAX_CLOUD_CHARS = 800
 ACTIVITY_EMAIL_MAX_CLOUD_CHARS = 7000
 ACTIVITY_URL_MAX_CLOUD_CHARS = 512
@@ -320,6 +323,69 @@ def review_pasted_message(message: str) -> dict[str, Any]:
         "redacted_before_ai": True,
         "analysis_scope": "PASTED_TEXT_ONLY",
     }
+
+
+def review_website_page(page: WebsitePage) -> dict[str, Any]:
+    """Review one public page snapshot without storing its address or content."""
+
+    def hide_page_addresses(value: str) -> str:
+        # A page may print its own full address (including paths and queries)
+        # in its title or visible text. Keep those out of the provider prompt.
+        return re.sub(
+            r"\b(?:https?://|www\.)[^\s<>\"']+",
+            "[WEB_ADDRESS_REDACTED]",
+            value,
+            flags=re.IGNORECASE,
+        )
+
+    page_text = hide_page_addresses(page.visible_text)
+    redacted_text = redact_text(page_text)
+    minimized_text = truncate_preserving_ends(
+        redacted_text,
+        WEBSITE_PAGE_MAX_CLOUD_CHARS,
+    )
+    unavailable = {
+        "status": "UNAVAILABLE",
+        "assessment": None,
+        "confidence": None,
+        "indicators": [],
+        "reasoning_summary": "Cloud AI could not finish this website content check.",
+        "recommended_action": "Do not enter sensitive information until you verify the website independently.",
+        "stored": False,
+        "redacted_before_ai": True,
+        "analysis_scope": "PUBLIC_PAGE_SNAPSHOT",
+        "checked_origin": page.origin,
+        "content_truncated": page.truncated or len(redacted_text) > WEBSITE_PAGE_MAX_CLOUD_CHARS,
+    }
+    try:
+        provider = GeminiProvider(
+            api_key=os.getenv("GEMINI_API_KEY", ""),
+            model=PASTED_MESSAGE_MODEL,
+            fallback_model="",
+        )
+        if not provider.available:
+            return {**unavailable, "failure_reason": "PROVIDER_UNAVAILABLE"}
+        result = provider.review({
+            "analysis_type": "WEBSITE_PAGE",
+            "url_origin": page.origin,
+            "page_title": redact_text(hide_page_addresses(page.title)),
+            "page_text": minimized_text,
+            "content_truncated": unavailable["content_truncated"],
+        })
+        return {
+            "status": "COMPLETE",
+            **result.model_dump(),
+            "stored": False,
+            "redacted_before_ai": True,
+            "analysis_scope": "PUBLIC_PAGE_SNAPSHOT",
+            "checked_origin": page.origin,
+            "content_truncated": unavailable["content_truncated"],
+        }
+    except LLMProviderError as exc:
+        failure_reason = getattr(exc, "reason_code", "PROVIDER_UNAVAILABLE")
+    except Exception:
+        failure_reason = "PROVIDER_UNAVAILABLE"
+    return {**unavailable, "failure_reason": failure_reason}
 
 
 def explain_activity(payload: dict[str, Any]) -> dict[str, Any]:

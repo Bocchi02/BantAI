@@ -24,6 +24,7 @@ function AppShell({ user, page, navigate, children }) {
   const nav = [
     { id: "dashboard", icon: LayoutDashboardIcon, label: "Dashboard" },
     { id: "activity", icon: ActivityIcon, label: "Activity" },
+    { id: "website-check", icon: GlobeIcon, label: "AI Website Check" },
     { id: "message-review", icon: SparklesIcon, label: "AI Message Check" },
     { id: "reports", icon: GlobeIcon, label: "URL Reports" },
     { id: "email-reports", icon: MailIcon, label: "Email Reports" },

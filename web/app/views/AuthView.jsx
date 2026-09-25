@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Logo } from "../BrandLogo";
@@ -69,6 +70,9 @@ function AuthLayout({ children, eyebrow, title, description }) {
             {description}
           </p>
           {children}
+          <p className="mt-6 pt-4 border-t border-[#e4e6e8] text-center text-[11px] text-[#8592a3]">
+            By using Signalam, you acknowledge how information is handled in the <Link href="/privacy" className="font-semibold text-[#696cff] hover:underline focus:outline-none focus:ring-2 focus:ring-[#696cff]/30 rounded-sm">Privacy Policy</Link>.
+          </p>
         </div>
       </section>
     </main>

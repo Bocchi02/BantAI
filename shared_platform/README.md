@@ -37,6 +37,14 @@ activity is normalized to scheme, hostname, and optional port before
 encryption. A separate, explicit email-report workflow may accept a body only
 after the user confirms that it may be retained for future training review.
 
+`POST /api/v1/website-check` is an authenticated, CSRF-protected, explicitly
+confirmed on-demand page check. It accepts a pasted public URL, pins the
+connection to a validated public DNS result, fetches only one bounded HTML or
+plain-text response, and never follows redirects or page links. Only the URL
+origin and redacted readable text are sent to cloud AI. No page input or result
+is added to activity or training data; retrieval or cloud failure returns no
+verdict. This flow is independent of automatic extension URL detection.
+
 The dashboard's **More details** action is a separate no-storage exception.
 The platform keeps a bounded set of recent raw inputs in process memory only.
 When a signed-in user requests an explanation, the server reuses the matching

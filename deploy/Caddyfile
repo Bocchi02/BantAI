@@ -25,3 +25,43 @@
         -Server
     }
 }
+
+{$BANTAI_WEB_DOMAIN} {
+    encode zstd gzip
+
+    request_body {
+        max_size 256KB
+    }
+
+    reverse_proxy web:3000 {
+        # The Node proxy forwards this trusted identity to the private
+        # platform API. Never preserve a browser-supplied forwarding chain.
+        header_up -X-Forwarded-For
+        header_up X-Forwarded-For {remote_host}
+        header_up -Forwarded
+        header_up -X-Real-IP
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 50s
+        }
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        X-Frame-Options "DENY"
+        -Server
+    }
+}
+
+{$BANTAI_ROOT_DOMAIN}, www.{$BANTAI_ROOT_DOMAIN} {
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    redir https://{$BANTAI_WEB_DOMAIN}{uri} permanent
+}

@@ -108,13 +108,13 @@ def rate_limit_keys(
         authorization = headers.get(b"authorization", b"").decode("latin-1", errors="ignore")
         return [(f"device:{path}:{token_hash(authorization)}", detection_limit)]
 
-    is_message_review = path == "/api/v1/message-review"
+    is_message_review = path in {"/api/v1/message-review", "/api/v1/website-check"}
     is_cloud_review = path.startswith("/api/v1/cloud-review/")
     if is_message_review or is_cloud_review:
         authorization = headers.get(b"authorization", b"").decode("latin-1", errors="ignore")
         cookie = headers.get(b"cookie", b"").decode("latin-1", errors="ignore")
         credential = authorization or cookie or client_address
-        limit = 20 if is_message_review else 120
+        limit = 10 if path == "/api/v1/website-check" else 20 if is_message_review else 120
         return [(f"authenticated:{path}:{token_hash(credential)}", limit)]
     return []
 

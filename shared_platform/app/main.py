@@ -24,6 +24,7 @@ from .cloud import minimize_authentication
 from .cloud import prepare_direct_email_review_payload
 from .cloud import review as cloud_review
 from .cloud import review_pasted_message
+from .cloud import review_website_page
 from .config import settings
 from .detector_gateway import DetectorUnavailable, detector_gateway
 from .database import Base, SessionLocal, engine, get_db
@@ -88,12 +89,14 @@ from .schemas import (
     UrlReportCreateRequest,
     UrlReportReviewRequest,
     UserView,
+    WebsiteCheckRequest,
     require_strong_password,
 )
 from .security import DUMMY_PASSWORD_HASH, blind_index, decrypt_text, encrypt_text, hash_password, pairing_code, random_token, token_hash, verify_password
 from .rate_limit import RateLimitUnavailable, consume_limit, rate_limit_keys, trusted_client_address
 from .security_events import emit as emit_security_event
 from .transient_context import transient_detections
+from .website_fetch import InvalidWebsiteAddress, WebsiteFetchError, fetch_website
 
 
 EMAIL_IN_USE_MESSAGE = "This email is already in use."
@@ -2120,6 +2123,36 @@ def pasted_message_review(
     current: CurrentWebUser = Depends(csrf_protected),
 ) -> dict:
     result = review_pasted_message(payload.message)
+    if result.get("status") == "UNAVAILABLE":
+        emit_security_event("CLOUD_PROVIDER_UNAVAILABLE", outcome="degraded", principal=current.user.id, request_id=request.state.security_request_id, reason="provider_unavailable")
+    return result
+
+
+@app.post("/api/v1/website-check")
+def website_check(
+    request: Request,
+    payload: WebsiteCheckRequest,
+    current: CurrentWebUser = Depends(csrf_protected),
+) -> dict:
+    """Explicit one-page cloud check; never an extension URL detection result."""
+
+    try:
+        page = fetch_website(payload.website_url)
+    except InvalidWebsiteAddress as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except WebsiteFetchError as exc:
+        return {
+            "status": "UNAVAILABLE",
+            "assessment": None,
+            "confidence": None,
+            "indicators": [],
+            "reasoning_summary": str(exc),
+            "recommended_action": "Check the address carefully and try again later. No safety verdict was assigned.",
+            "analysis_scope": "PUBLIC_PAGE_SNAPSHOT",
+            "stored": False,
+            "failure_reason": "PAGE_UNAVAILABLE",
+        }
+    result = review_website_page(page)
     if result.get("status") == "UNAVAILABLE":
         emit_security_event("CLOUD_PROVIDER_UNAVAILABLE", outcome="degraded", principal=current.user.id, request_id=request.state.security_request_id, reason="provider_unavailable")
     return result

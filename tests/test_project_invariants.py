@@ -25,12 +25,16 @@ class ProjectInvariantTests(unittest.TestCase):
     def test_remote_stack_keeps_detector_and_database_private(self) -> None:
         compose = read("docker-compose.yml")
         dockerfile = read("backend/Dockerfile")
+        web_dockerfile = read("web/Dockerfile")
         dockerignore = read(".dockerignore")
         caddy = read("deploy/Caddyfile")
 
         self.assertIn("gateway:", compose)
+        self.assertIn("web:", compose)
         self.assertIn("detector:", compose)
+        self.assertIn("image: signalam-web:1.1.0", compose)
         self.assertIn("image: signalam-detector:1.1.0", compose)
+        self.assertNotIn('"3000:3000"', compose)
         self.assertNotIn('"8000:8000"', compose)
         self.assertNotIn('"8080:8080"', compose)
         self.assertIn('"80:80"', compose)
@@ -48,6 +52,11 @@ class ProjectInvariantTests(unittest.TestCase):
         self.assertIn('"--no-access-log"', dockerfile)
         self.assertIn("request_body", caddy)
         self.assertIn("reverse_proxy platform:8080", caddy)
+        self.assertIn("reverse_proxy web:3000", caddy)
+        self.assertIn("BANTAI_WEB_DOMAIN", caddy)
+        self.assertIn("BANTAI_ROOT_DOMAIN", caddy)
+        self.assertIn('CMD ["node", "server.js"]', web_dockerfile)
+        self.assertIn("/app/.next/standalone", web_dockerfile)
         self.assertIn("optimizer.pt", dockerignore)
         self.assertNotIn("!models/url_random_forest_v4b", dockerignore)
 
@@ -74,6 +83,8 @@ class ProjectInvariantTests(unittest.TestCase):
             "DashboardView.jsx",
             "ActivityView.jsx",
             "MessageReviewView.jsx",
+            "WebsiteCheckView.jsx",
+            "PrivacyPolicyView.jsx",
             "UrlReportsView.jsx",
             "EmailReportsView.jsx",
             "DevicesView.jsx",

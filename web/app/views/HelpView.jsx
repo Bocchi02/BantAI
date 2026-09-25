@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 import { AlertTriangleIcon, GlobeIcon, HelpCircleIcon, LaptopIcon, MailIcon, ShieldCheckIcon } from "../Icons";
 import { PageHeader, StatusBadge } from "../components/ViewShared";
@@ -17,7 +18,7 @@ function HelpCard({ icon: Icon, title, children }) {
 
 function HelpView({ onNavigate, registrationEnabled = false }) {
     return (<>
-      <PageHeader eyebrow="GUIDED SETUP" title="Help and setup" description="Set up each Signalam layer, understand its limits, and recover safely when a service is unavailable."/>
+      <PageHeader eyebrow="GUIDED SETUP" title="Help and setup" description="Set up each Signalam layer, understand its limits, and recover safely when a service is unavailable." actions={<Link href="/privacy" className="inline-flex items-center px-3.5 py-2 rounded-md border border-[#d9dee3] bg-white text-xs font-semibold text-[#646e78] hover:bg-[#f5f5f9] hover:text-[#696cff] focus:outline-none focus:ring-2 focus:ring-[#696cff]/30">Privacy Policy</Link>}/>
 
       <div className="p-4 rounded-lg bg-[#fff1d6] border border-[#ffdd99] flex items-start gap-3 text-sm text-[#664400] mb-6" role="note">
         <AlertTriangleIcon className="w-5 h-5 text-[#ffab00] shrink-0 mt-0.5" aria-hidden="true"/>
@@ -56,6 +57,11 @@ function HelpView({ onNavigate, registrationEnabled = false }) {
           <p>Opened-message extraction is limited to Gmail, Outlook, and Yahoo Mail. The trusted extension service worker sends visible opened-email text over HTTPS to the Signalam server; it does not open links or attachments.</p>
           <p>Automatic email cloud review receives bounded context after detectable email addresses, phone numbers, one-time codes, card numbers, and account identifiers are redacted. The provider key stays on the backend.</p>
           <p>Routine activity stores provider, sender, subject, result, and aggregate diagnostics—not the email body. Raw inference input is transient. Explicit reports and optional sampled contributions remain separate consented, encrypted workflows.</p>
+        </HelpCard>
+
+        <HelpCard icon={GlobeIcon} title="5. Optional website content check">
+          <p>The extension checks only the active website address. For a separate, explicit page-content review, open <button type="button" className="font-semibold text-[#696cff] hover:underline" onClick={() => onNavigate("website-check")}>AI Website Check</button>, paste a public page address, and confirm before submitting.</p>
+          <p>This on-demand check retrieves one HTML or text page without following redirects or opening links. It sends the website origin and privacy-redacted readable text to cloud AI, but not the path or query. It does not run the frozen URL model or save a result to activity history.</p>
         </HelpCard>
       </div>
 

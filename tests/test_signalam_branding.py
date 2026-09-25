@@ -19,7 +19,7 @@ class SignalamBrandingTests(unittest.TestCase):
             ROOT / "web/app/BrandLogo.jsx",
             ROOT / "web/app/layout.jsx",
             ROOT / "web/app/views/LandingView.jsx",
-            ROOT / "web/worker/api-proxy.js",
+            ROOT / "web/server/api-proxy.js",
         )
         for path in public_sources:
             with self.subTest(path=path.name):

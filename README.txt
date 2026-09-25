@@ -47,6 +47,18 @@ reports, and opted-in automatic samples remain separate explicit workflows.
 The extension never scans embedded links, HTML, page content, redirects, TLS,
 attachments, or unsupported mail providers.
 
+The separate AI Website Check page is an explicit, signed-in, consented
+exception for checking one pasted public page. The platform retrieves only that
+page, without redirects or subresources; the cloud reviewer sees the origin
+and bounded, privacy-redacted readable text, not the browsing path or query.
+This cloud-only snapshot does not use or change the frozen URL model and is not
+stored in activity history. Unreadable or unreachable pages receive no verdict.
+
+The public `/privacy` page documents the data handled by routine checks,
+on-demand cloud features, reports, optional training contribution, retention,
+administrator access, essential cookies, and user controls. Keep this policy
+aligned with code and deployment behavior whenever any of those flows change.
+
 SERVER DEPLOYMENT
 -----------------
 The production Compose stack contains:
@@ -78,6 +90,8 @@ Copy `.env.example` to `.env` on the server and replace every placeholder. A
 real deployment requires:
 
   BANTAI_API_DOMAIN
+  BANTAI_WEB_DOMAIN
+  BANTAI_ROOT_DOMAIN
   BANTAI_WEB_ORIGIN
   BANTAI_EXTENSION_ORIGIN
   BANTAI_DB_RUNTIME_PASSWORD
@@ -91,17 +105,16 @@ The domain must resolve to the server and ports 80/443 must be reachable so
 Caddy can obtain and renew a trusted certificate. Then run:
 
   docker compose config
-  docker compose build detector migration platform
+  docker compose build detector migration platform web
   docker compose up -d
   docker compose ps
   curl https://<BANTAI_API_DOMAIN>/live
   curl https://<BANTAI_API_DOMAIN>/ready
 
-The separately hosted web interface must set `BANTAI_API_ORIGIN` to
-`https://<BANTAI_API_DOMAIN>` and keep `NEXT_PUBLIC_BANTAI_API_URL=/api/v1`.
-Its worker proxies that same-origin path to the API so session and CSRF cookies
-work without exposing backend credentials. Configure the platform's
-`BANTAI_WEB_ORIGIN` to the exact hosted dashboard origin. Set
+The production web container keeps `NEXT_PUBLIC_BANTAI_API_URL=/api/v1` and
+privately proxies that same-origin path to the platform API so session and CSRF
+cookies work without exposing backend credentials. Configure `BANTAI_WEB_DOMAIN`
+and the platform's `BANTAI_WEB_ORIGIN` for the exact dashboard hostname. Set
 `BANTAI_TRUSTED_PROXY_CIDRS` to the private CIDR or address from which Caddy
 connects to the platform. This value is required because the rate limiter only
 trusts forwarded client identity from that configured proxy source; replace the
