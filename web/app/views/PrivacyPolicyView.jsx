@@ -11,7 +11,7 @@ import {
   ShieldIcon,
 } from "../Icons";
 
-const EFFECTIVE_DATE = "September 23, 2026";
+const EFFECTIVE_DATE = "September 26, 2026";
 
 const sections = [
   ["overview", "Overview"],
@@ -114,7 +114,7 @@ export default function PrivacyPolicyPage({ authenticated = false, onNavigate })
 
           <PolicySection id="information" title="Information we handle" icon={DatabaseIcon}>
             <PolicyList>
-              <PolicyItem><strong>Account information:</strong> your first name, optional middle name, last name, normalized email address, password hash, role, account status, registration date, and last sign-in time.</PolicyItem>
+              <PolicyItem><strong>Account information:</strong> your first name, optional middle name, last name, normalized email address, password hash, role, account status, verification time, registration date, and last sign-in time. One-time email verification and password reset token hashes are kept until they expire or are used.</PolicyItem>
               <PolicyItem><strong>Session and device information:</strong> protected session and CSRF credentials, paired-device credential hashes, device labels, pairing and last-seen times, revocation state, and limited security or operational events.</PolicyItem>
               <PolicyItem><strong>Website detection:</strong> the exact active-tab address is sent over HTTPS for transient server detection. Routine activity history stores only its normalized origin—scheme, hostname, and optional port—plus the outcome, timing, device, and cloud status. Paths, queries, fragments, HTML, and page content are not kept in routine history.</PolicyItem>
               <PolicyItem><strong>Email detection:</strong> on supported Gmail, Outlook, and Yahoo Mail pages, the visible provider, sender, subject, and message content are sent for transient checking. Routine history stores the provider, sender, subject, outcome, timing, device, and cloud status. It does not store the routine email body.</PolicyItem>
@@ -154,6 +154,7 @@ export default function PrivacyPolicyPage({ authenticated = false, onNavigate })
 
           <PolicySection id="sharing" title="Sharing and administrator access" icon={ShieldIcon}>
             <p>Information is processed by the Signalam deployment’s application, database, detector infrastructure, and cloud AI provider where a cloud review is required. The software does not include advertising, behavioral-advertising cookies, or a workflow for selling personal information.</p>
+            <p>Google processes the sender and recipient addresses and the transactional message needed for account verification or password recovery through Gmail SMTP. These messages are not marketing emails. Signalam does not use authentication emails for advertising.</p>
             <p>Administrators can manage account status and view aggregate detection statistics. They cannot browse an individual user’s routine website or email activity. Report-review screens expose only the information required for the submitted report and do not identify the reporting user. Encrypted email bodies are not available through administrator interfaces or exports.</p>
           </PolicySection>
 
@@ -161,7 +162,7 @@ export default function PrivacyPolicyPage({ authenticated = false, onNavigate })
             <PolicyList>
               <PolicyItem>Routine activity, submitted reports, and automatic training samples are removed after 90 days by the current retention process.</PolicyItem>
               <PolicyItem>Approved, de-identified training candidates may remain beyond ordinary report retention for a future separately authorized training cycle.</PolicyItem>
-              <PolicyItem>Single-use pairing codes expire after five minutes. Expired or revoked sessions and consumed or expired pairing codes are cleaned up.</PolicyItem>
+              <PolicyItem>Single-use pairing codes expire after five minutes. Email verification links expire after 24 hours, and password reset links after 30 minutes. Expired or used account tokens, revoked sessions, and pairing codes are cleaned up.</PolicyItem>
               <PolicyItem>Account and paired-device records remain while needed to operate or administer the account. Revoked devices remain marked as revoked for account security and audit context.</PolicyItem>
             </PolicyList>
           </PolicySection>

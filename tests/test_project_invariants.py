@@ -22,6 +22,29 @@ def read_web_interface() -> str:
 
 
 class ProjectInvariantTests(unittest.TestCase):
+    def test_account_email_uses_gmail_smtp_only(self) -> None:
+        mailer = read("shared_platform/app/account_mail.py")
+        config = read("shared_platform/app/config.py")
+        platform = read("shared_platform/app/main.py")
+        privacy = read("web/app/views/PrivacyPolicyView.jsx")
+        for relative in (
+            ".env.example",
+            "shared_platform/.env.example",
+            "docker-compose.local.yml",
+            "docker-compose.yml",
+            "shared_platform/README.md",
+        ):
+            self.assertNotIn("RESEND_API_KEY", read(relative))
+            self.assertNotIn("RESEND_FROM", read(relative))
+        self.assertIn('smtplib.SMTP_SSL("smtp.gmail.com", 465', mailer)
+        self.assertIn("ssl.create_default_context()", mailer)
+        self.assertIn("gmail_smtp_app_password", config)
+        self.assertIn("from .account_mail import MailDeliveryError, send_account_email", platform)
+        self.assertIn("if not settings.email_delivery_ready:", platform)
+        self.assertIn("Google processes", privacy)
+        self.assertNotIn("resend_mail", platform)
+        self.assertNotIn("api.resend.com", mailer)
+
     def test_remote_stack_keeps_detector_and_database_private(self) -> None:
         compose = read("docker-compose.yml")
         dockerfile = read("backend/Dockerfile")
@@ -80,6 +103,12 @@ class ProjectInvariantTests(unittest.TestCase):
         expected_views = {
             "LandingView.jsx",
             "AuthView.jsx",
+            "AuthLayout.jsx",
+            "RegisterView.jsx",
+            "VerificationPendingView.jsx",
+            "VerifyEmailView.jsx",
+            "ForgotPasswordView.jsx",
+            "ResetPasswordView.jsx",
             "DashboardView.jsx",
             "ActivityView.jsx",
             "MessageReviewView.jsx",

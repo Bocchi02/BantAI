@@ -14,6 +14,8 @@ os.environ["BANTAI_DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["BANTAI_CREATE_SCHEMA"] = "true"
 os.environ["BANTAI_COOKIE_SECURE"] = "false"
 os.environ["BANTAI_ENCRYPTION_KEY"] = base64.urlsafe_b64encode(b"bantai-test-encryption-key-32byt").decode()
+os.environ["BANTAI_GMAIL_SMTP_EMAIL"] = "sender@gmail.com"
+os.environ["BANTAI_GMAIL_SMTP_APP_PASSWORD"] = "synthetic-app-password"
 
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -23,6 +25,7 @@ from shared_platform.app.config import settings
 from shared_platform.app.main import app, cleanup_expired
 from shared_platform.app.models import (
     ActivityEvent,
+    AccountToken,
     AutomaticTrainingSample,
     EmailReport,
     EmailTrainingCandidate,
@@ -46,6 +49,10 @@ class PlatformTests(unittest.TestCase):
         Base.metadata.create_all(bind=engine)
 
     def setUp(self) -> None:
+        configured = replace(settings, gmail_smtp_email="sender@gmail.com", gmail_smtp_app_password="synthetic-app-password")
+        settings_patch = patch("shared_platform.app.main.settings", configured)
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
         with SessionLocal() as db:
@@ -56,6 +63,7 @@ class PlatformTests(unittest.TestCase):
                 last_name="User",
                 password_hash=hash_password("correct horse battery staple"),
                 status=UserStatus.ACTIVE,
+                verified_at=utcnow(),
             )
             self.admin = User(
                 email="admin@example.com",
@@ -64,6 +72,7 @@ class PlatformTests(unittest.TestCase):
                 last_name="User",
                 password_hash=hash_password("admin correct horse battery"),
                 status=UserStatus.ACTIVE,
+                verified_at=utcnow(),
                 role=UserRole.ADMIN,
             )
             db.add_all([self.user, self.admin])
@@ -418,35 +427,87 @@ class PlatformTests(unittest.TestCase):
         with SessionLocal() as db:
             self.assertEqual(0, db.scalar(select(func.count(AutomaticTrainingSample.id))) or 0)
 
-    def test_registration_is_active_immediately_and_email_account_flows_are_absent(self) -> None:
-        registration = self.client.post(
-            "/api/v1/auth/register",
-            json={
-                "first_name": "New",
-                "middle_name": "Example",
-                "last_name": "User",
-                "email": "new-user@example.com",
-                "password": "StrongInitial1!",
-            },
-        )
-        self.assertEqual(201, registration.status_code, registration.text)
-        self.assertEqual("Your Signalam account was created.", registration.json()["message"])
+    def test_registration_verification_and_password_reset_are_one_time(self) -> None:
+        with patch("shared_platform.app.main.deliver_account_token") as delivery:
+            registration = self.client.post(
+                "/api/v1/auth/register",
+                json={
+                    "first_name": "New", "middle_name": "Example", "last_name": "User",
+                    "email": "new-user@example.com", "password": "StrongInitial1!",
+                },
+            )
+        self.assertEqual(202, registration.status_code, registration.text)
+        verification_token = delivery.call_args.args[1]
+        with SessionLocal() as db:
+            user = db.scalar(select(User).where(User.email == "new-user@example.com"))
+            self.assertEqual(UserStatus.PENDING_VERIFICATION, user.status)
+            stored = db.scalar(select(AccountToken).where(AccountToken.user_id == user.id))
+            self.assertEqual(token_hash(verification_token), stored.token_hash)
+            self.assertNotEqual(verification_token, stored.token_hash)
+        pending_login = self.client.post("/api/v1/auth/login", json={"email": "new-user@example.com", "password": "StrongInitial1!"})
+        self.assertEqual(403, pending_login.status_code)
+
+        verified = self.client.post("/api/v1/auth/verify-email", json={"token": verification_token})
+        self.assertEqual(200, verified.status_code, verified.text)
+        self.assertEqual(400, self.client.post("/api/v1/auth/verify-email", json={"token": verification_token}).status_code)
         self.login("new-user@example.com", "StrongInitial1!")
 
-        removed_routes = (
-            ("/api/v1/auth/verify-email", {"token": "synthetic-token-value-123456789"}),
-            ("/api/v1/auth/resend-verification", {"email": "new-user@example.com"}),
-            ("/api/v1/auth/request-password-reset", {"email": "new-user@example.com"}),
-            (
-                "/api/v1/auth/reset-password",
-                {"token": "synthetic-token-value-123456789", "password": "StrongReplacement2!"},
-            ),
-        )
-        for path, payload in removed_routes:
-            with self.subTest(path=path):
-                self.assertEqual(404, self.client.post(path, json=payload).status_code)
+        with SessionLocal() as db:
+            user = db.scalar(select(User).where(User.email == "new-user@example.com"))
+            db.add(PairedDevice(user_id=user.id, token_hash=token_hash("synthetic-reset-device"), label="Synthetic computer"))
+            db.commit()
 
-        self.assertNotIn("account_tokens", Base.metadata.tables)
+        with patch("shared_platform.app.main.deliver_account_token") as delivery:
+            requested = self.client.post("/api/v1/auth/request-password-reset", json={"email": "new-user@example.com"})
+        self.assertEqual(202, requested.status_code, requested.text)
+        reset_token = delivery.call_args.args[1]
+        changed = self.client.post("/api/v1/auth/reset-password", json={"token": reset_token, "password": "StrongReplacement2!"})
+        self.assertEqual(200, changed.status_code, changed.text)
+        self.assertEqual(400, self.client.post("/api/v1/auth/reset-password", json={"token": reset_token, "password": "StrongReplacement3!"}).status_code)
+        self.assertEqual(401, self.client.get("/api/v1/auth/me").status_code)
+        with SessionLocal() as db:
+            device = db.scalar(select(PairedDevice).where(PairedDevice.token_hash == token_hash("synthetic-reset-device")))
+            self.assertIsNotNone(device.revoked_at)
+        self.assertEqual(401, self.client.post("/api/v1/auth/login", json={"email": "new-user@example.com", "password": "StrongInitial1!"}).status_code)
+        self.login("new-user@example.com", "StrongReplacement2!")
+
+    def test_resend_rotates_token_and_unknown_account_is_generic(self) -> None:
+        with patch("shared_platform.app.main.deliver_account_token") as delivery:
+            self.client.post("/api/v1/auth/register", json={
+                "first_name": "Pending", "last_name": "User", "email": "pending@example.com", "password": "StrongInitial1!",
+            })
+            first_token = delivery.call_args.args[1]
+            known = self.client.post("/api/v1/auth/resend-verification", json={"email": "pending@example.com"})
+            second_token = delivery.call_args.args[1]
+            unknown = self.client.post("/api/v1/auth/resend-verification", json={"email": "missing@example.com"})
+        self.assertEqual(202, known.status_code)
+        self.assertEqual(known.json(), unknown.json())
+        self.assertNotEqual(first_token, second_token)
+        self.assertEqual(400, self.client.post("/api/v1/auth/verify-email", json={"token": first_token}).status_code)
+        self.assertEqual(200, self.client.post("/api/v1/auth/verify-email", json={"token": second_token}).status_code)
+
+    def test_expired_account_links_do_not_change_account_state(self) -> None:
+        with patch("shared_platform.app.main.deliver_account_token") as delivery:
+            self.client.post("/api/v1/auth/register", json={
+                "first_name": "Expiring", "last_name": "User", "email": "expiring@example.com", "password": "StrongInitial1!",
+            })
+            verification_token = delivery.call_args.args[1]
+        with SessionLocal() as db:
+            db.query(AccountToken).filter(AccountToken.token_hash == token_hash(verification_token)).update({AccountToken.expires_at: utcnow() - timedelta(seconds=1)})
+            db.commit()
+        self.assertEqual(400, self.client.post("/api/v1/auth/verify-email", json={"token": verification_token}).status_code)
+        with SessionLocal() as db:
+            user = db.scalar(select(User).where(User.email == "expiring@example.com"))
+            self.assertEqual(UserStatus.PENDING_VERIFICATION, user.status)
+
+        with patch("shared_platform.app.main.deliver_account_token") as delivery:
+            self.client.post("/api/v1/auth/request-password-reset", json={"email": "user@example.com"})
+            reset_token = delivery.call_args.args[1]
+        with SessionLocal() as db:
+            db.query(AccountToken).filter(AccountToken.token_hash == token_hash(reset_token)).update({AccountToken.expires_at: utcnow() - timedelta(seconds=1)})
+            db.commit()
+        self.assertEqual(400, self.client.post("/api/v1/auth/reset-password", json={"token": reset_token, "password": "StrongReplacement2!"}).status_code)
+        self.login("user@example.com", "correct horse battery staple")
 
     def test_closed_pilot_disables_registration_and_email_availability(self) -> None:
         closed_pilot_settings = replace(settings, public_registration_enabled=False)
@@ -468,18 +529,27 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(403, availability.status_code, availability.text)
         self.assertNotIn("available", availability.json())
 
-    def test_public_config_exposes_only_registration_capability(self) -> None:
-        enabled_settings = replace(settings, public_registration_enabled=True)
-        disabled_settings = replace(settings, public_registration_enabled=False)
+    def test_public_config_distinguishes_registration_from_email_delivery(self) -> None:
+        enabled_settings = replace(settings, public_registration_enabled=True, gmail_smtp_email="sender@gmail.com", gmail_smtp_app_password="synthetic-app-password")
+        missing_email_settings = replace(settings, public_registration_enabled=True, gmail_smtp_email="sender@gmail.com", gmail_smtp_app_password="")
+        disabled_settings = replace(settings, public_registration_enabled=False, gmail_smtp_email="sender@gmail.com", gmail_smtp_app_password="synthetic-app-password")
         with patch("shared_platform.app.main.settings", enabled_settings):
             enabled = self.client.get("/api/v1/public-config")
+        with patch("shared_platform.app.main.settings", missing_email_settings):
+            missing_email = self.client.get("/api/v1/public-config")
+            reset_without_gmail = self.client.post("/api/v1/auth/request-password-reset", json={"email": "user@example.com"})
+            resend_without_gmail = self.client.post("/api/v1/auth/resend-verification", json={"email": "user@example.com"})
         with patch("shared_platform.app.main.settings", disabled_settings):
             disabled = self.client.get("/api/v1/public-config")
 
         self.assertEqual(200, enabled.status_code, enabled.text)
-        self.assertEqual({"public_registration_enabled": True}, enabled.json())
+        self.assertEqual({"public_registration_enabled": True, "email_delivery_ready": True}, enabled.json())
+        self.assertEqual(200, missing_email.status_code, missing_email.text)
+        self.assertEqual({"public_registration_enabled": True, "email_delivery_ready": False}, missing_email.json())
+        self.assertEqual(503, reset_without_gmail.status_code)
+        self.assertEqual(503, resend_without_gmail.status_code)
         self.assertEqual(200, disabled.status_code, disabled.text)
-        self.assertEqual({"public_registration_enabled": False}, disabled.json())
+        self.assertEqual({"public_registration_enabled": False, "email_delivery_ready": True}, disabled.json())
         self.assertNotIn("BANTAI_ENCRYPTION_KEY", enabled.text)
         self.assertNotIn("internal_api_key", disabled.text)
 

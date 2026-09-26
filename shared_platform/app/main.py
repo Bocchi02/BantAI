@@ -39,6 +39,7 @@ from .dependencies import (
     current_web_user,
 )
 from .models import (
+    AccountToken,
     AdminUrlAssessment,
     ActivityEvent,
     AutomaticTrainingSample,
@@ -53,6 +54,7 @@ from .models import (
     PairingCode,
     RateLimitBucket,
     TrainingStatus,
+    TokenPurpose,
     User,
     UserRole,
     UserStatus,
@@ -64,6 +66,7 @@ from .models import (
     utcnow,
 )
 from .schemas import (
+    AccountTokenRequest,
     AdminReviewAction,
     ActivityExplanationFallbackRequest,
     ActivityExplanationRequest,
@@ -83,6 +86,7 @@ from .schemas import (
     RemoteEmailDetectionRequest,
     RemoteUrlDetectionRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TrainingConsentUpdateRequest,
     UrlCloudReviewRequest,
     UrlActivityFeedbackRequest,
@@ -94,12 +98,14 @@ from .schemas import (
 )
 from .security import DUMMY_PASSWORD_HASH, blind_index, decrypt_text, encrypt_text, hash_password, pairing_code, random_token, token_hash, verify_password
 from .rate_limit import RateLimitUnavailable, consume_limit, rate_limit_keys, trusted_client_address
+from .account_mail import MailDeliveryError, send_account_email
 from .security_events import emit as emit_security_event
 from .transient_context import transient_detections
 from .website_fetch import InvalidWebsiteAddress, WebsiteFetchError, fetch_website
 
 
 EMAIL_IN_USE_MESSAGE = "This email is already in use."
+ACCOUNT_EMAIL_MESSAGE = "If this account is eligible, an email will arrive shortly."
 OUTCOME_VALUES = [item.value for item in Outcome]
 TRAINING_CONSENT_VERSION = "2026-08-v1"
 AUTOMATIC_SAMPLE_RATE_PERCENT = 10
@@ -261,6 +267,7 @@ def cleanup_expired(db: Session) -> None:
     db.execute(delete(AutomaticTrainingSample).where(AutomaticTrainingSample.created_at < cutoff))
     db.execute(delete(ActivityEvent).where(ActivityEvent.occurred_at < cutoff))
     db.execute(delete(PairingCode).where(or_(PairingCode.expires_at < now, PairingCode.consumed_at.is_not(None))))
+    db.execute(delete(AccountToken).where(or_(AccountToken.expires_at < now, AccountToken.consumed_at.is_not(None))))
     db.execute(delete(WebSession).where(or_(WebSession.expires_at < now, WebSession.revoked_at.is_not(None))))
     db.execute(delete(RateLimitBucket).where(RateLimitBucket.updated_at < now - timedelta(days=1)))
     db.commit()
@@ -273,7 +280,7 @@ def seed_admin(db: Session) -> None:
         return
     user = db.scalar(select(User).where(User.email == email))
     if user is None:
-        db.add(User(email=email, first_name="Signalam", last_name="Administrator", password_hash=hash_password(password), role=UserRole.ADMIN, status=UserStatus.ACTIVE))
+        db.add(User(email=email, first_name="Signalam", last_name="Administrator", password_hash=hash_password(password), role=UserRole.ADMIN, status=UserStatus.ACTIVE, verified_at=utcnow()))
         db.commit()
 
 
@@ -326,6 +333,7 @@ def user_view(user: User) -> dict:
         full_name=full_name,
         role=user.role,
         status=user.status,
+        verified_at=user.verified_at,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     ).model_dump(mode="json")
@@ -366,16 +374,50 @@ def ready(db: Session = Depends(get_db)) -> dict:
 def public_config() -> dict:
     """Return only non-secret capability flags needed by the public web UI."""
 
-    return {"public_registration_enabled": settings.public_registration_enabled}
+    return {
+        "public_registration_enabled": settings.public_registration_enabled,
+        "email_delivery_ready": settings.email_delivery_ready,
+    }
 
 
-@app.post("/api/v1/auth/register", status_code=201)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict:
+def issue_account_token(db: Session, user: User, purpose: TokenPurpose, lifetime: timedelta) -> tuple[str, AccountToken]:
+    now = utcnow()
+    db.execute(
+        update(AccountToken)
+        .where(AccountToken.user_id == user.id, AccountToken.purpose == purpose, AccountToken.consumed_at.is_(None))
+        .values(consumed_at=now)
+    )
+    raw = random_token()
+    record = AccountToken(user_id=user.id, token_hash=token_hash(raw), purpose=purpose, expires_at=now + lifetime)
+    db.add(record)
+    db.flush()
+    return raw, record
+
+
+def deliver_account_token(user: User, raw: str, record: AccountToken) -> None:
+    send_account_email(recipient=user.email, token=raw, purpose=record.purpose.value)
+
+
+def valid_account_token(db: Session, raw: str, purpose: TokenPurpose) -> AccountToken:
+    record = db.scalar(
+        select(AccountToken)
+        .where(AccountToken.token_hash == token_hash(raw), AccountToken.purpose == purpose)
+        .with_for_update()
+    )
+    if record is None or record.consumed_at is not None or _aware(record.expires_at) <= utcnow():
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    return record
+
+
+@app.post("/api/v1/auth/register", status_code=202)
+def register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)) -> dict:
     if not settings.public_registration_enabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Public self-registration is unavailable in this deployment.",
         )
+    if not settings.registration_ready:
+        raise HTTPException(status_code=503, detail="Account email delivery is not configured. Try again later.")
     email = str(payload.email).strip().lower()
     existing = db.scalar(select(User).where(User.email == email))
     if existing is not None:
@@ -392,7 +434,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict:
         middle_name=payload.middle_name,
         last_name=payload.last_name,
         password_hash=hash_password(payload.password),
-        status=UserStatus.ACTIVE,
+        status=UserStatus.PENDING_VERIFICATION,
     )
     db.add(user)
     try:
@@ -400,8 +442,93 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict:
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=EMAIL_IN_USE_MESSAGE) from exc
+    raw, record = issue_account_token(db, user, TokenPurpose.EMAIL_VERIFICATION, timedelta(hours=24))
     db.commit()
-    return {"message": "Your Signalam account was created."}
+    emit_security_event("AUTH_ACCOUNT_REGISTERED", outcome="accepted", principal=user.id, request_id=request.state.security_request_id)
+    try:
+        deliver_account_token(user, raw, record)
+    except MailDeliveryError as exc:
+        emit_security_event("AUTH_EMAIL_DELIVERY_FAILURE", outcome="unavailable", principal=user.id, request_id=request.state.security_request_id, reason="verification")
+        raise HTTPException(status_code=503, detail="Account created, but the verification email could not be sent. Request another verification email shortly.") from exc
+    return {"message": "Check your email to verify your Signalam account."}
+
+
+@app.post("/api/v1/auth/verify-email")
+def verify_email(payload: AccountTokenRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+    record = valid_account_token(db, payload.token, TokenPurpose.EMAIL_VERIFICATION)
+    user = db.get(User, record.user_id)
+    if user is None or user.status != UserStatus.PENDING_VERIFICATION:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    now = utcnow()
+    consumed = db.execute(
+        update(AccountToken)
+        .where(AccountToken.id == record.id, AccountToken.consumed_at.is_(None), AccountToken.expires_at > now)
+        .values(consumed_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    user.status = UserStatus.ACTIVE
+    user.verified_at = now
+    db.commit()
+    emit_security_event("AUTH_EMAIL_VERIFIED", outcome="accepted", principal=user.id, request_id=request.state.security_request_id)
+    return {"message": "Your email is verified. You can now sign in."}
+
+
+@app.post("/api/v1/auth/resend-verification", status_code=202)
+def resend_verification(payload: EmailRequest, db: Session = Depends(get_db)) -> dict:
+    if not settings.registration_ready:
+        raise HTTPException(status_code=503, detail="Account email delivery is temporarily unavailable.")
+    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
+    if user is not None and user.status == UserStatus.PENDING_VERIFICATION:
+        raw, record = issue_account_token(db, user, TokenPurpose.EMAIL_VERIFICATION, timedelta(hours=24))
+        db.commit()
+        try:
+            deliver_account_token(user, raw, record)
+        except MailDeliveryError:
+            pass
+    return {"message": ACCOUNT_EMAIL_MESSAGE}
+
+
+@app.post("/api/v1/auth/request-password-reset", status_code=202)
+def request_password_reset(payload: EmailRequest, db: Session = Depends(get_db)) -> dict:
+    if not settings.email_delivery_ready:
+        raise HTTPException(status_code=503, detail="Account email delivery is temporarily unavailable.")
+    user = db.scalar(select(User).where(User.email == str(payload.email).lower()))
+    if user is not None and user.status == UserStatus.ACTIVE:
+        raw, record = issue_account_token(db, user, TokenPurpose.PASSWORD_RESET, timedelta(minutes=30))
+        db.commit()
+        try:
+            deliver_account_token(user, raw, record)
+        except MailDeliveryError:
+            pass
+    return {"message": ACCOUNT_EMAIL_MESSAGE}
+
+
+@app.post("/api/v1/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+    record = valid_account_token(db, payload.token, TokenPurpose.PASSWORD_RESET)
+    user = db.get(User, record.user_id)
+    if user is None or user.status != UserStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    now = utcnow()
+    consumed = db.execute(
+        update(AccountToken)
+        .where(AccountToken.id == record.id, AccountToken.consumed_at.is_(None), AccountToken.expires_at > now)
+        .values(consumed_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="This link is invalid or has expired. Request a new one.")
+    user.password_hash = hash_password(payload.password)
+    db.execute(update(WebSession).where(WebSession.user_id == user.id, WebSession.revoked_at.is_(None)).values(revoked_at=now))
+    db.execute(update(PairedDevice).where(PairedDevice.user_id == user.id, PairedDevice.revoked_at.is_(None)).values(revoked_at=now))
+    db.execute(update(AccountToken).where(AccountToken.user_id == user.id, AccountToken.purpose == TokenPurpose.PASSWORD_RESET, AccountToken.consumed_at.is_(None)).values(consumed_at=now))
+    db.commit()
+    emit_security_event("AUTH_PASSWORD_RESET", outcome="accepted", principal=user.id, request_id=request.state.security_request_id)
+    return {"message": "Your password was reset. Sign in again and pair your devices."}
 
 
 @app.post("/api/v1/auth/email-availability")
@@ -430,6 +557,8 @@ def login(payload: LoginRequest, response: Response, request: Request, db: Sessi
     if user.status == UserStatus.SUSPENDED:
         emit_security_event("AUTH_ACCOUNT_SUSPENDED", outcome="blocked", principal=user.id, request_id=request.state.security_request_id, reason="suspended")
         raise HTTPException(status_code=403, detail="This account is suspended.")
+    if user.status == UserStatus.PENDING_VERIFICATION:
+        raise HTTPException(status_code=403, detail="Verify your email before signing in.")
     session_token = random_token()
     csrf_token = random_token(24)
     web_session = WebSession(user_id=user.id, token_hash=token_hash(session_token), csrf_hash=token_hash(csrf_token), expires_at=utcnow() + timedelta(hours=settings.session_hours))
@@ -2900,7 +3029,7 @@ def update_user_status(
         raise HTTPException(status_code=404, detail="User not found.")
     if user.role == UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Administrator accounts cannot be changed here.")
-    user.status = account_status
+    user.status = UserStatus.PENDING_VERIFICATION if account_status == UserStatus.ACTIVE and user.verified_at is None else account_status
     if account_status == UserStatus.SUSPENDED:
         db.execute(update(WebSession).where(WebSession.user_id == user.id, WebSession.revoked_at.is_(None)).values(revoked_at=utcnow()))
         db.execute(update(PairedDevice).where(PairedDevice.user_id == user.id, PairedDevice.revoked_at.is_(None)).values(revoked_at=utcnow()))

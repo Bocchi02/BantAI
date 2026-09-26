@@ -41,7 +41,7 @@ services:
       HF_HUB_OFFLINE: "1"
       TOKENIZERS_PARALLELISM: "false"
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${BANTAI_DETECTOR_HOST_PORT:-18000}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/ready',headers={'X-BantAI-Internal-Key':'bantai-local-internal-service-key-2026'}); urllib.request.urlopen(r,timeout=5)"]
       interval: 15s

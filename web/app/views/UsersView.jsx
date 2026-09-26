@@ -22,7 +22,7 @@ function UsersPage({ currentUser }) {
     }, [page, search, statusFilter]);
     useEffect(() => { void load(); }, [load]);
     const toggleStatus = async (user) => {
-        const nextStatus = user.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+        const nextStatus = user.status === "SUSPENDED" ? "ACTIVE" : "SUSPENDED";
         if (user.id === currentUser.id) {
             setError("You cannot suspend your own administrative account.");
             return;
@@ -33,10 +33,10 @@ function UsersPage({ currentUser }) {
         setError("");
         setMessage("");
         try {
-            await api(`/admin/users/${user.id}/status?account_status=${nextStatus}`, {
+            const result = await api(`/admin/users/${user.id}/status?account_status=${nextStatus}`, {
                 method: "PATCH",
             });
-            setMessage(`User account ${nextStatus.toLowerCase()}.`);
+            setMessage(result.user.status === "PENDING_VERIFICATION" ? "User account reactivated; email verification is still required." : `User account ${nextStatus.toLowerCase()}.`);
             await load();
         }
         catch (reason) {
@@ -59,6 +59,7 @@ function UsersPage({ currentUser }) {
           <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} className="h-9 px-2.5 rounded-md border border-[#d9dee3] text-xs bg-white text-[#384551] focus:ring-2 focus:ring-[#696cff]/20 focus:border-[#696cff] outline-none">
             <option value="">All statuses</option>
             <option value="ACTIVE">Active</option>
+            <option value="PENDING_VERIFICATION">Pending verification</option>
             <option value="SUSPENDED">Suspended</option>
           </select>
         </div>
@@ -96,8 +97,8 @@ function UsersPage({ currentUser }) {
                       </span>
                     </td>
                     <td className="py-3 px-3.5">
-                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full", item.status === "ACTIVE" ? "bg-[#e8fadf] text-[#2d5816] border border-[#c6f1af]" : "bg-[#ffe0db] text-[#66190c] border border-[#ffb2a5]")}>
-                        {item.status}
+                      <span className={cx("text-[11px] font-semibold px-2 py-0.5 rounded-full", item.status === "ACTIVE" ? "bg-[#e8fadf] text-[#2d5816] border border-[#c6f1af]" : item.status === "PENDING_VERIFICATION" ? "bg-[#fff2d3] text-[#805700] border border-[#ffd885]" : "bg-[#ffe0db] text-[#66190c] border border-[#ffb2a5]")}>
+                        {item.status === "PENDING_VERIFICATION" ? "Pending verification" : item.status === "ACTIVE" ? "Active" : "Suspended"}
                       </span>
                     </td>
                     <td className="py-3 px-3.5 text-xs text-[#646e78]">
@@ -108,8 +109,8 @@ function UsersPage({ currentUser }) {
                       {niceDate(item.created_at)}
                     </td>
                     <td className="py-3 px-3.5 text-right">
-                      {item.id !== currentUser.id && (<button className={cx("text-xs font-semibold hover:underline", item.status === "ACTIVE" ? "text-[#ff3e1d]" : "text-[#71dd37]")} onClick={() => void toggleStatus(item)} disabled={busyId === item.id} type="button">
-                          {item.status === "ACTIVE" ? "Suspend" : "Reactivate"}
+                      {item.id !== currentUser.id && (<button className={cx("text-xs font-semibold hover:underline", item.status !== "SUSPENDED" ? "text-[#ff3e1d]" : "text-[#008f7a]")} onClick={() => void toggleStatus(item)} disabled={busyId === item.id} type="button">
+                          {item.status === "SUSPENDED" ? "Reactivate" : "Suspend"}
                         </button>)}
                     </td>
                   </tr>))}

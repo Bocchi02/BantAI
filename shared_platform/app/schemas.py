@@ -61,6 +61,19 @@ class EmailRequest(StrictModel):
     email: EmailStr
 
 
+class AccountTokenRequest(StrictModel):
+    token: str = Field(min_length=32, max_length=256)
+
+
+class ResetPasswordRequest(AccountTokenRequest):
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, value: str) -> str:
+        return require_strong_password(value)
+
+
 class PastedMessageReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
 
@@ -116,6 +129,7 @@ class UserView(StrictModel):
     full_name: str
     role: UserRole
     status: UserStatus
+    verified_at: datetime | None
     created_at: datetime
     last_login_at: datetime | None
 

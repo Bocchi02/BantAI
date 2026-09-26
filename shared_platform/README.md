@@ -17,9 +17,37 @@ aggregate administration. The private frozen detector remains authoritative.
    MySQL, platform, or detector ports; only the Caddy TLS gateway is public.
    The one-shot migration service applies pending Alembic migrations before the
    platform starts, using a separate migration credential.
-5. The controlled pilot keeps public self-registration disabled; provision
-   authorized users through the administrator workflow. This temporary MVP has
-   no email verification or unauthenticated password-reset flow.
+5. Configure `BANTAI_GMAIL_SMTP_EMAIL` and
+   `BANTAI_GMAIL_SMTP_APP_PASSWORD` on the platform only. Gmail SMTP uses
+   encrypted `smtp.gmail.com:465`; use a Google App Password with 2-Step
+   Verification, never the normal Google account password. Then enable
+   `BANTAI_PUBLIC_REGISTRATION_ENABLED=true`. New accounts receive one-time
+   verification links; password recovery uses the same Gmail sender. Existing
+   active accounts remain usable after migration.
+
+The local and production stacks both use Google SMTP. For local Docker, add
+these two lines to the ignored
+`shared_platform/.env` file, using the actual Gmail sender and App Password:
+
+```dotenv
+BANTAI_GMAIL_SMTP_EMAIL=sender@gmail.com
+BANTAI_GMAIL_SMTP_APP_PASSWORD=your-google-app-password
+```
+
+Rebuild the platform once after code changes with
+`docker compose -f docker-compose.local.yml build platform`, then run
+`docker compose -f docker-compose.local.yml up -d --no-deps --no-build platform`.
+For later credential changes, recreate only the platform container with
+`docker compose -f docker-compose.local.yml up -d --force-recreate --no-deps platform`.
+The local compose file already enables public registration, but account
+creation stays disabled until both Gmail settings are present. The public
+`/api/v1/public-config` flag only confirms configuration is present; test
+actual delivery with a new synthetic account and check the recipient inbox.
+Never put the App Password in the web `.env`, extension, tracked example files,
+or logs. The test suite mocks all provider calls. The local detector's
+optional host loopback port defaults to 18000 (override with
+`BANTAI_DETECTOR_HOST_PORT`); the platform always uses Docker's internal
+detector port 8000.
 
 Production startup keeps `BANTAI_CREATE_SCHEMA=false`; the platform does not
 run Alembic on every restart. Caddy terminates API TLS; set

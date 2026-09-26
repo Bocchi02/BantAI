@@ -20,8 +20,14 @@ class UserRole(str, enum.Enum):
 
 
 class UserStatus(str, enum.Enum):
+    PENDING_VERIFICATION = "PENDING_VERIFICATION"
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
+
+
+class TokenPurpose(str, enum.Enum):
+    EMAIL_VERIFICATION = "EMAIL_VERIFICATION"
+    PASSWORD_RESET = "PASSWORD_RESET"
 
 
 class UrlReportClassification(str, enum.Enum):
@@ -99,6 +105,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.USER)
     status: Mapped[UserStatus] = mapped_column(Enum(UserStatus), default=UserStatus.ACTIVE)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     training_collection_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -110,6 +117,21 @@ class User(Base):
 
     sessions: Mapped[list[WebSession]] = relationship(back_populates="user", cascade="all, delete-orphan")
     devices: Mapped[list[PairedDevice]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    account_tokens: Mapped[list[AccountToken]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class AccountToken(Base):
+    __tablename__ = "account_tokens"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_value)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    purpose: Mapped[TokenPurpose] = mapped_column(Enum(TokenPurpose))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(back_populates="account_tokens")
 
 
 class WebSession(Base):

@@ -21,7 +21,7 @@ import AdminEmailReportsPage from "./views/AdminEmailReportsView";
 import TrainingDataPage from "./views/TrainingDataView";
 import UsersPage from "./views/UsersView";
 import HelpPage from "./views/HelpView";
-import { registrationEnabledFromConfig } from "./registration";
+import { emailDeliveryReadyFromConfig, registrationEnabledFromConfig } from "./registration";
 
 function Application({ user, initialPath, onUserChanged, onSignedOut, registrationEnabled }) {
     const initialPage = (initialPath.split("/")[1] || "dashboard");
@@ -63,6 +63,7 @@ export function SignalamApp({ initialPath }) {
     const [loading, setLoading] = useState(true);
     const [startupError, setStartupError] = useState("");
     const [registrationEnabled, setRegistrationEnabled] = useState(false);
+    const [emailDeliveryReady, setEmailDeliveryReady] = useState(false);
     const [path, setPath] = useState(initialPath);
     const navigatePublic = (next) => {
         history.pushState({}, "", next);
@@ -74,6 +75,7 @@ export function SignalamApp({ initialPath }) {
         setStartupError("");
         const publicConfig = await api("/public-config").catch(() => null);
         setRegistrationEnabled(registrationEnabledFromConfig(publicConfig));
+        setEmailDeliveryReady(emailDeliveryReadyFromConfig(publicConfig));
         try {
             const result = await api("/auth/me");
             setUser(result.user);
@@ -105,7 +107,7 @@ export function SignalamApp({ initialPath }) {
         return <LoadingPage />;
     if (startupError)
         return <LoadingPage error={startupError} onRetry={() => void loadSession()}/>;
-    if (!user)
-        return <AuthScreen initialPath={path} registrationEnabled={registrationEnabled} onAuthenticated={setUser}/>;
+    if (!user || ["/verify-email", "/reset-password"].includes(path))
+        return <AuthScreen initialPath={path} registrationEnabled={registrationEnabled} emailDeliveryReady={emailDeliveryReady} onAuthenticated={setUser}/>;
     return <Application user={user} initialPath={path} registrationEnabled={registrationEnabled} onUserChanged={setUser} onSignedOut={() => setUser(null)}/>;
 }

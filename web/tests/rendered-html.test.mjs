@@ -218,12 +218,23 @@ test("server-renders the Signalam public and account experience", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 
+test("account links do not forward or cache one-time tokens", async () => {
+  for (const path of ["/verify-email", "/reset-password"]) {
+    const response = await render(`${path}#token=synthetic-private-token`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.match(response.headers.get("x-robots-tag") ?? "", /noindex/);
+    assert.doesNotMatch(await response.text(), /synthetic-private-token/);
+  }
+});
+
 test("publishes a complete privacy policy without requiring an account", async () => {
   const response = await render("/privacy");
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Signalam Privacy Policy/i);
-  assert.match(html, /Effective date:[\s\S]{0,50}September 23, 2026/i);
+  assert.match(html, /Effective date:[\s\S]{0,50}September 26, 2026/i);
   assert.match(html, /Information we handle/i);
   assert.match(html, /Cloud AI review/i);
   assert.match(html, /Optional reports and training data/i);

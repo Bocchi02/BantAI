@@ -1,0 +1,381 @@
+HISTORICAL PLAN — SUPERSEDED
+============================
+This document records the original registration plan. The active implementation
+now uses Google SMTP only in development and deployment. See
+shared_platform/README.md for current configuration. Do not use the provider
+instructions below for a new deployment.
+
+SIGNALAM REGISTRATION, EMAIL VERIFICATION, AND PASSWORD RESET PLAN
+=================================================================
+
+Objective
+---------
+
+Restore public account registration in Signalam and add secure email
+verification and forgot-password workflows using Resend as the transactional
+email provider.
+
+
+1. DATABASE AND ACCOUNT STATES
+------------------------------
+
+Create a new Alembic migration that:
+
+- Adds PENDING_VERIFICATION to UserStatus.
+- Adds a nullable verified_at timestamp to the users table.
+- Recreates the account_tokens table with:
+  - id
+  - user_id
+  - purpose: EMAIL_VERIFICATION or PASSWORD_RESET
+  - token_hash
+  - expires_at
+  - consumed_at
+  - created_at
+- Marks existing active users and administrators as already verified so they
+  are not locked out after deployment.
+- Keeps suspended accounts blocked even if they were previously verified.
+- Creates all new registered accounts with PENDING_VERIFICATION status.
+
+Token expiration:
+
+- Email verification token: 24 hours
+- Password reset token: 30 minutes
+
+Only a secure hash of each token will be stored in MySQL. The raw token will
+exist only in the email link sent to the user.
+
+
+2. RESEND INTEGRATION
+---------------------
+
+Add a backend-only email service that calls the Resend HTTPS API using the
+existing Python httpx dependency.
+
+Required environment variables:
+
+RESEND_API_KEY=re_xxxxxxxxx
+RESEND_FROM=Signalam <no-reply@your-verified-domain.com>
+BANTAI_WEB_ORIGIN=http://localhost:3000
+BANTAI_PUBLIC_REGISTRATION_ENABLED=true
+
+Production must use an HTTPS web origin.
+
+The email service must:
+
+- Keep the Resend API key exclusively in the shared FastAPI backend.
+- Require a Resend-verified sending domain.
+- Send HTML and plain-text email versions.
+- Use finite connection and response timeouts.
+- Use Resend idempotency keys to avoid duplicate delivery during retries.
+- Never log passwords, account tokens, API keys, or complete verification and
+  reset links.
+- Fail configuration validation in production when public registration is
+  enabled but Resend is not correctly configured.
+
+Official Resend setup references:
+
+- https://resend.com/docs/create-an-api-key
+- https://resend.com/docs/add-a-domain
+- https://resend.com/docs/send-with-python
+- https://resend.com/docs/api-reference/emails/send-email
+
+
+3. REGISTRATION FLOW
+--------------------
+
+The registration form will contain:
+
+- First name
+- Middle name (optional)
+- Last name
+- Email address
+- Password
+- Password confirmation
+
+Password requirements:
+
+- At least twelve characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+- At least one special character
+
+Registration sequence:
+
+1. Normalize and validate the submitted email address.
+2. Check whether the email address is already registered.
+3. Return HTTP 409 with "This email is already in use" for a duplicate email.
+4. Create the user with PENDING_VERIFICATION status.
+5. Generate a cryptographically secure verification token.
+6. Store only the token hash in the database.
+7. Send the verification email through Resend.
+8. Show a "Check your email" screen instead of automatically signing in.
+9. Prevent the account from signing in until verification is complete.
+
+If Resend is temporarily unavailable, keep the pending account and token, show
+a controlled delivery error, and allow the user to request another message.
+
+
+4. EMAIL VERIFICATION
+---------------------
+
+Restore the following API endpoints:
+
+POST /api/v1/auth/verify-email
+POST /api/v1/auth/resend-verification
+
+Verification links will use this structure:
+
+https://your-domain.com/verify-email#token=<opaque-token>
+
+The verification page must not automatically consume the token when it loads.
+It will display an explicit "Verify email" button. This prevents automated
+email security scanners from accidentally consuming a one-time token.
+
+After successful verification:
+
+- Consume the verification token atomically.
+- Set the user's verified_at timestamp.
+- Change the account from PENDING_VERIFICATION to ACTIVE.
+- Invalidate older verification tokens for that user.
+- Send the user to the login page.
+
+Expired, invalid, and already-consumed tokens will produce the same generic
+error message.
+
+The resend endpoint will always return a generic response whether the email
+exists, is already verified, is suspended, or is unknown. This prevents email
+address enumeration.
+
+
+5. FORGOT-PASSWORD FLOW
+-----------------------
+
+Restore the following API endpoints:
+
+POST /api/v1/auth/request-password-reset
+POST /api/v1/auth/reset-password
+
+Create separate React JavaScript/JSX views:
+
+web/app/views/RegisterView.jsx
+web/app/views/VerifyEmailView.jsx
+web/app/views/ForgotPasswordView.jsx
+web/app/views/ResetPasswordView.jsx
+web/app/views/VerificationPendingView.jsx
+
+Password-reset sequence:
+
+1. The user submits an email address.
+2. The interface always shows a generic confirmation message.
+3. For an eligible account, create a 30-minute password-reset token.
+4. Send a password-reset link through Resend.
+5. Validate the new password with the registration password rules.
+6. Consume the reset token after the password update succeeds.
+7. Revoke all existing web sessions and paired-device credentials.
+8. Require the user to sign in and pair devices again.
+
+A password reset must never reactivate a suspended account.
+
+
+6. AUTHENTICATION API
+---------------------
+
+Required authentication endpoints:
+
+POST /api/v1/auth/email-availability
+  Check whether an email can be used during registration.
+
+POST /api/v1/auth/register
+  Create a pending account and start email verification.
+
+POST /api/v1/auth/verify-email
+  Verify a one-time email-verification token.
+
+POST /api/v1/auth/resend-verification
+  Issue and deliver a replacement verification token.
+
+POST /api/v1/auth/login
+  Sign in only verified and active users.
+
+POST /api/v1/auth/request-password-reset
+  Request a password-reset message.
+
+POST /api/v1/auth/reset-password
+  Set a new password using a valid reset token.
+
+POST /api/v1/auth/logout
+  Revoke the current web session.
+
+GET /api/v1/auth/me
+  Return the current authenticated user.
+
+Login behavior:
+
+- Unknown email or incorrect password: generic HTTP 401 response.
+- Correct credentials for a pending account: HTTP 403 with a
+  verification-required state.
+- Suspended account: HTTP 403.
+- Active and verified account: create the normal server-side session.
+
+
+7. REACT INTERFACE
+------------------
+
+Update the authentication interface to include:
+
+- A "Create an account" action on the login page.
+- A "Forgot password?" action below the password field.
+- A verification-pending page with resend support.
+- A resend cooldown, progress indicator, and failure state.
+- Verification success, invalid-token, and expired-token states.
+- A reset-password form with a visible password-requirements checklist.
+- Accessible loading, success, and error messages.
+
+The web interface will remain React JavaScript/JSX, not TypeScript. Each view
+will remain in its own file.
+
+After reading a token from the URL fragment, the page will remove the token
+from the browser address using history.replaceState. Verification and reset
+pages will use a no-referrer policy to reduce accidental token leakage.
+
+
+8. ADMINISTRATION
+-----------------
+
+Update the Users page to support:
+
+- A Pending verification status badge.
+- Filtering by pending, active, and suspended status.
+- Suspending pending accounts.
+- Safe account reactivation based on verification state:
+  - Verified suspended account becomes ACTIVE.
+  - Unverified suspended account becomes PENDING_VERIFICATION.
+
+Role promotion remains outside the MVP.
+
+
+9. RATE LIMITING AND ABUSE PROTECTION
+-------------------------------------
+
+Add separate rate limits for:
+
+- Registration attempts
+- Verification-message resends
+- Password-reset requests
+- Verification-token submissions
+- Password-reset token submissions
+- Login attempts
+
+Use both normalized email and network/client identifiers when appropriate.
+Responses for resend and forgot-password requests must not reveal whether an
+account exists.
+
+Only one unconsumed token per user and purpose should be valid. Issuing a new
+token invalidates the previous token for the same purpose.
+
+
+10. PRIVACY AND RETENTION
+-------------------------
+
+Update the Signalam privacy policy to explain that:
+
+- Resend processes the recipient email address to deliver transactional email.
+- Verification and reset tokens are short-lived.
+- Signalam stores token hashes instead of raw tokens.
+- Authentication messages are transactional and are not marketing email.
+- Authentication email data is not used for advertising.
+
+Add account-token cleanup to the existing scheduled cleanup process so expired
+and consumed tokens are removed regularly.
+
+
+11. CONFIGURATION AND DEPLOYMENT
+--------------------------------
+
+Keep public registration controlled by a deployment setting:
+
+- Local Docker: enable it after the Resend configuration is provided.
+- Production: keep it disabled until the Resend domain and API key are tested.
+- Public configuration responses may expose registration_enabled and similar
+  capability flags, but must never expose Resend credentials.
+
+Update:
+
+- shared_platform/.env.example
+- Local Docker Compose environment variables
+- Production Docker Compose environment variables
+- FastAPI configuration validation
+- Shared-platform README and deployment documentation
+- Local Resend testing instructions
+
+
+12. AUTOMATED AND MANUAL TESTING
+--------------------------------
+
+All automated tests must mock Resend. Automated tests must never send real
+messages.
+
+Required automated coverage:
+
+- Registration creates a pending account.
+- Duplicate email addresses produce the expected error.
+- Pending users cannot sign in.
+- Existing users remain verified after migration.
+- Verification tokens expire and are single-use.
+- Resending verification invalidates the previous token.
+- Unknown resend and reset requests do not disclose account existence.
+- Password complexity is enforced consistently.
+- Password-reset tokens expire and are single-use.
+- Password reset revokes sessions and paired devices.
+- Suspended accounts remain inaccessible.
+- Resend failures produce controlled API and interface errors.
+- Rate limiting protects every new endpoint.
+- Passwords, tokens, API keys, and complete email links never appear in logs.
+- React authentication routes render without hydration errors.
+- MySQL migrations work on both fresh and existing databases.
+
+Manual staging acceptance:
+
+- Configure a verified Resend sending domain.
+- Register a new Signalam account.
+- Receive and complete email verification.
+- Confirm that unverified accounts cannot log in.
+- Request and complete a password reset.
+- Confirm that existing sessions and paired devices are revoked after reset.
+- Test delivery using Gmail, Outlook, and Yahoo recipient accounts.
+- Confirm expired and already-used links show safe, understandable errors.
+
+
+13. RECOMMENDED DELIVERY ORDER
+------------------------------
+
+1. Add database enums, verified_at, account_tokens, and migration backfill.
+2. Add token generation, hashing, expiration, consumption, and cleanup logic.
+3. Add the Resend client and backend configuration validation.
+4. Implement registration and email-verification endpoints.
+5. Implement forgot-password and password-reset endpoints.
+6. Update login behavior for pending and suspended accounts.
+7. Add rate limits and security logging rules.
+8. Build the separated React authentication views.
+9. Update the admin Users page for pending accounts.
+10. Update privacy, environment, Docker, and deployment documentation.
+11. Add automated tests with a fully mocked Resend client.
+12. Run the existing Signalam project checks and the shared-platform tests.
+13. Perform manual delivery tests through a verified Resend domain.
+
+
+MVP ACCEPTANCE CRITERIA
+-----------------------
+
+- A user can register with their name, email, and a strong password.
+- A duplicate email address cannot create another account.
+- A new account cannot sign in before email verification.
+- A valid verification link activates the account once.
+- A user can request and complete a password reset securely.
+- Reset and resend endpoints do not expose whether accounts exist.
+- Resend credentials and raw account tokens never reach the browser, extension,
+  database, or logs.
+- Existing active accounts continue working after deployment.
+- Suspended users cannot bypass suspension through verification or reset.
+- All automated tests pass without making real Resend API requests.

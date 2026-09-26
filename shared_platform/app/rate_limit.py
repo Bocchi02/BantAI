@@ -84,6 +84,8 @@ def rate_limit_keys(
         "/api/v1/auth/register",
         "/api/v1/auth/login",
         "/api/v1/auth/email-availability",
+        "/api/v1/auth/resend-verification",
+        "/api/v1/auth/request-password-reset",
     }
     if path in account_paths:
         email = str(_request_json(body).get("email") or "").strip().lower()
@@ -91,9 +93,17 @@ def rate_limit_keys(
         # Per-account throttling prevents targeted brute force without making all
         # users behind one NAT or reverse proxy share a tiny bucket. A broader
         # address bucket still limits wide account-enumeration attempts.
+        limit = 3 if path in {"/api/v1/auth/resend-verification", "/api/v1/auth/request-password-reset"} else 20
         return [
-            (f"account:{path}:{client_address}:{account}", 20),
+            (f"account:{path}:{client_address}:{account}", limit),
             (f"network:{path}:{client_address}", 100),
+        ]
+
+    if path in {"/api/v1/auth/verify-email", "/api/v1/auth/reset-password"}:
+        submitted = str(_request_json(body).get("token") or "")
+        return [
+            (f"account-token:{path}:{token_hash(submitted)}", 5),
+            (f"account-token-network:{path}:{client_address}", 30),
         ]
 
     if path == "/api/v1/pairing":

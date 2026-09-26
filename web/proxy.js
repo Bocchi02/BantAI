@@ -29,7 +29,12 @@ export function proxy(request) {
     const response = NextResponse.next({ request: { headers: requestHeaders } });
     response.headers.set("Content-Security-Policy", csp);
     response.headers.set("X-Content-Type-Options", "nosniff");
-    response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    const accountLinkPage = ["/verify-email", "/reset-password"].includes(request.nextUrl.pathname);
+    response.headers.set("Referrer-Policy", accountLinkPage ? "no-referrer" : "strict-origin-when-cross-origin");
+    if (accountLinkPage) {
+        response.headers.set("Cache-Control", "no-store");
+        response.headers.set("X-Robots-Tag", "noindex, nofollow");
+    }
     response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     response.headers.set("X-Frame-Options", "DENY");
 

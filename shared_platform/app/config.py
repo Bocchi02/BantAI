@@ -48,9 +48,9 @@ class Settings:
     transient_context_ttl_seconds: int = _int("BANTAI_TRANSIENT_CONTEXT_TTL_SECONDS", 600)
     transient_context_max_entries: int = _int("BANTAI_TRANSIENT_CONTEXT_MAX_ENTRIES", 512)
     remote_runtime_required: bool = _bool("BANTAI_REMOTE_RUNTIME_REQUIRED", False)
-    # This build has no email-delivery provider or verified-email workflow.
-    # Remote deployments therefore stay closed to public self-registration.
     public_registration_enabled: bool = _bool("BANTAI_PUBLIC_REGISTRATION_ENABLED", True)
+    gmail_smtp_email: str = os.getenv("BANTAI_GMAIL_SMTP_EMAIL", "").strip()
+    gmail_smtp_app_password: str = "".join(os.getenv("BANTAI_GMAIL_SMTP_APP_PASSWORD", "").split())
     cookie_secure: bool = _bool("BANTAI_COOKIE_SECURE", True)
     create_schema: bool = _bool("BANTAI_CREATE_SCHEMA", False)
     encryption_key: str = os.getenv("BANTAI_ENCRYPTION_KEY", "")
@@ -62,6 +62,14 @@ class Settings:
     @property
     def cors_origins(self) -> list[str]:
         return [value for value in (self.web_origin, self.extension_origin) if value]
+
+    @property
+    def email_delivery_ready(self) -> bool:
+        return bool(self.gmail_smtp_email and self.gmail_smtp_app_password)
+
+    @property
+    def registration_ready(self) -> bool:
+        return self.public_registration_enabled and self.email_delivery_ready
 
     def validate_remote_runtime(self) -> None:
         if not self.detector_url.startswith("http://"):
@@ -75,10 +83,8 @@ class Settings:
         if not self.trusted_proxy_cidrs.strip():
             raise RuntimeError("BANTAI_TRUSTED_PROXY_CIDRS must identify the private Caddy source network.")
         if self.public_registration_enabled:
-            raise RuntimeError(
-                "Public registration requires a verified-email delivery workflow; "
-                "keep BANTAI_PUBLIC_REGISTRATION_ENABLED=false for this controlled pilot."
-            )
+            if not self.email_delivery_ready:
+                raise RuntimeError("Account email delivery must be configured when public registration is enabled.")
 
 
 settings = Settings()
